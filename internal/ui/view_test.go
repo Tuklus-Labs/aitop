@@ -4,14 +4,12 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"aitop/internal/snapshot"
 )
 
 func TestEmptyViewContainsCanary(t *testing.T) {
 	s := Render(nil, time.Second)
-	if !strings.Contains(s, snapshot.Canary) {
-		t.Fatalf("empty-machine-canary violated: view %q does not contain %s", s, snapshot.Canary)
+	if !strings.Contains(s, "aitop-canary") {
+		t.Fatalf("empty-machine-canary violated: view %q does not contain aitop-canary", s)
 	}
 }
 

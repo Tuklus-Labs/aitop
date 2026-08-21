@@ -11,8 +11,8 @@ import (
 
 func TestEmptyDumpHasCanary(t *testing.T) {
 	d := ToDump(nil)
-	if d.Canary != Canary {
-		t.Fatalf("empty-machine-canary violated: canary=%q", d.Canary)
+	if d.Canary != "aitop-canary" {
+		t.Fatalf("empty-machine-canary violated: canary=%q (must be the token aitop-canary, not empty)", d.Canary)
 	}
 	if d.Rows == nil {
 		t.Fatal("empty-machine-rows-is-list violated: rows=nil (must be empty list, not omitted)")

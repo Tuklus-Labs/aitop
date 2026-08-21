@@ -16,5 +16,11 @@ Tests live next to packages. Mapping:
 | CLAUDE procStart string | `claude.TestCollectProcStartString` |
 | GROK_AGENT tool shell | `classify.TestGrokToolShellIsNotAgent` |
 | talaria not Iris | `classify.TestTalariaIsNotIris` |
+| Codex fd join / Sol vs daybreak | `codex.TestCollectJoinsFDToRollout`, `TestDaybreakIsNotSol` |
+| Heartbeat TTL + Heph merge | `heartbeat.TestCollectFreshHeartbeatLabelsHeph`, `join.TestHeartbeatMergesOntoSessionWithoutDroppingTokens` |
+| CPU two-sample | `proc.TestTrackerSecondSampleSetsCPUKnown` |
+| Folded ChatGPT overlay | `snapshot.TestRemapFoldedOverlayFollowsDesktop` |
+| Forge vs bugforge | `classify.TestForgeSidecarIsForge`, `TestBugforgeIsNotForgeSidecar` |
+| Hermes TUI is Iris | `classify.TestHermesTUIIsIris` |
 
 Axes: invariants populated above. State: dual-index Tick vs overlay. Boundaries: empty procfs, ChatGPT fanout, cost 0 vs unknown. Malformed: Chromium space-blob, Claude string procStart, stat parens. Concurrency: overlay snapshot vs tickProc (copies). Persistence: N/A no DB. Integration: `/proc` bytes, overlay JSON. Regression traps: encoding (NUL vs blob), io (comm≠role), contract (cost nil), state (Heph cache).
