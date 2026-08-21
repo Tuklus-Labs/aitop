@@ -73,6 +73,20 @@ type Overlay struct {
 	ParentSession    string
 	SubagentStatus   string
 	SubagentID       string
+	SubagentType     string
+
+	// Status is the runtime's own word for the session: busy | idle | wait | error | shell.
+	// Empty means the overlay does not know; the spine may still upgrade to busy.
+	Status string
+	// StartedAt / CompletedAt are set when the overlay knows them (grok subagent meta,
+	// claude sidecar startedAt). Zero means unknown; age then comes from /proc.
+	StartedAt   time.Time
+	CompletedAt time.Time
+	// SessionName is the runtime's label for the session (claude sidecar "name",
+	// e.g. aegis-48). It is not an identity and never becomes ProvenName.
+	SessionName string
+	Branch      string
+	Effort      string
 }
 
 type Row struct {
