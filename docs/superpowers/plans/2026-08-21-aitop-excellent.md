@@ -30,12 +30,23 @@ Subagents do not commit, do not touch files outside their row, and return their 
 ## Todo
 
 - [x] Plan file
-- [ ] Types: Overlay gains Status, StartedAt, CompletedAt, SessionName, Branch, Effort, SubagentType
-- [ ] Dispatch A (claude transcript collector) and B (theme loader)
-- [ ] proc/host.go: /proc/stat cpu delta, /proc/uptime, /proc/meminfo, age helper
-- [ ] snapshot: Snapshot struct (rows + host + timings), grok collector emits all subagents with status/timestamps
-- [ ] ui: theme styles, boxes, header, table with drop order, selection, sort, filter, groups, detail pane, sparkline, meters
-- [ ] JSON dump: status, ctx window, session name, age, host block
-- [ ] Tests: ui layout (width drop order, canary, no overlay on tick), host parse planted failures
-- [ ] Live check on this box at 80x24, 120x40, 200x60
-- [ ] README, glossary, SABOTAGE_LOG rows, commit
+- [x] Types: Overlay gains Status, StartedAt, CompletedAt, SessionName, Branch, Effort, SubagentType
+- [x] Dispatch A (claude transcript collector) and B (theme loader); both landed green
+- [x] proc/host.go: /proc/stat cpu delta, /proc/uptime, /proc/meminfo, age helper; CLK_TCK from auxv
+- [x] snapshot: Snapshot struct (rows + host + timings), grok collector emits all subagents with status/timestamps
+- [x] ui: theme styles, boxes, header, table with drop order, selection, sort, filter, groups, detail pane, sparkline, meters
+- [x] JSON dump: status, ctx window, session name, age, host block
+- [x] Tests: ui layout (width drop order, canary, no overlay on tick), host parse planted failures
+- [x] Live check on this box at 80x24, 120x40, 150x42 (tmux pty: keys, filter, sort, expand, detail, quit)
+- [x] Walk cost: 25-42ms -> 11-12ms (stat-only RSS, tiered detail reads, candidate allowlist with cross-check gate)
+- [x] CPU%: 1s sliding window; zero delta is a known 0, not "—" (Grok's delta function had that backwards)
+- [x] README, SABOTAGE_LOG rows (PF-H1..2, PF-U1..4, PF-P1..3 + subagent rows), ~/bin/aitop installed
+- [ ] Not done: Heph heartbeat writer (hook that stamps $XDG_RUNTIME_DIR/aitop/hb/<pid>.json); no Claude row is proven Heph until it exists
+
+## Decisions worth keeping
+
+- COST column stays per spec even though every value on this box is `—`; the header carries `cost —` too. Gary can strike it.
+- Running in-process subagents are counted apart (`+N sub`), not inflated into `busy`.
+- Subagent rows: NAME = type (`explore`), TITLE = task description. Finished ones hidden unless `d`.
+- Glyphs stay inside U+25xx; `✦` rendered as tofu in JetBrains Mono NF.
+- Status rule lives in `internal/present` so the TUI and `--json` cannot disagree.

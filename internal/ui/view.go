@@ -39,7 +39,7 @@ var allColumns = []column{
 	{"TOK", 6, true, 3},
 	{"CTX", 10, false, 2},
 	{"COST", 6, true, 1},
-	{"AGE", 5, true, 6},
+	{"AGE", 6, true, 6},
 	{"STAT", 6, false, 9},
 }
 

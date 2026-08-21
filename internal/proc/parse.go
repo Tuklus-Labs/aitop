@@ -146,26 +146,33 @@ func Walk(root string) ([]types.Process, error) {
 	return out, nil
 }
 
-// candidateComms are the comm values the classifier can match on. Processes
-// outside this set (and not fuzzy-matched) get stat/statm only: they still
-// roll CPU/RSS into an agent ancestor, but the 100ms path does not read their
-// cmdline, exe, cwd, or cgroup. classify.TestEveryTableCommIsACandidate keeps
-// this list honest.
-var candidateComms = map[string]bool{
+// Candidate tiers. Full reads (cmdline, exe, cwd, cgroup) only for comms
+// that can be an agent or a named sidecar; shells and helpers need cmdline
+// alone. Everything else gets stat only: it still rolls CPU/RSS into an agent
+// ancestor, but the 100ms path never opens its cmdline, exe, cwd, or cgroup.
+// classify.TestEveryTableCommIsACandidate keeps these lists honest.
+var fullComms = map[string]bool{
 	"claude": true, "grok": true, "codex": true, "codex-code-mode": true,
-	"ChatGPT": true, "chrome_crashpad": true, "browser_crashpa": true, "electron": true,
-	"node-MainThread": true, "node": true, "zsh": true, "bash": true, "sh": true,
+	"ChatGPT": true, "electron": true, "node-MainThread": true, "node": true,
 	"python": true, "python3": true, "hermes": true,
 	"parlor-doorman": true, "parlor-impulse": true, "parlor_relayd": true, "charon": true,
-	"systemd-inhibit": true, "ollama": true, "llama-server": true, "local-brain": true,
-	"forgejo": true, "forgejo-runner": true,
 }
 
-// Candidate reports whether a comm deserves the full /proc read.
+var cmdlineComms = map[string]bool{
+	"zsh": true, "bash": true, "sh": true, "systemd-inhibit": true, "ollama": true,
+	"llama-server": true, "local-brain": true, "forgejo": true, "forgejo-runner": true,
+	"chrome_crashpad": true, "browser_crashpa": true,
+}
+
+// Candidate reports whether a comm gets anything beyond stat.
 func Candidate(comm string) bool {
-	if candidateComms[comm] {
+	if fullComms[comm] || cmdlineComms[comm] {
 		return true
 	}
+	return fuzzyAgent(comm)
+}
+
+func fuzzyAgent(comm string) bool {
 	l := strings.ToLower(comm)
 	for _, k := range []string{"claude", "grok", "codex", "hermes", "parlor", "forge", "chatgpt"} {
 		if strings.Contains(l, k) {
@@ -185,21 +192,14 @@ func readOne(root, name string, pid int32, page int) (types.Process, error) {
 	if err != nil {
 		return types.Process{}, err
 	}
-	var rss uint64
-	if sm, err := os.ReadFile(filepath.Join(dir, "statm")); err == nil {
-		if pages, err := ParseStatm(string(sm)); err == nil {
-			rss = pages * uint64(page)
-			st.RSSPages = pages
-		}
-	} else {
-		rss = st.RSSPages * uint64(page)
-	}
+	// stat field 24 is resident pages, the same number statm reports; one
+	// read per pid instead of two.
 	p := types.Process{
 		PID:       pid,
 		PPID:      st.PPID,
 		StartTime: st.StartTime,
 		Comm:      st.Comm,
-		RSS:       rss,
+		RSS:       st.RSSPages * uint64(page),
 		Utime:     st.Utime,
 		Stime:     st.Stime,
 		State:     st.State,
@@ -209,6 +209,9 @@ func readOne(root, name string, pid int32, page int) (types.Process, error) {
 	}
 	if raw, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
 		p.Cmdline = ParseCmdline(raw)
+	}
+	if !fullComms[st.Comm] && !fuzzyAgent(st.Comm) {
+		return p, nil
 	}
 	p.Exe, _ = os.Readlink(filepath.Join(dir, "exe"))
 	p.CWD, _ = os.Readlink(filepath.Join(dir, "cwd"))

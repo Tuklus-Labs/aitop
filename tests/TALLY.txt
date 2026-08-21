@@ -1,0 +1,13 @@
+?   	aitop/cmd/aitop	[no test files]
+ok  	aitop/internal/classify	(cached)
+ok  	aitop/internal/join	(cached)
+ok  	aitop/internal/overlay/claude	(cached)
+ok  	aitop/internal/overlay/codex	(cached)
+ok  	aitop/internal/overlay/grok	(cached)
+ok  	aitop/internal/overlay/heartbeat	(cached)
+ok  	aitop/internal/present	(cached)
+ok  	aitop/internal/proc	(cached)
+ok  	aitop/internal/snapshot	0.002s
+ok  	aitop/internal/theme	(cached)
+ok  	aitop/internal/types	(cached)
+ok  	aitop/internal/ui	(cached)

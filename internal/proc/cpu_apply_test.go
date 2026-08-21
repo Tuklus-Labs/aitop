@@ -77,3 +77,21 @@ func TestWalkReadsDetailsOnlyForCandidates(t *testing.T) {
 		}
 	}
 }
+
+// The 100ms path must leave the core mostly free. 25ms is a quarter of the
+// budget on a loaded box; the walk measured 7-16ms on 928 pids here.
+func TestWalkRealProcFitsTickBudget(t *testing.T) {
+	var best time.Duration
+	for i := 0; i < 3; i++ {
+		t0 := time.Now()
+		if _, err := Walk("/proc"); err != nil {
+			t.Fatal(err)
+		}
+		if d := time.Since(t0); best == 0 || d < best {
+			best = d
+		}
+	}
+	if best > 25*time.Millisecond {
+		t.Fatalf("walk-fits-tick-budget violated: best of 3 = %v > 25ms", best)
+	}
+}
