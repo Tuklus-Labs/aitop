@@ -1,0 +1,6 @@
+/aitop
+/aitop.json
+*.test
+*.out
+.worktrees/
+dist/
