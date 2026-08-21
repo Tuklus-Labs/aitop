@@ -64,7 +64,11 @@ func (m Model) snap() *snapshot.Snapshot {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		first := m.height == 0
 		m.width, m.height = msg.Width, msg.Height
+		if first && m.height >= autoDetailHeight {
+			m.detail = true // a tall pane has the room; i still toggles
+		}
 		m.clampScroll()
 		return m, nil
 	case tickMsg:
@@ -138,10 +142,7 @@ func (m *Model) clampCursor() {
 func (m *Model) rowsVisible() int {
 	detailH := 0
 	if m.detail {
-		detailH = 10
-		if m.height < 30 {
-			detailH = 7
-		}
+		detailH = detailHeight(m.height)
 	}
 	n := m.height - headerH - detailH - 3
 	if n < 1 {

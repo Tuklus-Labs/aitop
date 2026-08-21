@@ -112,6 +112,23 @@ func pack(segs []string, gap string, width int) string {
 	return b.String()
 }
 
+// detailHeight scales the detail box with the terminal: a tall pane next to
+// btop has room for the subagent history, a short one gets the essentials.
+func detailHeight(height int) int {
+	switch {
+	case height >= 50:
+		return 14
+	case height >= 30:
+		return 10
+	default:
+		return 7
+	}
+}
+
+// autoDetailHeight is the terminal height at which the detail pane opens by
+// default; below it the table needs every row.
+const autoDetailHeight = 36
+
 // tab renders btop's ┤ label ├ border tab.
 func (s *Styles) tab(label string) string {
 	return s.Box.Render("┤") + label + s.Box.Render("├")
@@ -185,10 +202,7 @@ func (s *Styles) render(f frame) string {
 	var b strings.Builder
 	detailH := 0
 	if f.detail {
-		detailH = 10
-		if f.height < 30 {
-			detailH = 7
-		}
+		detailH = detailHeight(f.height)
 	}
 	tableH := f.height - headerH - detailH
 	if tableH < 5 {

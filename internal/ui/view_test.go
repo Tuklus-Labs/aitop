@@ -170,7 +170,7 @@ func TestKeysSortFilterAndExpand(t *testing.T) {
 	m := New(src, theme.Nightfable())
 	m.now = func() time.Time { return now }
 	var tm tea.Model = m
-	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32}) // below autoDetailHeight: i opens the pane
 	tm, _ = tm.Update(tickMsg(now))
 	mm := tm.(Model)
 	if len(mm.lines) < 4 {
@@ -233,7 +233,7 @@ func TestKeysSortFilterAndExpand(t *testing.T) {
 		t.Fatalf("detail-pane-shows-session violated:\n%s", view)
 	}
 	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
-	if len(lines) != 40 {
+	if len(lines) != 32 {
 		t.Fatalf("detail-pane-keeps-frame-height violated: %d lines", len(lines))
 	}
 }
@@ -285,5 +285,38 @@ func TestFormatters(t *testing.T) {
 	m := int64(2_934_000)
 	if Tokens(&m) != "2.9M" {
 		t.Fatalf("tokens-formatter-millions violated: %q", Tokens(&m))
+	}
+}
+
+func TestTallPaneOpensDetailByDefaultAndKeepsFrameHeight(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(fixtureSnapshot())
+	m := New(src, theme.Nightfable())
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 160, Height: 56})
+	tm, _ = tm.Update(tickMsg(now))
+	mm := tm.(Model)
+	if !mm.detail {
+		t.Fatal("tall-pane-opens-detail-by-default violated: detail closed at 56 rows")
+	}
+	lines := strings.Split(strings.TrimRight(tm.View(), "\n"), "\n")
+	if len(lines) != 56 {
+		t.Fatalf("detail-pane-keeps-frame-height violated: %d lines at 56 rows", len(lines))
+	}
+	if detailHeight(56) != 14 || detailHeight(40) != 10 || detailHeight(24) != 7 {
+		t.Fatalf("detail-height-scales-with-terminal violated: %d %d %d", detailHeight(56), detailHeight(40), detailHeight(24))
+	}
+	// i still closes it; a later resize does not reopen it.
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 170, Height: 60})
+	if tm.(Model).detail {
+		t.Fatal("detail-toggle-survives-resize violated: resize reopened the pane")
+	}
+	short := New(src, theme.Nightfable())
+	var st tea.Model = short
+	st, _ = st.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	if st.(Model).detail {
+		t.Fatal("short-pane-keeps-table-rows violated: detail opened at 24 rows")
 	}
 }
