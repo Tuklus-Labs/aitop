@@ -1,0 +1,222 @@
+package classify
+
+import (
+	"path"
+	"strings"
+
+	"aitop/internal/proc"
+	"aitop/internal/types"
+)
+
+type Result struct {
+	Role           types.Role
+	Runtime        types.Runtime
+	CollapseKey    string
+	AgentRoot      bool
+	ProvenNameHint string
+}
+
+func Classify(p types.Process) Result {
+	return ClassifyCgroupParent(p, types.Process{}, "")
+}
+
+func ClassifyWithParent(p, parent types.Process) Result {
+	return ClassifyCgroupParent(p, parent, "")
+}
+
+func ClassifyCgroup(p types.Process, cgroup string) Result {
+	return ClassifyCgroupParent(p, types.Process{}, cgroup)
+}
+
+func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
+	argv := p.Cmdline
+	joined := strings.Join(argv, " ")
+	exe := p.Exe
+	comm := p.Comm
+
+	if comm == "chrome_crashpad" || comm == "browser_crashpa" || strings.Contains(joined, "crashpad_handler") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "ChatGPT" && hasChatGPTType(argv) {
+		return Result{Role: types.RoleIgnore}
+	}
+	if strings.Contains(exe, "/usr/lib/obsidian/") || (comm == "electron" && strings.Contains(joined, "obsidian")) {
+		return Result{Role: types.RoleIgnore}
+	}
+	if proc.ArgvContains(argv, "@playwright/mcp/cli.js") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "zsh" && (proc.ArgvContains(argv, "GROK_AGENT") || proc.ArgvContains(argv, ".claude/shell-snapshots/snapshot-zsh-")) {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "systemd-inhibit" && proc.ArgvContains(argv, "--who=grok") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "ollama" && proc.ArgvContains(argv, "serve") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if proc.ArgvContains(argv, "hermes-agent/venv") && proc.ArgvContains(argv, "/Projects/talaria/") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "forgejo" || comm == "forgejo-runner" || strings.Contains(exe, "/usr/bin/forgejo") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "parlor_relayd" || strings.HasSuffix(exe, "parlor_relayd") {
+		return Result{Role: types.RoleIgnore}
+	}
+	if comm == "llama-server" || comm == "local-brain" || strings.Contains(cgroup, "hermes-") && strings.Contains(cgroup, ".service") {
+		if comm == "llama-server" || comm == "local-brain" {
+			return Result{Role: types.RoleIgnore}
+		}
+	}
+
+	if comm == "ChatGPT" && !hasChatGPTType(argv) && (strings.HasSuffix(exe, "/ChatGPT") || exe == "" || strings.Contains(exe, "chatgpt")) {
+		return Result{
+			Role:        types.RoleDesktop,
+			Runtime:     types.RuntimeCodex,
+			CollapseKey: "chatgpt:" + itoa(p.PID),
+			AgentRoot:   true,
+		}
+	}
+	if strings.Contains(exe, "/usr/lib/chatgpt/resources/codex") && proc.ArgvContains(argv, "app-server") {
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeCodex, CollapseKey: "chatgpt:parent"}
+	}
+
+	if proc.ArgvContains(argv, "parlor/dist/sidecar/parlor-sidecar-worker.mjs") || strings.Contains(cgroup, "parlor-sidecar@") {
+		inst := parlorInstance(cgroup)
+		key := "parlor-sidecar:" + inst
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeParlor, CollapseKey: key, AgentRoot: true, ProvenNameHint: inst}
+	}
+	if comm == "parlor-doorman" || (len(argv) > 0 && path.Base(argv[0]) == "parlor-doorman") {
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeParlor, CollapseKey: "parlor-doorman", AgentRoot: true}
+	}
+	if comm == "parlor-impulse" || (len(argv) > 0 && path.Base(argv[0]) == "parlor-impulse") {
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeParlor, CollapseKey: "parlor-impulse", AgentRoot: true}
+	}
+	if proc.ArgvContains(argv, "parlor-presence.sh") {
+		return Result{Role: types.RoleMonitor, Runtime: types.RuntimeParlor, CollapseKey: "parlor-presence"}
+	}
+	if proc.ArgvContains(argv, "forge/native/sidecar/forge-sidecar.mjs") && !proc.ArgvContains(argv, "bugforge") {
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeForge, AgentRoot: true}
+	}
+	if comm == "charon" {
+		return Result{Role: types.RoleMonitor, CollapseKey: "charon"}
+	}
+
+	if isHermesAgent(argv, exe, comm) {
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeHermes, AgentRoot: true, ProvenNameHint: "Iris"}
+	}
+
+	if comm == "claude" || strings.Contains(exe, "/.local/share/claude/versions/") {
+		if parent.Comm == "claude" || envish(argv, "CLAUDE_CODE_CHILD_SESSION") {
+			return Result{Role: types.RoleSubagent, Runtime: types.RuntimeClaude, CollapseKey: "claude-sub:" + itoa(parent.PID)}
+		}
+		if hasPrintFlag(argv) && parent.Comm != "claude" {
+			return Result{Role: types.RolePrimary, Runtime: types.RuntimeClaude, AgentRoot: true}
+		}
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeClaude, AgentRoot: true}
+	}
+
+	if comm == "grok" || strings.Contains(exe, "/.grok/downloads/grok-") || argv0IsGrok(argv) {
+		if parent.Comm == "grok" {
+			return Result{Role: types.RoleSubagent, Runtime: types.RuntimeGrok, CollapseKey: "grok-sub:" + itoa(parent.PID)}
+		}
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeGrok, AgentRoot: true, ProvenNameHint: "Grok"}
+	}
+
+	if comm == "codex" && proc.ArgvContains(argv, "exec") {
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeCodex, CollapseKey: "codex-cli:" + itoa(p.PID), AgentRoot: true}
+	}
+	if comm == "codex" {
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeCodex, CollapseKey: "codex-cli:" + itoa(p.PID), AgentRoot: true}
+	}
+	if comm == "codex-code-mode" || strings.HasSuffix(exe, "codex-code-mode-host") {
+		return Result{Role: types.RoleSidecar, Runtime: types.RuntimeCodex}
+	}
+	if strings.HasPrefix(comm, "node") && proc.ArgvContains(argv, "/.local/bin/codex") {
+		return Result{Role: types.RoleIgnore}
+	}
+
+	return Result{Role: types.RoleDrop}
+}
+
+func hasChatGPTType(argv []string) bool {
+	for _, k := range []string{"renderer", "gpu-process", "zygote", "utility"} {
+		if proc.HasTypeFlag(argv, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func parlorInstance(cgroup string) string {
+	const needle = "parlor-sidecar@"
+	i := strings.Index(cgroup, needle)
+	if i < 0 {
+		return "unknown"
+	}
+	rest := cgroup[i+len(needle):]
+	rest = strings.TrimSuffix(rest, ".service")
+	if n := strings.IndexAny(rest, " \n/"); n >= 0 {
+		rest = rest[:n]
+	}
+	return rest
+}
+
+func isHermesAgent(argv []string, exe, comm string) bool {
+	if proc.ArgvContains(argv, "/Projects/talaria/") {
+		return false
+	}
+	if strings.Contains(exe, "hermes-agent/venv/bin/hermes") {
+		return true
+	}
+	if comm == "hermes" {
+		return true
+	}
+	if proc.ArgvContains(argv, "hermes_cli") || proc.ArgvContains(argv, "hermes chat") || proc.ArgvContains(argv, "hermes --tui") {
+		return true
+	}
+	return false
+}
+
+func hasPrintFlag(argv []string) bool {
+	for _, a := range argv {
+		if a == "-p" || a == "--print" || strings.HasPrefix(a, "--output-format") {
+			return true
+		}
+	}
+	return false
+}
+
+func argv0IsGrok(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	return strings.HasSuffix(argv[0], "/grok") || argv[0] == "grok"
+}
+
+func envish(argv []string, k string) bool {
+	return proc.ArgvContains(argv, k)
+}
+
+func itoa(n int32) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [12]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
+}
