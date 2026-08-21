@@ -30,6 +30,7 @@ type dumpRow struct {
 	Role        string    `json:"role,omitempty"`
 	Runtime     string    `json:"runtime,omitempty"`
 	RSS         uint64    `json:"rss,omitempty"`
+	CPU         *float64  `json:"cpu,omitempty"`
 	Tokens      *int64    `json:"tokens,omitempty"`
 	CostUSD     *float64  `json:"cost_usd,omitempty"`
 	SubLive     int       `json:"subagents_live,omitempty"`
@@ -60,7 +61,7 @@ func Capture(procRoot, grokHome, claudeHome string) ([]types.Row, error) {
 		p.NameHint = r.ProvenNameHint
 		classified = append(classified, p)
 	}
-	classified = rollup(classified)
+	classified, fold := rollup(classified)
 	var ovs []types.Overlay
 	if grokHome != "" {
 		if g, err := grok.Collect(grokHome); err == nil {
@@ -72,17 +73,29 @@ func Capture(procRoot, grokHome, claudeHome string) ([]types.Row, error) {
 			ovs = append(ovs, c...)
 		}
 	}
+	ovs = remapFolded(ovs, fold)
 	return join.Join(classified, ovs), nil
 }
 
-func rollup(in []types.Process) []types.Process {
+func remapFolded(ovs []types.Overlay, fold map[int32]int32) []types.Overlay {
+	if len(fold) == 0 {
+		return ovs
+	}
+	for i := range ovs {
+		if dest, ok := fold[ovs[i].PID]; ok {
+			ovs[i].PID = dest
+		}
+	}
+	return ovs
+}
+
+func rollup(in []types.Process) ([]types.Process, map[int32]int32) {
 	byPID := map[int32]*types.Process{}
 	for i := range in {
-		p := in[i]
-		byPID[p.PID] = &in[i]
-		_ = p
+		byPID[in[i].PID] = &in[i]
 	}
 	addRSS := map[int32]uint64{}
+	fold := map[int32]int32{}
 	keep := make([]types.Process, 0, len(in))
 	for _, p := range in {
 		if p.Role == types.RoleIgnore || p.Role == types.RoleDrop || foldIntoAncestor(p, byPID) {
@@ -94,6 +107,7 @@ func rollup(in []types.Process) []types.Process {
 				}
 				if par.AgentRoot || par.Role == types.RoleDesktop || par.Role == types.RolePrimary {
 					addRSS[par.PID] += p.RSS
+					fold[p.PID] = par.PID
 					break
 				}
 				root = par.PPID
@@ -107,7 +121,7 @@ func rollup(in []types.Process) []types.Process {
 	for i := range keep {
 		keep[i].RSS += addRSS[keep[i].PID]
 	}
-	return keep
+	return keep, fold
 }
 
 func foldIntoAncestor(p types.Process, byPID map[int32]*types.Process) bool {
@@ -162,6 +176,10 @@ func flatten(r types.Row) dumpRow {
 		OverlayOK:   r.OverlayOK,
 		OverlayOnly: r.OverlayOnly,
 	}
+	if r.Process.CPUKnown {
+		v := r.Process.CPUPct
+		out.CPU = &v
+	}
 	if r.OverlayOK {
 		out.Project = r.Overlay.Project
 		out.Model = r.Overlay.Model
@@ -194,7 +212,18 @@ func WriteJSON(rows []types.Row, w *os.File) error {
 	return enc.Encode(ToDump(rows))
 }
 
-func DefaultHomes() (procRoot, grokHome, claudeHome string) {
+func DefaultHomes() (procRoot, grokHome, claudeHome, codexHome, hbDir string) {
 	home, _ := os.UserHomeDir()
-	return "/proc", filepath.Join(home, ".grok"), filepath.Join(home, ".claude")
+	return "/proc",
+		filepath.Join(home, ".grok"),
+		filepath.Join(home, ".claude"),
+		filepath.Join(home, ".codex"),
+		heartbeatDir()
+}
+
+func heartbeatDir() string {
+	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
+		return filepath.Join(d, "aitop", "hb")
+	}
+	return filepath.Join(os.TempDir(), "aitop", "hb")
 }

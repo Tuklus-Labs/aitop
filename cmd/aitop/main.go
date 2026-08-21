@@ -16,8 +16,14 @@ func main() {
 	once := flag.Bool("once", false, "one sample and exit")
 	flag.Parse()
 
-	procRoot, grokHome, claudeHome := snapshot.DefaultHomes()
-	eng := &snapshot.Engine{ProcRoot: procRoot, GrokHome: grokHome, ClaudeHome: claudeHome}
+	procRoot, grokHome, claudeHome, codexHome, hbDir := snapshot.DefaultHomes()
+	eng := &snapshot.Engine{
+		ProcRoot:   procRoot,
+		GrokHome:   grokHome,
+		ClaudeHome: claudeHome,
+		CodexHome:  codexHome,
+		HBDir:      hbDir,
+	}
 	if *jsonOnce || *once {
 		eng.RefreshOverlay()
 		if err := snapshot.WriteJSON(eng.Rows(), os.Stdout); err != nil {

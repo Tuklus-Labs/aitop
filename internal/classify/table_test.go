@@ -115,6 +115,39 @@ func TestTalariaIsNotIris(t *testing.T) {
 	}
 }
 
+func TestForgeSidecarIsForge(t *testing.T) {
+	p := types.Process{
+		Comm:    "node-MainThread",
+		Cmdline: []string{"node", "/home/aegis/Projects/forge/native/sidecar/forge-sidecar.mjs"},
+	}
+	got := Classify(p)
+	if got.Role != types.RoleSidecar || got.Runtime != types.RuntimeForge {
+		t.Fatalf("forge-sidecar-is-forge violated: role=%s runtime=%s", got.Role, got.Runtime)
+	}
+}
+
+func TestBugforgeIsNotForgeSidecar(t *testing.T) {
+	p := types.Process{
+		Comm:    "node",
+		Cmdline: []string{"node", "/home/aegis/Projects/bugforge/server.mjs"},
+	}
+	got := Classify(p)
+	if got.Runtime == types.RuntimeForge {
+		t.Fatalf("bugforge-is-not-forge-sidecar violated: %+v", got)
+	}
+}
+
+func TestHermesTUIIsIris(t *testing.T) {
+	p := types.Process{
+		Comm: "hermes",
+		Exe:  "/home/aegis/.hermes/hermes-agent/venv/bin/hermes",
+	}
+	got := Classify(p)
+	if got.Role != types.RolePrimary || got.Runtime != types.RuntimeHermes || got.ProvenNameHint != "Iris" {
+		t.Fatalf("hermes-tui-is-iris violated: %+v", got)
+	}
+}
+
 func TestCodexNodeWrapperIsNotSecondAgent(t *testing.T) {
 	p := types.Process{
 		Comm:    "node-MainThread",

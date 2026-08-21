@@ -65,6 +65,27 @@ func TestClaudeWithoutProofIsNotHeph(t *testing.T) {
 	}
 }
 
+func TestHeartbeatMergesOntoSessionWithoutDroppingTokens(t *testing.T) {
+	tok := int64(99)
+	spine := []types.Process{{PID: 7, StartTime: 9, Comm: "claude", AgentRoot: true, Role: types.RolePrimary}}
+	session := types.Overlay{PID: 7, StartTime: 9, SessionID: "s", Runtime: types.RuntimeClaude, TokensUsed: &tok, Title: "work"}
+	hb := types.Overlay{PID: 7, StartTime: 9, ProvenName: "Heph", Heartbeat: true, Project: "aitop"}
+	rows := Join(spine, []types.Overlay{session, hb})
+	if len(rows) != 1 {
+		t.Fatalf("heartbeat-merge-one-row violated: n=%d", len(rows))
+	}
+	r := rows[0]
+	if r.Overlay.ProvenName != "Heph" || !r.Overlay.Heartbeat {
+		t.Fatalf("heartbeat-proof-labels-heph violated: name=%q hb=%v", r.Overlay.ProvenName, r.Overlay.Heartbeat)
+	}
+	if r.Overlay.TokensUsed == nil || *r.Overlay.TokensUsed != 99 {
+		t.Fatalf("heartbeat-must-not-drop-session-tokens violated: tokens=%v", r.Overlay.TokensUsed)
+	}
+	if r.Overlay.Title != "work" || r.Overlay.Project != "aitop" {
+		t.Fatalf("heartbeat-merge-keeps-session-and-fills-project violated: title=%q proj=%q", r.Overlay.Title, r.Overlay.Project)
+	}
+}
+
 func TestHeartbeatLabelsHeph(t *testing.T) {
 	spine := []types.Process{{PID: 7, StartTime: 9, Comm: "claude", AgentRoot: true, Role: types.RolePrimary}}
 	ov := types.Overlay{PID: 7, StartTime: 9, SessionID: "s", ProvenName: "Heph", Heartbeat: true}

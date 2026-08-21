@@ -52,6 +52,14 @@ func TestDumpOmitsUnknownCost(t *testing.T) {
 	}
 }
 
+func TestRemapFoldedOverlayFollowsDesktop(t *testing.T) {
+	ovs := []types.Overlay{{PID: 2, SessionID: "desk", Model: "gpt-5.6-sol"}}
+	got := remapFolded(ovs, map[int32]int32{2: 1})
+	if got[0].PID != 1 {
+		t.Fatalf("folded-codex-overlay-follows-desktop violated: pid=%d", got[0].PID)
+	}
+}
+
 func TestCaptureEmptyProcfs(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "1"), 0755); err != nil {

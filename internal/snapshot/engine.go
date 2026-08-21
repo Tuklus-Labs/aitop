@@ -7,7 +7,9 @@ import (
 	"aitop/internal/classify"
 	"aitop/internal/join"
 	"aitop/internal/overlay/claude"
+	"aitop/internal/overlay/codex"
 	"aitop/internal/overlay/grok"
+	"aitop/internal/overlay/heartbeat"
 	"aitop/internal/proc"
 	"aitop/internal/types"
 )
@@ -18,7 +20,10 @@ type Engine struct {
 	ProcRoot   string
 	GrokHome   string
 	ClaudeHome string
+	CodexHome  string
+	HBDir      string
 	Overlay    OverlayFn // tests inject a spy
+	cpu        *proc.Tracker
 
 	rows     atomic.Value // []types.Row
 	overlays atomic.Value // []types.Overlay
@@ -43,6 +48,16 @@ func (e *Engine) collectOverlays() ([]types.Overlay, error) {
 	if c, err := claude.Collect(e.ClaudeHome); err == nil {
 		ovs = append(ovs, c...)
 	}
+	if e.CodexHome != "" {
+		if x, err := codex.Collect(e.CodexHome, codex.LiveFDs(e.ProcRoot)); err == nil {
+			ovs = append(ovs, x...)
+		}
+	}
+	if e.HBDir != "" {
+		if h, err := heartbeat.Collect(e.HBDir, time.Now(), 5*time.Second); err == nil {
+			ovs = append(ovs, h...)
+		}
+	}
 	return ovs, nil
 }
 
@@ -61,10 +76,15 @@ func (e *Engine) tickProc() {
 		p.Role, p.Runtime, p.CollapseKey, p.AgentRoot, p.NameHint = r.Role, r.Runtime, r.CollapseKey, r.AgentRoot, r.ProvenNameHint
 		classified = append(classified, p)
 	}
-	classified = rollup(classified)
+	if e.cpu == nil {
+		e.cpu = proc.NewTracker(100)
+	}
+	classified = e.cpu.Apply(classified, time.Now())
+	classified, fold := rollup(classified)
 	var ovs []types.Overlay
 	if v := e.overlays.Load(); v != nil {
-		ovs = v.([]types.Overlay)
+		ovs = append([]types.Overlay(nil), v.([]types.Overlay)...)
+		ovs = remapFolded(ovs, fold)
 	}
 	e.rows.Store(join.Join(classified, ovs))
 }

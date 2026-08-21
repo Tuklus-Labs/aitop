@@ -71,7 +71,7 @@ func Render(rows []types.Row, overlayAge time.Duration) string {
 	var b strings.Builder
 	b.WriteString(lipgloss.NewStyle().Foreground(cyan).Bold(true).Render("aitop"))
 	fmt.Fprintf(&b, "  %d live  overlay %s  %s\n", len(rows), overlayAge.Truncate(100*time.Millisecond), snapshot.Canary)
-	b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("TREE NAME            PROJECT     MODEL          RSS   TOKS  SUB  STAT"))
+	b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("TREE NAME            PROJECT     MODEL        CPU    RSS   TOKS  SUB  STAT"))
 	b.WriteByte('\n')
 	if len(rows) == 0 {
 		b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("(none)\n"))
@@ -133,9 +133,13 @@ func writeRow(b *strings.Builder, r types.Row, depth int) {
 	case "error", "failed":
 		stStyle = lipgloss.NewStyle().Foreground(red)
 	}
-	fmt.Fprintf(b, "%s%s %-16s %-11s %-14s %6s %6s %3d  %s\n",
-		indent, glyph, name, trunc(proj, 11), trunc(model, 14),
-		rss(r.Process.RSS), tok, r.Overlay.SubagentLive, stStyle.Render(stat))
+	cpu := "—"
+	if r.Process.CPUKnown {
+		cpu = fmt.Sprintf("%.0f", r.Process.CPUPct)
+	}
+	fmt.Fprintf(b, "%s%s %-16s %-11s %-12s %5s %6s %6s %3d  %s\n",
+		indent, glyph, name, trunc(proj, 11), trunc(model, 12),
+		cpu, rss(r.Process.RSS), tok, r.Overlay.SubagentLive, stStyle.Render(stat))
 	for _, c := range r.Children {
 		writeRow(b, c, depth+1)
 	}

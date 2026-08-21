@@ -3,17 +3,14 @@ package join
 import "aitop/internal/types"
 
 func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
-	byPID := map[pidKey]types.Overlay{}
-	bySession := map[string]types.Overlay{}
+	byPID := map[int32]types.Overlay{}
 	var orphans []types.Overlay
 	for _, o := range overlays {
 		if o.PID != 0 {
-			byPID[pidKey{o.PID, o.StartTime}] = o
+			byPID[o.PID] = merge(byPID[o.PID], o)
+			continue
 		}
-		if o.SessionID != "" {
-			bySession[o.SessionID] = o
-		}
-		if o.PID == 0 && o.ParentSession != "" {
+		if o.ParentSession != "" {
 			orphans = append(orphans, o)
 		}
 	}
@@ -24,13 +21,12 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 			continue
 		}
 		r := types.Row{Process: p}
-		if o, ok := byPID[pidKey{p.PID, p.StartTime}]; ok {
-			r.Overlay = sanitize(o)
-			r.OverlayOK = true
-		} else if o, ok := byPID[pidKey{p.PID, 0}]; ok && p.StartTime != 0 {
-			// overlay lacked starttime; still match pid only when overlay start is 0
-			r.Overlay = sanitize(o)
-			r.OverlayOK = true
+		if o, ok := byPID[p.PID]; ok {
+			if o.StartTime == 0 || o.StartTime == p.StartTime {
+				o = sanitize(o)
+				r.Overlay = o
+				r.OverlayOK = true
+			}
 		}
 		if r.OverlayOK {
 			for _, c := range orphans {
@@ -45,9 +41,61 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 	return rows
 }
 
-type pidKey struct {
-	pid   int32
-	start uint64
+func merge(a, b types.Overlay) types.Overlay {
+	if a.PID == 0 && a.SessionID == "" && !a.Heartbeat {
+		return b
+	}
+	if b.Heartbeat {
+		a.Heartbeat = true
+		if b.ProvenName != "" {
+			a.ProvenName = b.ProvenName
+		}
+	} else if a.ProvenName == "" {
+		a.ProvenName = b.ProvenName
+	}
+	if a.PID == 0 {
+		a.PID = b.PID
+	}
+	if a.StartTime == 0 {
+		a.StartTime = b.StartTime
+	}
+	if a.SessionID == "" {
+		a.SessionID = b.SessionID
+	}
+	if a.Runtime == "" {
+		a.Runtime = b.Runtime
+	}
+	if a.Title == "" {
+		a.Title = b.Title
+	}
+	if a.Project == "" {
+		a.Project = b.Project
+	}
+	if a.Model == "" {
+		a.Model = b.Model
+	}
+	if a.TokensUsed == nil {
+		a.TokensUsed = b.TokensUsed
+	}
+	if a.ContextWindow == nil {
+		a.ContextWindow = b.ContextWindow
+	}
+	if a.ContextFill == nil {
+		a.ContextFill = b.ContextFill
+	}
+	if a.CostUSD == nil {
+		a.CostUSD = b.CostUSD
+	}
+	if a.SubagentLive == 0 {
+		a.SubagentLive = b.SubagentLive
+	}
+	if a.SubagentDeclared == 0 {
+		a.SubagentDeclared = b.SubagentDeclared
+	}
+	if a.SessionPath == "" {
+		a.SessionPath = b.SessionPath
+	}
+	return a
 }
 
 func sanitize(o types.Overlay) types.Overlay {
