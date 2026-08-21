@@ -32,7 +32,10 @@ go build -o aitop ./cmd/aitop
 - **NAME** is proven or it is `comm`. `Grok` comes from a grok-build seat in
   `summary.json`; `Sol`/`Luna`/`Terra` from an exact Codex model id; `Heph`
   only from a heartbeat file. Five interactive `claude` processes stay
-  `claude`. Family glyph: ● claude, ○ grok, • codex/ChatGPT, ▪ parlor, ◌
+  `claude`. A session the Remote Control daemon spawned (phone, web) reads
+  `claude rc`; one driven through the SDK reads `claude sdk`; the detail
+  pane shows `via`. The `claude rc` daemon itself sits under monitors.
+  Family glyph: ● claude, ○ grok, • codex/ChatGPT, ▪ parlor, ◌
   in-process subagent.
 - **CPU** is one-core percent over a 1s sliding window (a single 100ms tick on
   a 100 Hz clock quantizes to 10% steps). First sample paints `—`, never 0.

@@ -153,6 +153,7 @@ func (c *Collector) Collect(claudeHome string) ([]types.Overlay, error) {
 			PID:         int32(pid),
 			StartTime:   start,
 			Runtime:     types.RuntimeClaude,
+			Entrypoint:  s.Entrypoint,
 			Project:     join.ProjectName(s.CWD),
 			OverlayCWD:  s.CWD,
 			SessionName: s.Name,

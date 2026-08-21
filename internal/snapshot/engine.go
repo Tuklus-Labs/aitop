@@ -106,7 +106,7 @@ func (e *Engine) tickProc() {
 	var classified []types.Process
 	for _, p := range procs {
 		r := classify.ClassifyCgroupParent(p, byPID[p.PPID], p.Cgroup)
-		p.Role, p.Runtime, p.CollapseKey, p.AgentRoot, p.NameHint, p.ModelHint = r.Role, r.Runtime, r.CollapseKey, r.AgentRoot, r.ProvenNameHint, r.ModelHint
+		p.Role, p.Runtime, p.CollapseKey, p.AgentRoot, p.NameHint, p.ModelHint, p.Tag = r.Role, r.Runtime, r.CollapseKey, r.AgentRoot, r.ProvenNameHint, r.ModelHint, r.Tag
 		classified = append(classified, p)
 	}
 	classified = e.cpu.Apply(classified, t0)

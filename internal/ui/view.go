@@ -608,10 +608,15 @@ func (s *Styles) nameCell(l line, w int, selected bool, paint func(lipgloss.Styl
 
 	name := l.name
 	suffix := ""
-	if l.group {
+	switch {
+	case l.group:
 		suffix = fmt.Sprintf(" ×%d", l.children)
-	} else if l.subLive > 0 {
+	case l.subLive > 0:
 		suffix = fmt.Sprintf(" +%d", l.subLive)
+	case l.row.Process.Tag != "":
+		suffix = " " + l.row.Process.Tag
+	case l.row.OverlayOK && l.row.Overlay.Entrypoint != "" && l.row.Overlay.Entrypoint != "cli":
+		suffix = " " + strings.TrimSuffix(strings.TrimSuffix(l.row.Overlay.Entrypoint, "-cli"), "-ts")
 	}
 	avail := w - used - ansi.StringWidth(suffix)
 	if avail < 3 {
@@ -747,7 +752,11 @@ func (s *Styles) renderDetail(b *strings.Builder, f frame, h int) {
 		)
 	default:
 		lines = append(lines, " "+kv("title", present.Title(r)))
-		lines = append(lines, " "+kv("session", o.SessionID)+"   "+kv("name", o.SessionName)+"   "+kv("branch", o.Branch)+"   "+kv("effort", o.Effort))
+		via := o.Entrypoint
+		if r.Process.Tag != "" {
+			via = r.Process.Tag + " (" + via + ")"
+		}
+		lines = append(lines, " "+kv("session", o.SessionID)+"   "+kv("name", o.SessionName)+"   "+kv("via", via)+"   "+kv("branch", o.Branch)+"   "+kv("effort", o.Effort))
 		cwd := o.OverlayCWD
 		if cwd == "" {
 			cwd = r.Process.CWD

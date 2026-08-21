@@ -64,3 +64,4 @@ Axes: invariants populated above. State: dual-index Tick vs overlay. Boundaries:
 | Unit description overlay, cached per unit | `local.TestCollectReadsUnitDescription` |
 | Estimate marker on COST and header; runtime cost unmarked; locals group and census | `ui.TestCostIsMarkedEstimatedAndLocalsGroup` |
 | Cost formatter three figures | `ui.TestFormatters` |
+| Remote Control sessions: version-string comm gets a full read; claude child processes are their own sessions; rc daemon is a monitor; rc tag and entrypoint surface | `classify.TestRemoteControlSessionIsAPrimaryNotASubagent`, `ui.TestCostIsMarkedEstimatedAndLocalsGroup` (rc suffix), `local.TestCollectReadsUnitDescription` (user manager never a unit) |

@@ -173,7 +173,27 @@ func Candidate(comm string) bool {
 	return fuzzyAgent(comm)
 }
 
+// versionComm matches a comm that is a bare version string. Claude Code's
+// Remote Control daemon execs ~/.local/share/claude/versions/2.1.239
+// directly, so the session's comm is "2.1.239" and only its exe says claude.
+func versionComm(comm string) bool {
+	dots := 0
+	for i := 0; i < len(comm); i++ {
+		switch {
+		case comm[i] >= '0' && comm[i] <= '9':
+		case comm[i] == '.':
+			dots++
+		default:
+			return false
+		}
+	}
+	return dots >= 1 && len(comm) >= 3
+}
+
 func fuzzyAgent(comm string) bool {
+	if versionComm(comm) {
+		return true
+	}
 	l := strings.ToLower(comm)
 	for _, k := range []string{"claude", "grok", "codex", "hermes", "parlor", "forge", "chatgpt"} {
 		if strings.Contains(l, k) {

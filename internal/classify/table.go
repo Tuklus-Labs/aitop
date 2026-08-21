@@ -15,6 +15,7 @@ type Result struct {
 	AgentRoot      bool
 	ProvenNameHint string
 	ModelHint      string // local backends: the model file they serve
+	Tag            string // "rc" for a session the Remote Control daemon spawned
 }
 
 func Classify(p types.Process) Result {
@@ -111,14 +112,19 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 		return Result{Role: types.RolePrimary, Runtime: types.RuntimeHermes, AgentRoot: true, ProvenNameHint: "Iris"}
 	}
 
-	if comm == "claude" || strings.Contains(exe, "/.local/share/claude/versions/") {
-		if parent.Comm == "claude" || envish(argv, "CLAUDE_CODE_CHILD_SESSION") {
-			return Result{Role: types.RoleSubagent, Runtime: types.RuntimeClaude, CollapseKey: "claude-sub:" + itoa(parent.PID)}
+	if isClaudeFamily(comm, exe) {
+		// The Remote Control daemon is plumbing, not a session.
+		if isClaudeRC(argv) {
+			return Result{Role: types.RoleMonitor, Runtime: types.RuntimeClaude, CollapseKey: "claude-rc", ProvenNameHint: "claude rc"}
 		}
-		if hasPrintFlag(argv) && parent.Comm != "claude" {
-			return Result{Role: types.RolePrimary, Runtime: types.RuntimeClaude, AgentRoot: true}
+		// Every other claude process is its own session with its own sidecar.
+		// Claude's subagents are in-process; a child claude PID (spawned by
+		// the rc daemon, or `claude -p` from a session's shell) is a root row.
+		r := Result{Role: types.RolePrimary, Runtime: types.RuntimeClaude, AgentRoot: true, ProvenNameHint: "claude"}
+		if isClaudeFamily(parent.Comm, parent.Exe) && isClaudeRC(parent.Cmdline) {
+			r.Tag = "rc"
 		}
-		return Result{Role: types.RolePrimary, Runtime: types.RuntimeClaude, AgentRoot: true}
+		return r
 	}
 
 	if comm == "grok" || strings.Contains(exe, "/.grok/downloads/grok-") || argv0IsGrok(argv) {
@@ -161,20 +167,23 @@ func local(name, model, cgroup string) Result {
 	}
 }
 
-// unitName extracts "foo" from a cgroup path ending in .../foo.service.
+// unitName returns "foo" when the cgroup's final path component is
+// foo.service. The user manager (user@1000.service) and session scopes sit
+// higher up the path and are not a process's own unit.
 func unitName(cgroup string) string {
 	for _, line := range strings.Split(cgroup, "\n") {
-		i := strings.LastIndex(line, ".service")
-		if i < 0 {
+		line = strings.TrimSpace(line)
+		if i := strings.LastIndexByte(line, '/'); i >= 0 {
+			line = line[i+1:]
+		}
+		if !strings.HasSuffix(line, ".service") {
 			continue
 		}
-		head := line[:i]
-		if j := strings.LastIndexByte(head, '/'); j >= 0 {
-			head = head[j+1:]
+		u := strings.TrimSuffix(line, ".service")
+		if strings.HasPrefix(u, "user@") || u == "" {
+			continue
 		}
-		if head != "" {
-			return head
-		}
+		return u
 	}
 	return ""
 }
@@ -240,6 +249,16 @@ func isHermesAgent(argv []string, exe, comm string) bool {
 	return false
 }
 
+// isClaudeFamily: comm "claude", or any exe under the versioned install
+// (the rc daemon execs the version binary directly, comm "2.1.239").
+func isClaudeFamily(comm, exe string) bool {
+	return comm == "claude" || strings.Contains(exe, "/.local/share/claude/versions/")
+}
+
+func isClaudeRC(argv []string) bool {
+	return len(argv) >= 2 && argv[1] == "rc"
+}
+
 func hasPrintFlag(argv []string) bool {
 	for _, a := range argv {
 		if a == "-p" || a == "--print" || strings.HasPrefix(a, "--output-format") {
@@ -254,10 +273,6 @@ func argv0IsGrok(argv []string) bool {
 		return false
 	}
 	return strings.HasSuffix(argv[0], "/grok") || argv[0] == "grok"
-}
-
-func envish(argv []string, k string) bool {
-	return proc.ArgvContains(argv, k)
 }
 
 func itoa(n int32) string {

@@ -50,6 +50,7 @@ type Process struct {
 	Cgroup      string
 	NameHint    string
 	ModelHint   string // classifier-derived, e.g. gguf basename from llama-server argv
+	Tag         string // classifier-derived provenance: "rc" for a Remote Control session
 }
 
 // Usage is lifetime token usage for a session, when the runtime exposes it.
@@ -103,6 +104,7 @@ type Overlay struct {
 	SessionName string
 	Branch      string
 	Effort      string
+	Entrypoint  string // runtime's own word: cli | sdk-cli | sdk-ts
 }
 
 type Row struct {

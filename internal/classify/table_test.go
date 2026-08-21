@@ -200,3 +200,39 @@ func TestLocalBackendsGetARow(t *testing.T) {
 		t.Fatal("local-comms-are-full-candidates violated")
 	}
 }
+
+// Remote Control sessions: the daemon (`claude rc`) execs the versioned
+// binary directly, so comm is "2.1.239" and the parent is claude. Those are
+// primaries, tagged rc; the daemon is a monitor; nothing is a subagent.
+func TestRemoteControlSessionIsAPrimaryNotASubagent(t *testing.T) {
+	daemon := types.Process{PID: 1367570, PPID: 1367012, Comm: "claude", Exe: "/home/aegis/.local/share/claude/versions/2.1.239", Cmdline: []string{"claude", "rc"}}
+	if got := Classify(daemon); got.Role != types.RoleMonitor || got.AgentRoot {
+		t.Fatalf("claude-rc-daemon-is-a-monitor violated: %+v", got)
+	}
+	sess := types.Process{PID: 1368294, PPID: 1367570, Comm: "2.1.239", Exe: "/home/aegis/.local/share/claude/versions/2.1.239",
+		Cmdline: []string{"/home/aegis/.local/share/claude/versions/2.1.239", "--print", "--sdk-url", "https://api.anthropic.com/v1/code/sessions/cse_x", "--session-id", "cse_x", "--input-format", "stream-json"}}
+	got := ClassifyWithParent(sess, daemon)
+	if got.Role != types.RolePrimary || !got.AgentRoot || got.Runtime != types.RuntimeClaude {
+		t.Fatalf("remote-control-session-is-a-primary violated: %+v", got)
+	}
+	if got.Tag != "rc" {
+		t.Fatalf("remote-control-session-tagged-rc violated: tag=%q", got.Tag)
+	}
+	if got.ProvenNameHint != "claude" {
+		t.Fatalf("version-comm-session-still-reads-claude violated: hint=%q (comm is 2.1.239)", got.ProvenNameHint)
+	}
+	if u := unitName("0::/user.slice/user-1000.slice/user@1000.service/session.slice/session-2.scope"); u != "" {
+		t.Fatalf("unit-name-is-final-component-never-user-manager violated: %q", u)
+	}
+	if u := unitName("0::/user.slice/user-1000.slice/user@1000.service/app.slice/hermes-qwen38.service"); u != "hermes-qwen38" {
+		t.Fatalf("unit-name-final-component violated: %q", u)
+	}
+	if !proc.Candidate("2.1.239") {
+		t.Fatal("version-string-comm-is-a-walk-candidate violated: the walk would never read this process's exe")
+	}
+	// A headless claude spawned from another session's shell is its own session too.
+	child := types.Process{PID: 2, PPID: 35037, Comm: "claude", Cmdline: []string{"claude", "-p", "hello"}}
+	if got := ClassifyWithParent(child, types.Process{PID: 35037, Comm: "claude", Cmdline: []string{"claude"}}); got.Role != types.RolePrimary || !got.AgentRoot || got.Tag != "" {
+		t.Fatalf("claude-child-process-is-its-own-session violated: %+v", got)
+	}
+}

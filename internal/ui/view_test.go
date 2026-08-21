@@ -287,6 +287,13 @@ func TestCostIsMarkedEstimatedAndLocalsGroup(t *testing.T) {
 	if row := rowLine(s, "aitop polish"); !strings.Contains(row, "~$323") {
 		t.Fatalf("cost-column-marks-estimate violated: row lacks ~$323:\n%s", row)
 	}
+	// A Remote Control session shows its provenance in NAME.
+	snap.Rows[1].Process.Tag = "rc"
+	snap.Rows[1].Overlay.Entrypoint = "sdk-cli"
+	if row := rowLine(ansi.Strip(Render(snap, theme.Nightfable(), 200, 40, now)), "aitop polish"); !strings.Contains(row, "claude rc") {
+		t.Fatalf("remote-control-session-tagged-in-name violated: %s", row)
+	}
+	snap.Rows[1].Process.Tag = ""
 	c := takeCensus(snap.Rows)
 	if c.locals != 1 || c.agents != 2 || !c.costEstimated || c.cost != 323.4 {
 		t.Fatalf("census-locals-apart-from-agents violated: %+v", c)

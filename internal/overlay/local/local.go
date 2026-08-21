@@ -114,17 +114,23 @@ func Description(unit string, unitDirs []string) string {
 	return desc
 }
 
+// unitOf returns "foo" when the cgroup's final path component is
+// foo.service. The user manager (user@1000.service) and session scopes sit
+// higher up the path and are not a process's own unit.
 func unitOf(cgroup string) string {
 	for _, line := range strings.Split(cgroup, "\n") {
-		i := strings.LastIndex(line, ".service")
-		if i < 0 {
+		line = strings.TrimSpace(line)
+		if i := strings.LastIndexByte(line, '/'); i >= 0 {
+			line = line[i+1:]
+		}
+		if !strings.HasSuffix(line, ".service") {
 			continue
 		}
-		head := line[:i]
-		if j := strings.LastIndexByte(head, '/'); j >= 0 {
-			head = head[j+1:]
+		u := strings.TrimSuffix(line, ".service")
+		if strings.HasPrefix(u, "user@") || u == "" {
+			continue
 		}
-		return head
+		return u
 	}
 	return ""
 }

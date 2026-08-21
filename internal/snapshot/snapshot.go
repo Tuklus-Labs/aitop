@@ -69,6 +69,8 @@ type dumpRow struct {
 	SessionID   string    `json:"session_id,omitempty"`
 	Branch      string    `json:"branch,omitempty"`
 	Effort      string    `json:"effort,omitempty"`
+	Entrypoint  string    `json:"entrypoint,omitempty"`
+	Tag         string    `json:"tag,omitempty"`
 	OverlayOK   bool      `json:"overlay_ok"`
 	OverlayOnly bool      `json:"overlay_only,omitempty"`
 	Children    []dumpRow `json:"children,omitempty"`
@@ -93,6 +95,7 @@ func Capture(procRoot, grokHome, claudeHome string) ([]types.Row, error) {
 		p.AgentRoot = r.AgentRoot
 		p.NameHint = r.ProvenNameHint
 		p.ModelHint = r.ModelHint
+		p.Tag = r.Tag
 		classified = append(classified, p)
 	}
 	classified, fold := rollup(classified)
@@ -219,6 +222,7 @@ func flattenWith(r types.Row, host proc.HostSample, now time.Time) dumpRow {
 		Role:        string(r.Process.Role),
 		Runtime:     string(r.Process.Runtime),
 		Status:      present.Status(r),
+		Tag:         r.Process.Tag,
 		RSS:         r.Process.RSS,
 		OverlayOK:   r.OverlayOK,
 		OverlayOnly: r.OverlayOnly,
@@ -258,6 +262,7 @@ func flattenWith(r types.Row, host proc.HostSample, now time.Time) dumpRow {
 		out.SessionID = o.SessionID
 		out.Branch = o.Branch
 		out.Effort = o.Effort
+		out.Entrypoint = o.Entrypoint
 	}
 	for _, c := range r.Children {
 		out.Children = append(out.Children, flattenWith(c, host, now))
