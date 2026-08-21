@@ -21,10 +21,10 @@ go build -o aitop ./cmd/aitop
 ╰─────────────────────────────────────────────────────────────────────────────────────╯
 ╭─┤ agents ├─┤ sort cpu rss tok age name cost ▼ ├─┤ / grok ├───────────────────┤ 2/18 ├─╮
 │ NAME              PROJECT   MODEL        CPU   RSS   TOK CTX         COST   AGE STAT  TITLE
-│  ◆ claude         aitop     fable-5      4.0  1.1G  283k —              —   24m busy  aitop polish and UI refinement
-│ ▾◇ Grok +1        aitop     grok-4.6     0.9  1.3G  301k ■■■■■■ 60%    —  14h12 idle  aitop: house-wide agent occupancy TUI
+│  ● claude         aitop     fable-5      4.0  1.1G  283k —              —   24m busy  aitop polish and UI refinement
+│ ▾○ Grok +1        aitop     grok-4.6     0.9  1.3G  301k ■■■■■■ 60%    —  14h12 idle  aitop: house-wide agent occupancy TUI
 │  └─◌ explore                grok-4.6       —     —     — —              —    10s busy  Scout Grok overlay join
-│  ● Sol            ~         gpt-5.6-sol  0.0  339M   87k ■■■■■■ 11%    —   1d2h idle
+│  • Sol            ~         gpt-5.6-sol  0.0  339M   87k ■■■■■■ 11%    —   1d2h idle
 │ ▸▪ parlor ×10                            0.0  1.2G     —                —  4d15h idle  parlor residents
 ╰─┤ q quit ├─┤ ↑↓ move ├─┤ ⏎ expand ├─┤ i detail ├─┤ / filter ├─┤ c r t a n sort ├─┤ R reverse ├─╯
 ```
@@ -32,7 +32,7 @@ go build -o aitop ./cmd/aitop
 - **NAME** is proven or it is `comm`. `Grok` comes from a grok-build seat in
   `summary.json`; `Sol`/`Luna`/`Terra` from an exact Codex model id; `Heph`
   only from a heartbeat file. Five interactive `claude` processes stay
-  `claude`. Family glyph: ◆ claude, ◇ grok, ● codex/ChatGPT, ▪ parlor, ◌
+  `claude`. Family glyph: ● claude, ○ grok, • codex/ChatGPT, ▪ parlor, ◌
   in-process subagent.
 - **CPU** is one-core percent over a 1s sliding window (a single 100ms tick on
   a 100 Hz clock quantizes to 10% steps). First sample paints `—`, never 0.

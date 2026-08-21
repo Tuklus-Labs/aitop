@@ -93,14 +93,15 @@ func (s *Styles) Proc(t float64) lipgloss.Style { return grad(s.procGrad, t) }
 // Runtime accent: a small glyph per family so the eye can sort the house
 // without reading. Colors stay inside the theme.
 func (s *Styles) RuntimeGlyph(rt string) string {
-	// Geometric shapes only (U+25xx): every monospace font ships them.
+	// Geometric shapes only, and only ones that stay inside one cell in
+	// FantasqueSansM (kitty here): ◆/◇ overdraw the following space there.
 	switch rt {
 	case "claude":
-		return s.Title.Render("◆")
+		return s.Title.Render("●")
 	case "grok":
-		return s.Misc.Render("◇")
+		return s.Misc.Render("○")
 	case "codex":
-		return s.CPU(0).Render("●")
+		return s.CPU(0).Render("•")
 	case "hermes":
 		return s.CPU(0.5).Render("●")
 	case "parlor":
