@@ -57,12 +57,25 @@ type transcript struct {
 	cwd       string
 	branch    string
 	effort    string
+	usage     types.Usage // lifetime, deduped by message id
+}
+
+// lifetime is the incremental state behind transcript.usage: how many bytes
+// of complete lines have been counted, and which message ids already were.
+// Claude Code writes one line per content block with the SAME message id and
+// the SAME usage on each, so counting lines would multiply a turn by its
+// block count.
+type lifetime struct {
+	offset int64
+	seen   map[string]struct{}
+	usage  types.Usage
 }
 
 type cacheEntry struct {
 	size  int64
 	mtime time.Time
 	res   transcript
+	life  lifetime
 }
 
 // transcriptFile is the seam the collector reads transcripts through. Tests
@@ -200,7 +213,11 @@ func (c *Collector) transcript(path string) (transcript, bool) {
 	if hit && ent.size == st.Size() && ent.mtime.Equal(st.ModTime()) {
 		return ent.res, true
 	}
-	t, size, mtime, err := c.parse(path)
+	var prior lifetime
+	if hit {
+		prior = ent.life
+	}
+	t, life, size, mtime, err := c.parse(path, prior)
 	if err != nil {
 		return transcript{}, false
 	}
@@ -210,8 +227,9 @@ func (c *Collector) transcript(path string) (transcript, bool) {
 		// hold only tool output must not blank a known model or token count.
 		t = t.mergeOnto(ent.res)
 	}
+	t.usage = life.usage
 	c.mu.Lock()
-	c.cache[path] = cacheEntry{size: size, mtime: mtime, res: t}
+	c.cache[path] = cacheEntry{size: size, mtime: mtime, res: t, life: life}
 	c.mu.Unlock()
 	return t, true
 }
@@ -240,15 +258,15 @@ func (t transcript) mergeOnto(old transcript) transcript {
 	return t
 }
 
-func (c *Collector) parse(path string) (transcript, int64, time.Time, error) {
+func (c *Collector) parse(path string, prior lifetime) (transcript, lifetime, int64, time.Time, error) {
 	f, err := c.openFn(path)
 	if err != nil {
-		return transcript{}, 0, time.Time{}, err
+		return transcript{}, lifetime{}, 0, time.Time{}, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return transcript{}, 0, time.Time{}, err
+		return transcript{}, lifetime{}, 0, time.Time{}, err
 	}
 	size := st.Size()
 	// Read the last window. If it holds no assistant record, widen and read
@@ -261,11 +279,11 @@ func (c *Collector) parse(path string) (transcript, int64, time.Time, error) {
 			off = size - window
 		}
 		if _, err := f.Seek(off, io.SeekStart); err != nil {
-			return transcript{}, 0, time.Time{}, err
+			return transcript{}, lifetime{}, 0, time.Time{}, err
 		}
 		data, err := io.ReadAll(f)
 		if err != nil {
-			return transcript{}, 0, time.Time{}, err
+			return transcript{}, lifetime{}, 0, time.Time{}, err
 		}
 		if off > 0 {
 			// The window opened mid-record: everything up to and including
@@ -281,7 +299,77 @@ func (c *Collector) parse(path string) (transcript, int64, time.Time, error) {
 			break
 		}
 	}
-	return t, size, st.ModTime(), nil
+	// Lifetime usage: continue from the prior offset on the same handle. A
+	// file that shrank (rotation) starts over.
+	life := prior
+	if life.seen == nil || size < life.offset {
+		life = lifetime{seen: map[string]struct{}{}}
+	}
+	if size > life.offset {
+		if _, err := f.Seek(life.offset, io.SeekStart); err != nil {
+			return transcript{}, lifetime{}, 0, time.Time{}, err
+		}
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return transcript{}, lifetime{}, 0, time.Time{}, err
+		}
+		// Only complete lines count; a torn final line waits for next time.
+		if last := bytes.LastIndexByte(data, '\n'); last >= 0 {
+			countUsage(data[:last+1], &life)
+			life.offset += int64(last + 1)
+		}
+	}
+	return t, life, size, st.ModTime(), nil
+}
+
+// countUsage folds assistant usage into lifetime totals, once per message id.
+func countUsage(data []byte, life *lifetime) {
+	for len(data) > 0 {
+		var line []byte
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			line, data = data[:i], data[i+1:]
+		} else {
+			line, data = data, nil
+		}
+		if len(line) == 0 || line[0] != '{' || len(line) > maxLine {
+			continue
+		}
+		if !bytes.Contains(line, []byte(`"assistant"`)) {
+			continue
+		}
+		var rec struct {
+			Type    string `json:"type"`
+			Message struct {
+				ID    string `json:"id"`
+				Model string `json:"model"`
+				Usage *struct {
+					Input     int64 `json:"input_tokens"`
+					CacheCrea int64 `json:"cache_creation_input_tokens"`
+					CacheRead int64 `json:"cache_read_input_tokens"`
+					Output    int64 `json:"output_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &rec) != nil || rec.Type != "assistant" || rec.Message.Usage == nil {
+			continue
+		}
+		if rec.Message.Model == "" || rec.Message.Model == syntheticModel {
+			continue
+		}
+		id := rec.Message.ID
+		if id != "" {
+			if _, dup := life.seen[id]; dup {
+				continue
+			}
+			life.seen[id] = struct{}{}
+		}
+		u := rec.Message.Usage
+		life.usage.Input += u.Input
+		life.usage.CacheWrite += u.CacheCrea
+		life.usage.CacheRead += u.CacheRead
+		life.usage.Output += u.Output
+		life.usage.Known = true
+	}
 }
 
 // scan splits on newlines by hand: bufio.Scanner stops dead at a line over
@@ -385,6 +473,9 @@ func applyTranscript(ov *types.Overlay, t transcript) {
 	}
 	if t.effort != "" {
 		ov.Effort = t.effort
+	}
+	if t.usage.Known {
+		ov.Usage = t.usage
 	}
 	// ContextWindow and CostUSD stay nil. No file here carries either, and a
 	// window guessed from a model name is a number we made up.

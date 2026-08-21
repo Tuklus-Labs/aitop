@@ -177,3 +177,26 @@ func TestEveryTableCommIsACandidate(t *testing.T) {
 		t.Fatal("non-agent-comm-is-not-candidate violated: walk would read cmdline for every process")
 	}
 }
+
+func TestLocalBackendsGetARow(t *testing.T) {
+	llama := types.Process{PID: 2322227, PPID: 1389, Comm: "llama-server",
+		Cmdline: []string{"/home/aegis/Projects/llama-cpp-turboquant/build-sync/bin/llama-server", "-m", "/home/aegis/Models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf", "-ngl", "99"}}
+	got := ClassifyCgroup(llama, "0::/user.slice/user-1000.slice/user@1000.service/app.slice/hermes-qwen38.service")
+	if got.Runtime != types.RuntimeLocal || !got.AgentRoot || got.Role != types.RoleSidecar {
+		t.Fatalf("local-backend-is-a-row violated: %+v", got)
+	}
+	if got.ProvenNameHint != "qwen38" || got.ModelHint != "Qwen3.8-27B-Q4_K_M" {
+		t.Fatalf("local-backend-named-from-unit-and-argv violated: name=%q model=%q", got.ProvenNameHint, got.ModelHint)
+	}
+	ollama := types.Process{PID: 8009, PPID: 1, Comm: "ollama", Cmdline: []string{"/usr/local/bin/ollama", "serve"}}
+	if got := ClassifyCgroup(ollama, "0::/system.slice/ollama.service"); got.Runtime != types.RuntimeLocal || got.ProvenNameHint != "ollama" {
+		t.Fatalf("ollama-is-a-local-row violated: %+v", got)
+	}
+	talaria := types.Process{PID: 1, Comm: "python", Cmdline: []string{"/home/aegis/.hermes/hermes-agent/venv/bin/python", "/home/aegis/Projects/talaria/server.py", "serve"}}
+	if got := ClassifyCgroup(talaria, "0::/user.slice/.../talaria.service"); got.Runtime != types.RuntimeLocal || got.ProvenNameHint == "Iris" || got.Role == types.RolePrimary {
+		t.Fatalf("talaria-is-local-not-iris violated: %+v", got)
+	}
+	if !proc.Candidate("vllm") || !proc.Candidate("llama-server") {
+		t.Fatal("local-comms-are-full-candidates violated")
+	}
+}

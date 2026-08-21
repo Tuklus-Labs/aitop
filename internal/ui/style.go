@@ -106,6 +106,8 @@ func (s *Styles) RuntimeGlyph(rt string) string {
 		return s.CPU(0.5).Render("●")
 	case "parlor":
 		return s.Dim.Render("▪")
+	case "local":
+		return s.CPU(0.5).Render("▴")
 	case "forge":
 		return s.Hi.Render("▲")
 	default:

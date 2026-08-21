@@ -267,7 +267,54 @@ func TestCensusExcludesParlorAndMonitorsFromAgents(t *testing.T) {
 	}
 }
 
+func TestCostIsMarkedEstimatedAndLocalsGroup(t *testing.T) {
+	snap := fixtureSnapshot()
+	est := 323.4
+	snap.Rows[1].Overlay.CostUSD = &est
+	snap.Rows[1].Overlay.CostSource = "table:builtin"
+	snap.Rows[1].Overlay.Usage = types.Usage{Input: 1, CacheRead: 2, CacheWrite: 3, Output: 4, Known: true}
+	snap.Rows = append(snap.Rows, types.Row{Process: types.Process{PID: 2322227, StartTime: 500, Comm: "llama-server", Runtime: types.RuntimeLocal, Role: types.RoleSidecar, AgentRoot: true, NameHint: "qwen38", ModelHint: "Qwen3.8-27B-Q4_K_M", RSS: 20 << 30, CPUKnown: true}, OverlayOK: true, Overlay: types.Overlay{Runtime: types.RuntimeLocal, Title: "Iris: Qwen3.8-27B GPU-resident"}})
+	s := ansi.Strip(Render(snap, theme.Nightfable(), 200, 40, now))
+	for _, want := range []string{"~$323", "cost ~$323", "▴ 1 local", "locals ×1", "qwen38", "Qwen3.8-27B-Q4_K_M", "Iris: Qwen3.8-27B GPU-resident"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("view-marks-estimates-and-shows-locals violated: %q missing from\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "$323.4") || strings.Contains(s, "$323.") {
+		t.Fatalf("cost-formatter-three-figures violated:\n%s", s)
+	}
+	// The header prints its own ~; the COLUMN must carry the marker too.
+	if row := rowLine(s, "aitop polish"); !strings.Contains(row, "~$323") {
+		t.Fatalf("cost-column-marks-estimate violated: row lacks ~$323:\n%s", row)
+	}
+	c := takeCensus(snap.Rows)
+	if c.locals != 1 || c.agents != 2 || !c.costEstimated || c.cost != 323.4 {
+		t.Fatalf("census-locals-apart-from-agents violated: %+v", c)
+	}
+	// Runtime-reported cost (none today) would carry no marker.
+	snap.Rows[1].Overlay.CostSource = ""
+	s = ansi.Strip(Render(snap, theme.Nightfable(), 200, 40, now))
+	if row := rowLine(s, "aitop polish"); strings.Contains(row, "~$323") || !strings.Contains(row, "$323") {
+		t.Fatalf("runtime-cost-has-no-estimate-marker violated:\n%s", row)
+	}
+}
+
+func rowLine(frame, needle string) string {
+	for _, l := range strings.Split(frame, "\n") {
+		if strings.Contains(l, needle) {
+			return l
+		}
+	}
+	return ""
+}
+
 func TestFormatters(t *testing.T) {
+	for v, want := range map[float64]string{0.83: "$0.83", 1.07: "$1.07", 45.12: "$45.1", 323.4: "$323", 1234.5: "$1234"} {
+		x := v
+		if got := Cost(&x); got != want {
+			t.Fatalf("cost-formatter violated: %v -> %q want %q", v, got, want)
+		}
+	}
 	cases := map[string]string{
 		Bytes(0): absent, Bytes(1302 << 20): "1.3G", Bytes(336 << 20): "336M", Bytes(12 << 30): "12G",
 		Age(0): absent, Age(12 * time.Second): "12s", Age(3 * time.Minute): "3m", Age(6*time.Hour + 48*time.Minute): "6h48", Age(52 * time.Hour): "2d4h",

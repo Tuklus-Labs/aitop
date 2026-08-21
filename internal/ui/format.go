@@ -73,11 +73,20 @@ func Pct(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
+// Cost keeps three significant figures where the eye needs them: $0.83,
+// $1.07, $45.1, $323, $1234.
 func Cost(v *float64) string {
 	if v == nil {
 		return absent
 	}
-	return fmt.Sprintf("$%.2f", *v)
+	switch x := *v; {
+	case x < 10:
+		return fmt.Sprintf("$%.2f", x)
+	case x < 100:
+		return fmt.Sprintf("$%.1f", x)
+	default:
+		return fmt.Sprintf("$%.0f", x)
+	}
 }
 
 // Meter draws btop's process meter: width cells of ■, filled from the

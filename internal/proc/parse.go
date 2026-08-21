@@ -156,11 +156,12 @@ var fullComms = map[string]bool{
 	"ChatGPT": true, "electron": true, "node-MainThread": true, "node": true,
 	"python": true, "python3": true, "hermes": true,
 	"parlor-doorman": true, "parlor-impulse": true, "parlor_relayd": true, "charon": true,
+	"ollama": true, "llama-server": true, "local-brain": true, "vllm": true,
 }
 
 var cmdlineComms = map[string]bool{
-	"zsh": true, "bash": true, "sh": true, "systemd-inhibit": true, "ollama": true,
-	"llama-server": true, "local-brain": true, "forgejo": true, "forgejo-runner": true,
+	"zsh": true, "bash": true, "sh": true, "systemd-inhibit": true,
+	"forgejo": true, "forgejo-runner": true,
 	"chrome_crashpad": true, "browser_crashpa": true,
 }
 

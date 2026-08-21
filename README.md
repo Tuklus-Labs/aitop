@@ -41,13 +41,25 @@ go build -o aitop ./cmd/aitop
 - **TOK / CTX** are the last turn's context occupancy and, when the runtime
   exposes a window, the fill meter. Claude has no window file, so CTX is `—`
   rather than a guess from the model name.
-- **COST** is `—` on this box. No runtime here writes USD; there is no price
-  table. A known zero would be a different state.
+- **COST** is an estimate, and says so: `~$45.6`. No runtime here writes USD,
+  so aitop prices lifetime usage against list prices (see Prices below).
+  Claude usage is summed across the whole transcript once, deduped by
+  `message.id` (Claude Code writes one line per content block, each repeating
+  the turn's usage), then only appended bytes are read. Codex reports
+  cumulative totals itself. Grok writes no totals, so Grok rows stay `—`. A
+  runtime-reported cost, if one ever appears, paints without the `~`. The
+  detail pane shows the source (`table:builtin` / `table:user`) and the
+  lifetime breakdown (in, cache read, cache write, out).
 - **STAT** is the runtime's word when it has one (Claude sidecar `busy`,
   `idle`, `shell`); `/proc` may upgrade to busy (cpu ≥ 8% or state R) and may
   not downgrade on one sleepy tick.
 - **Groups:** Parlor residents (named from their systemd cgroup instance) and
-  house monitors fold into collapsible rows so agents own the screen.
+  house monitors fold into collapsible rows so agents own the screen. Local
+  inference backends (`llama-server` units such as Iris's `hermes-qwen38`,
+  `ollama serve`, `vllm`, the model proxy, talaria) sit in a `locals` group
+  that starts expanded, named from their unit, MODEL from the file they
+  loaded, TITLE from the unit's `Description=`. The Hermes agent herself is
+  a primary named `Iris`; her backends are locals.
 
 ## Keys
 
@@ -75,6 +87,36 @@ built-in `nightfable`. Gradients (`cpu_*`, `used_*`, `process_*`) color CPU,
 tokens, and meters by magnitude exactly as btop does; `hi_fg` marks hotkeys;
 `selected_bg` is the only background painted.
 
+## Prices
+
+Built-in list prices (USD per million tokens) with their source and read date
+live in `internal/price/builtin.go`: Anthropic (Fable 5, Opus 5/4.8/4.7/4.6/4.5,
+Sonnet 5/4.6/4.5, Haiku 4.5), OpenAI (gpt-5.6 sol/terra/luna/cyber, 5.5, 5,
+5.3-codex, the daybreak aliases), xAI (grok-4.6/4.5/4.3, grok-build). Cache
+reads are 0.1x input; Claude cache writes use the 1h tier that Claude Code
+reports. Context windows come from the runtime when it writes one (Codex,
+Grok); for Claude they come from the table (1M for 4.6 and later, 200k before)
+and the detail pane marks them `(table)`.
+
+Override or extend with `~/.config/aitop/prices.json` (`$AITOP_PRICES`,
+`--prices`), one object per model id:
+
+```json
+{
+  "claude-fable-5": {"in": 10, "out": 50, "cache_read": 1, "cache_write": 20, "window": 1000000},
+  "my-local-model": {"in": 0, "out": 0, "window": 32768}
+}
+```
+
+Model ids are normalized (provider prefix, `[1m]`, dated suffix stripped) and
+fall back to the longest table key that prefixes them, so `grok-4.6-fast`
+prices as `grok-4.6`. An id with no entry costs `—`; there is no guessing.
+`--no-prices` turns estimates off entirely.
+
+These are list-price equivalents. Subscription plans (Max, Codex, SuperGrok)
+bill differently; the number answers "what would this session have cost on
+the API", which is the only cost a transcript can support.
+
 ## Architecture
 
 Dual-index. `/proc` is the occupancy spine; session files are an overlay
@@ -87,9 +129,11 @@ cache. Three clocks, none of which share IO:
    agent-shaped comms. Classify, roll up, join, publish.
 3. **Overlay** (goroutine, 1s): Grok `active_sessions.json` + `summary.json` +
    `signals.json` + `subagents/*/meta.json`; Claude `~/.claude/sessions/<pid>.json`
-   + the transcript tail (256 KiB, cached by size+mtime); Codex rollout JSONL
-   via live fds; heartbeat files. Publishes an overlay list the sampler joins
-   against.
+   + the transcript tail (256 KiB, widening to 4 MiB when the tail is all tool
+   output, cached by size+mtime) + an incremental lifetime-usage pass; Codex
+   rollout JSONL via live fds; systemd unit descriptions for locals; heartbeat
+   files. Prices are applied here, never in the joiner. Publishes an overlay
+   list the sampler joins against.
 
 `internal/join.Join` is a pure left join on `(pid, starttime)`. Overlays with
 no live process never create rows; processes with no overlay keep theirs with

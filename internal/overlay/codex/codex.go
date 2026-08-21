@@ -135,6 +135,13 @@ func scanJSONL(chunk []byte, ov *types.Overlay) {
 					Last struct {
 						Total int64 `json:"total_tokens"`
 					} `json:"last_token_usage"`
+					Total struct {
+						Input      int64 `json:"input_tokens"`
+						Cached     int64 `json:"cached_input_tokens"`
+						CacheWrite int64 `json:"cache_write_input_tokens"`
+						Output     int64 `json:"output_tokens"`
+						Total      int64 `json:"total_tokens"`
+					} `json:"total_token_usage"`
 					Window int64 `json:"model_context_window"`
 				} `json:"info"`
 			}
@@ -146,6 +153,17 @@ func scanJSONL(chunk []byte, ov *types.Overlay) {
 				if p.Info.Window != 0 {
 					w := p.Info.Window
 					ov.ContextWindow = &w
+				}
+				if tt := p.Info.Total; tt.Total != 0 {
+					// input_tokens is the whole prompt; cached is the subset
+					// served from cache. Bill the difference as fresh input.
+					ov.Usage = types.Usage{
+						Input:      tt.Input - tt.Cached,
+						CacheRead:  tt.Cached,
+						CacheWrite: tt.CacheWrite,
+						Output:     tt.Output,
+						Known:      true,
+					}
 				}
 			}
 		}

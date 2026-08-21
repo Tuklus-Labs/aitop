@@ -11,6 +11,7 @@ const (
 	RuntimeHermes  Runtime = "hermes"
 	RuntimeParlor  Runtime = "parlor"
 	RuntimeForge   Runtime = "forge"
+	RuntimeLocal   Runtime = "local" // local inference backends: llama-server units, ollama, model proxy
 	RuntimeUnknown Runtime = ""
 )
 
@@ -48,6 +49,18 @@ type Process struct {
 	AgentRoot   bool
 	Cgroup      string
 	NameHint    string
+	ModelHint   string // classifier-derived, e.g. gguf basename from llama-server argv
+}
+
+// Usage is lifetime token usage for a session, when the runtime exposes it.
+// Known=false means the runtime wrote no totals (Grok); never treat the zero
+// value as "used nothing".
+type Usage struct {
+	Input      int64 // uncached input
+	CacheRead  int64
+	CacheWrite int64
+	Output     int64
+	Known      bool
 }
 
 // Overlay is a cache entry from session files or heartbeat. Nil pointers are absent.
@@ -63,6 +76,9 @@ type Overlay struct {
 	ContextWindow    *int64
 	ContextFill      *float64
 	CostUSD          *float64
+	CostSource       string // "" = runtime-reported (none do today); "table:builtin" / "table:user" = estimate from price table
+	Usage            Usage
+	WindowSource     string // "" = runtime file; "table" = price table lookup
 	SubagentLive     int
 	SubagentDeclared int
 	Title            string

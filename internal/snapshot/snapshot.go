@@ -34,6 +34,13 @@ type dumpHost struct {
 	Uptime   float64  `json:"uptime_s,omitempty"`
 }
 
+type dumpUse struct {
+	Input      int64 `json:"input"`
+	CacheRead  int64 `json:"cache_read"`
+	CacheWrite int64 `json:"cache_write"`
+	Output     int64 `json:"output"`
+}
+
 type dumpRow struct {
 	PID         int32     `json:"pid,omitempty"`
 	Comm        string    `json:"comm,omitempty"`
@@ -49,6 +56,9 @@ type dumpRow struct {
 	CtxWindow   *int64    `json:"ctx_window,omitempty"`
 	CtxFill     *float64  `json:"ctx_fill,omitempty"`
 	CostUSD     *float64  `json:"cost_usd,omitempty"`
+	CostSource  string    `json:"cost_source,omitempty"`
+	WindowSrc   string    `json:"ctx_window_source,omitempty"`
+	Usage       *dumpUse  `json:"usage,omitempty"`
 	AgeS        *float64  `json:"age_s,omitempty"`
 	SubLive     int       `json:"subagents_live,omitempty"`
 	SubDeclared int       `json:"subagents_declared,omitempty"`
@@ -82,6 +92,7 @@ func Capture(procRoot, grokHome, claudeHome string) ([]types.Row, error) {
 		p.CollapseKey = r.CollapseKey
 		p.AgentRoot = r.AgentRoot
 		p.NameHint = r.ProvenNameHint
+		p.ModelHint = r.ModelHint
 		classified = append(classified, p)
 	}
 	classified, fold := rollup(classified)
@@ -233,6 +244,11 @@ func flattenWith(r types.Row, host proc.HostSample, now time.Time) dumpRow {
 			out.CtxFill = &f
 		}
 		out.CostUSD = o.CostUSD
+		out.CostSource = o.CostSource
+		out.WindowSrc = o.WindowSource
+		if o.Usage.Known {
+			out.Usage = &dumpUse{Input: o.Usage.Input, CacheRead: o.Usage.CacheRead, CacheWrite: o.Usage.CacheWrite, Output: o.Usage.Output}
+		}
 		out.SubLive = o.SubagentLive
 		out.SubDeclared = o.SubagentDeclared
 		out.SubStatus = o.SubagentStatus

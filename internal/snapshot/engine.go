@@ -10,6 +10,8 @@ import (
 	"aitop/internal/overlay/codex"
 	"aitop/internal/overlay/grok"
 	"aitop/internal/overlay/heartbeat"
+	"aitop/internal/overlay/local"
+	"aitop/internal/price"
 	"aitop/internal/proc"
 	"aitop/internal/types"
 )
@@ -34,7 +36,8 @@ type Engine struct {
 	ClaudeHome string
 	CodexHome  string
 	HBDir      string
-	Overlay    OverlayFn // tests inject a spy
+	Overlay    OverlayFn    // tests inject a spy
+	Prices     *price.Table // nil = no estimates
 	Interval   time.Duration
 	cpu        *proc.Tracker
 	host       *proc.Host
@@ -80,6 +83,7 @@ func (e *Engine) collectOverlays() ([]types.Overlay, error) {
 			ovs = append(ovs, h...)
 		}
 	}
+	ovs = append(ovs, local.Collect(e.ProcRoot, nil)...)
 	return ovs, nil
 }
 
@@ -102,7 +106,7 @@ func (e *Engine) tickProc() {
 	var classified []types.Process
 	for _, p := range procs {
 		r := classify.ClassifyCgroupParent(p, byPID[p.PPID], p.Cgroup)
-		p.Role, p.Runtime, p.CollapseKey, p.AgentRoot, p.NameHint = r.Role, r.Runtime, r.CollapseKey, r.AgentRoot, r.ProvenNameHint
+		p.Role, p.Runtime, p.CollapseKey, p.AgentRoot, p.NameHint, p.ModelHint = r.Role, r.Runtime, r.CollapseKey, r.AgentRoot, r.ProvenNameHint, r.ModelHint
 		classified = append(classified, p)
 	}
 	classified = e.cpu.Apply(classified, t0)
@@ -136,6 +140,8 @@ func (e *Engine) refreshOverlayOnly() {
 		e.overlayEr.Store(err.Error())
 		return // keep last good snapshot, never empty it
 	}
+	// Estimates are stamped here, off-tick, never in the joiner.
+	e.Prices.Apply(ovs)
 	e.overlays.Store(ovs)
 	e.overlayAt.Store(time.Now())
 	e.overlayEr.Store("")

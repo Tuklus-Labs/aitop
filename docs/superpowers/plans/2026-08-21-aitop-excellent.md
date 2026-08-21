@@ -41,6 +41,8 @@ Subagents do not commit, do not touch files outside their row, and return their 
 - [x] Walk cost: 25-42ms -> 11-12ms (stat-only RSS, tiered detail reads, candidate allowlist with cross-check gate)
 - [x] CPU%: 1s sliding window; zero delta is a known 0, not "—" (Grok's delta function had that backwards)
 - [x] README, SABOTAGE_LOG rows (PF-H1..2, PF-U1..4, PF-P1..3 + subagent rows), ~/bin/aitop installed
+- [x] Cost (Gary ask 2026-08-21): estimate from a built-in list-price table (Anthropic/OpenAI/xAI, read from vendor pages that day) plus `~/.config/aitop/prices.json`; Claude lifetime usage deduped by message.id and read incrementally; Codex cumulative totals; Grok has none. Marked `~$`, source in detail. Windows: 4.6+ Claude = 1M (live sessions hold 550k; the 200k default painted 275%).
+- [x] Locals (Gary ask 2026-08-21): llama-server units, ollama, vllm, model proxy, talaria form a `locals` group (expanded by default), named from the systemd unit, MODEL from argv, TITLE from the unit Description. Iris's `hermes-qwen38.service` and every other hermes-* backend were in `failed` state (SIGKILL 2026-08-20 14:09) when this landed; not restarted by me.
 - [ ] Not done: Heph heartbeat writer (hook that stamps $XDG_RUNTIME_DIR/aitop/hb/<pid>.json); no Claude row is proven Heph until it exists
 
 ## Decisions worth keeping

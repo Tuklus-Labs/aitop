@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -245,8 +246,11 @@ func TestTailWindowDiscardsPartialFirstLine(t *testing.T) {
 	sp := installSpy(c)
 	ov := collectOne(t, c, home)
 
-	if sp.read > tailBytes {
-		t.Fatalf("claude-reads-only-the-tail violated: read %d bytes of a %d byte transcript, cap is %d", sp.read, len(data), tailBytes)
+	// Last-turn fields come from the tail window; lifetime usage needs one
+	// full pass the first time a transcript is seen, and only the appended
+	// bytes after that (asserted in TestLifetimeUsageIsIncremental).
+	if sp.read > int64(len(data))+tailBytes {
+		t.Fatalf("claude-first-parse-is-one-pass-plus-tail violated: read %d bytes of a %d byte transcript, cap is %d", sp.read, len(data), int64(len(data))+tailBytes)
 	}
 	if ov.Title != "" {
 		t.Fatalf("claude-discards-the-partial-first-line violated: got title %q, a record straddling the window edge was parsed as if it were whole", ov.Title)
@@ -637,3 +641,69 @@ func TestOversizedLineIsSkippedNotFatal(t *testing.T) {
 		t.Fatalf("claude-scan-survives-oversized-line violated: title=%q", tr.title)
 	}
 }
+
+// Claude Code writes one line per content block, each carrying the same
+// message id and the same usage. Lifetime totals count a message once.
+func TestLifetimeUsageDedupesByMessageID(t *testing.T) {
+	line := func(id string, in, cw, cr, out int64) string {
+		return `{"type":"assistant","message":{"id":"` + id + `","model":"claude-fable-5","usage":{"input_tokens":` + itoa(in) + `,"cache_creation_input_tokens":` + itoa(cw) + `,"cache_read_input_tokens":` + itoa(cr) + `,"output_tokens":` + itoa(out) + `}}}` + "\n"
+	}
+	data := line("msg_a", 100, 10, 1000, 50) + line("msg_a", 100, 10, 1000, 50) + line("msg_a", 100, 10, 1000, 50) +
+		`{"type":"assistant","message":{"id":"msg_syn","model":"<synthetic>","usage":{"input_tokens":999,"output_tokens":999}}}` + "\n" +
+		line("msg_b", 7, 0, 3, 2)
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	installSpy(c)
+	tr, ok := c.transcript(path)
+	if !ok || !tr.usage.Known {
+		t.Fatalf("claude-lifetime-usage-known violated: ok=%v known=%v", ok, tr.usage.Known)
+	}
+	want := types.Usage{Input: 107, CacheWrite: 10, CacheRead: 1003, Output: 52, Known: true}
+	if tr.usage != want {
+		t.Fatalf("claude-lifetime-usage-dedupes-by-message-id violated: got %+v want %+v (three lines of msg_a count once, synthetic skipped)", tr.usage, want)
+	}
+}
+
+func TestLifetimeUsageIsIncremental(t *testing.T) {
+	first := `{"type":"assistant","message":{"id":"msg_1","model":"claude-opus-5","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":5}}}` + "\n"
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(first), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	sp := installSpy(c)
+	if tr, _ := c.transcript(path); tr.usage.Output != 5 {
+		t.Fatalf("setup: usage %+v", tr.usage)
+	}
+	before := sp.read
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appended := `{"type":"assistant","message":{"id":"msg_2","model":"claude-opus-5","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7}}}` + "\n" +
+		`{"type":"assistant","message":{"id":"msg_3","model":"claude-opus-5","usage":{"input_tokens":1,"output_tokens":1` // torn: no closing, no newline
+	if _, err := f.WriteString(appended); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	tr, _ := c.transcript(path)
+	if tr.usage.Output != 12 || tr.usage.Input != 11 {
+		t.Fatalf("claude-lifetime-usage-counts-appended-complete-lines violated: %+v (msg_2 counted, torn msg_3 not)", tr.usage)
+	}
+	if got := sp.read - before; got > int64(len(appended))+int64(len(first))+tailBytes {
+		t.Fatalf("claude-reparse-reads-only-appended-plus-tail violated: read %d bytes for %d appended", got, len(appended))
+	}
+	// The torn line completes; it counts exactly once.
+	f, _ = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	f.WriteString(`}}}` + "\n")
+	f.Close()
+	tr, _ = c.transcript(path)
+	if tr.usage.Output != 13 || tr.usage.Input != 12 {
+		t.Fatalf("claude-torn-line-counts-once-when-completed violated: %+v", tr.usage)
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }

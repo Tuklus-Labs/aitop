@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"aitop/internal/price"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
 	"aitop/internal/ui"
@@ -21,7 +22,21 @@ func main() {
 	themePath := flag.String("theme", "", "btop .theme file (default: $AITOP_THEME, then btop.conf color_theme, then built-in nightfable)")
 	interval := flag.Duration("interval", 100*time.Millisecond, "proc sample and paint interval")
 	screenshot := flag.String("screenshot", "", "render one frame at WxH (e.g. 120x40) to stdout and exit")
+	pricesPath := flag.String("prices", "", "price table override (default: $AITOP_PRICES, then ~/.config/aitop/prices.json)")
+	noPrices := flag.Bool("no-prices", false, "never estimate cost; COST stays — unless a runtime reports it")
 	flag.Parse()
+
+	var prices *price.Table
+	if !*noPrices {
+		prices = price.Builtin()
+		up := *pricesPath
+		if up == "" {
+			up = price.UserPath()
+		}
+		if err := prices.LoadUser(up); err != nil {
+			fmt.Fprintf(os.Stderr, "aitop: %v (builtin prices still apply)\n", err)
+		}
+	}
 
 	procRoot, grokHome, claudeHome, codexHome, hbDir := snapshot.DefaultHomes()
 	eng := &snapshot.Engine{
@@ -31,6 +46,7 @@ func main() {
 		CodexHome:  codexHome,
 		HBDir:      hbDir,
 		Interval:   *interval,
+		Prices:     prices,
 	}
 	if *jsonOnce || *once {
 		eng.RefreshOverlay()

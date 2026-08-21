@@ -38,7 +38,7 @@ var allColumns = []column{
 	{"RSS", 6, true, 7},
 	{"TOK", 6, true, 3},
 	{"CTX", 10, false, 2},
-	{"COST", 6, true, 1},
+	{"COST", 7, true, 1},
 	{"AGE", 6, true, 6},
 	{"STAT", 6, false, 9},
 }
@@ -244,6 +244,9 @@ func (s *Styles) renderHeader(b *strings.Builder, f frame) {
 		s.Misc.Render(fmt.Sprintf("◌ %d wait", c.wait)),
 		errStyle.Render(fmt.Sprintf("✕ %d err", c.err)),
 	}
+	if c.locals > 0 {
+		segs = append(segs, s.CPU(0.5).Render(fmt.Sprintf("▴ %d local", c.locals)))
+	}
 	var health []string
 	if f.snap != nil {
 		age := f.now.Sub(f.snap.OverlayAt)
@@ -307,7 +310,11 @@ func (s *Styles) renderHeader(b *strings.Builder, f frame) {
 	costSeg := s.Dim.Render("cost ")
 	if c.costKnown {
 		v := c.cost
-		costSeg += s.Text.Render(Cost(&v))
+		if c.costEstimated {
+			costSeg += s.Dim.Render("~") + s.Text.Render(Cost(&v))
+		} else {
+			costSeg += s.Text.Render(Cost(&v))
+		}
 	} else {
 		costSeg += s.Dim.Render(absent)
 	}
@@ -476,6 +483,9 @@ func (s *Styles) renderLine(l line, cols []column, titleW int, selected bool) st
 			if l.row.OverlayOK || l.row.OverlayOnly {
 				m = shortModel(l.row.Overlay.Model)
 			}
+			if m == "" && l.row.Process.ModelHint != "" {
+				m = l.row.Process.ModelHint
+			}
 			b.WriteString(s.textCell(m, c.width, paint))
 		case "CPU":
 			if l.cpuKnown {
@@ -509,7 +519,11 @@ func (s *Styles) renderLine(l line, cols []column, titleW int, selected bool) st
 			}
 		case "COST":
 			if l.row.Overlay.CostUSD != nil && l.row.OverlayOK {
-				b.WriteString(paint(s.Text, rfit(Cost(l.row.Overlay.CostUSD), c.width)))
+				v := Cost(l.row.Overlay.CostUSD)
+				if l.row.Overlay.CostSource != "" {
+					v = "~" + v
+				}
+				b.WriteString(paint(s.Used(costLevel(*l.row.Overlay.CostUSD)), rfit(v, c.width)))
 			} else {
 				b.WriteString(paint(s.Dim, rfit(absent, c.width)))
 			}
@@ -666,8 +680,23 @@ func (s *Styles) titleCell(l line, w int, paint func(lipgloss.Style, string) str
 	return paint(s.Text, fit(t, w))
 }
 
+// costLevel maps dollars to a gradient position: $1 is a third of the way,
+// $10 is most of the way, $30 pins the end.
+func costLevel(usd float64) float64 {
+	switch {
+	case usd <= 0:
+		return 0
+	case usd >= 30:
+		return 1
+	default:
+		return 0.33 + 0.67*(usd/30)
+	}
+}
+
 func groupSummary(l line) string {
 	switch l.key {
+	case "group:locals":
+		return "local inference and Iris's sidecars (llama-server units, ollama, model proxy)"
 	case "group:parlor":
 		return "parlor residents (sidecar workers, named from cgroup)"
 	case "group:monitors":
@@ -732,7 +761,19 @@ func (s *Styles) renderDetail(b *strings.Builder, f frame, h int) {
 		if fill, ok := present.ContextFill(o); ok {
 			ctx = s.Meter(16, fill, s.Used) + " " + s.Used(fill).Render(fmt.Sprintf("%.0f%%", fill*100))
 		}
-		lines = append(lines, " "+kv("tokens", tok)+"   "+ctx+"   "+kv("cost", Cost(o.CostUSD))+"   "+kv("model", o.Model))
+		if o.WindowSource != "" && o.ContextWindow != nil {
+			tok += " (" + o.WindowSource + ")"
+		}
+		cost := Cost(o.CostUSD)
+		if o.CostUSD != nil && o.CostSource != "" {
+			cost = "~" + cost + " (" + o.CostSource + ")"
+		}
+		lines = append(lines, " "+kv("tokens", tok)+"   "+ctx+"   "+kv("cost", cost)+"   "+kv("model", o.Model))
+		if o.Usage.Known {
+			u := o.Usage
+			lines = append(lines, " "+kv("lifetime", fmt.Sprintf("in %s · cache read %s · cache write %s · out %s",
+				Tokens(&u.Input), Tokens(&u.CacheRead), Tokens(&u.CacheWrite), Tokens(&u.Output))))
+		}
 		if o.SubagentDeclared > 0 || len(r.Children) > 0 {
 			lines = append(lines, " "+kv("subagents", fmt.Sprintf("%d running · %d declared", o.SubagentLive, o.SubagentDeclared)))
 			for _, c := range recentChildren(r, h-2-len(lines)) {
@@ -770,7 +811,8 @@ func (s *Styles) groupMembers(f frame, g line) []string {
 	for _, r := range f.snap.Rows {
 		isMon := r.Process.Role == types.RoleMonitor
 		isParlor := r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar
-		if (g.key == "group:monitors" && isMon) || (g.key == "group:parlor" && isParlor) {
+		isLocal := r.Process.Runtime == types.RuntimeLocal
+		if (g.key == "group:monitors" && isMon) || (g.key == "group:parlor" && isParlor) || (g.key == "group:locals" && isLocal) {
 			cpu := absent
 			if r.Process.CPUKnown {
 				cpu = Pct(r.Process.CPUPct)

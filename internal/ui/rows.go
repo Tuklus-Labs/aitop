@@ -92,13 +92,15 @@ func utoa(n uint64) string {
 
 // shape turns a snapshot into the visible lines for this frame.
 func (s *shaper) shape(rows []types.Row, host proc.HostSample, now time.Time) []line {
-	var agents, parlor, monitors []types.Row
+	var agents, parlor, monitors, locals []types.Row
 	for _, r := range rows {
 		switch {
 		case r.Process.Role == types.RoleMonitor:
 			monitors = append(monitors, r)
 		case r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar:
 			parlor = append(parlor, r)
+		case r.Process.Runtime == types.RuntimeLocal:
+			locals = append(locals, r)
 		default:
 			agents = append(agents, r)
 		}
@@ -135,6 +137,9 @@ func (s *shaper) shape(rows []types.Row, host proc.HostSample, now time.Time) []
 			continue
 		}
 		out = append(out, s.childLines(l.row, host, now, 1)...)
+	}
+	if len(locals) > 0 {
+		out = append(out, s.groupLines("locals", "group:locals", locals, host, now)...)
 	}
 	if len(parlor) > 0 {
 		out = append(out, s.groupLines("parlor", "group:parlor", parlor, host, now)...)
@@ -330,6 +335,7 @@ func costOr(p *float64) float64 {
 type census struct {
 	agents, busy, idle, wait, err int
 	subs                          int     // running in-process subagents (overlay-only rows)
+	locals                        int     // local inference backends
 	cpu                           float64 // sum of one-core percents across agent rows
 	rss                           uint64
 	tokens                        int64
@@ -337,6 +343,7 @@ type census struct {
 	ctxTok, ctxWin                int64
 	cost                          float64
 	costKnown                     bool
+	costEstimated                 bool
 }
 
 func takeCensus(rows []types.Row) census {
@@ -347,6 +354,11 @@ func takeCensus(rows []types.Row) census {
 			return
 		}
 		isParlor := r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar
+		if r.Process.Runtime == types.RuntimeLocal {
+			c.locals++
+			c.rss += r.Process.RSS
+			return
+		}
 		if !r.OverlayOnly && !isParlor {
 			c.agents++
 			if r.Process.CPUKnown {
@@ -384,6 +396,9 @@ func takeCensus(rows []types.Row) census {
 		if r.OverlayOK && r.Overlay.CostUSD != nil {
 			c.cost += *r.Overlay.CostUSD
 			c.costKnown = true
+			if r.Overlay.CostSource != "" {
+				c.costEstimated = true
+			}
 		}
 		for _, k := range r.Children {
 			if k.OverlayOnly && k.Overlay.SubagentStatus != "running" && k.Overlay.SubagentStatus != "" {

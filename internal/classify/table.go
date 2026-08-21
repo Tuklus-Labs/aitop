@@ -14,6 +14,7 @@ type Result struct {
 	CollapseKey    string
 	AgentRoot      bool
 	ProvenNameHint string
+	ModelHint      string // local backends: the model file they serve
 }
 
 func Classify(p types.Process) Result {
@@ -52,22 +53,25 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 	if comm == "systemd-inhibit" && proc.ArgvContains(argv, "--who=grok") {
 		return Result{Role: types.RoleIgnore}
 	}
+	// Local inference and Iris's own sidecars: not agents, but the house
+	// wants them on the board, so they get a row in the locals group.
 	if comm == "ollama" && proc.ArgvContains(argv, "serve") {
-		return Result{Role: types.RoleIgnore}
+		return local("ollama", "", cgroup)
 	}
 	if proc.ArgvContains(argv, "hermes-agent/venv") && proc.ArgvContains(argv, "/Projects/talaria/") {
-		return Result{Role: types.RoleIgnore}
+		return local("talaria", "", cgroup)
+	}
+	if proc.ArgvContains(argv, "aegis-model-proxy.py") {
+		return local("model-proxy", "", cgroup)
+	}
+	if comm == "llama-server" || comm == "local-brain" || strings.HasPrefix(comm, "vllm") || (len(argv) > 1 && path.Base(argv[0]) == "vllm" && argv[1] == "serve") {
+		return local(comm, modelArg(argv), cgroup)
 	}
 	if comm == "forgejo" || comm == "forgejo-runner" || strings.Contains(exe, "/usr/bin/forgejo") {
 		return Result{Role: types.RoleIgnore}
 	}
 	if comm == "parlor_relayd" || strings.HasSuffix(exe, "parlor_relayd") {
 		return Result{Role: types.RoleIgnore}
-	}
-	if comm == "llama-server" || comm == "local-brain" || strings.Contains(cgroup, "hermes-") && strings.Contains(cgroup, ".service") {
-		if comm == "llama-server" || comm == "local-brain" {
-			return Result{Role: types.RoleIgnore}
-		}
 	}
 
 	if comm == "ChatGPT" && !hasChatGPTType(argv) && (strings.HasSuffix(exe, "/ChatGPT") || exe == "" || strings.Contains(exe, "chatgpt")) {
@@ -138,6 +142,63 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 	}
 
 	return Result{Role: types.RoleDrop}
+}
+
+// local builds the row for a local inference backend. The name is the
+// systemd unit instance when there is one (hermes-qwen38.service -> qwen38),
+// else the comm; the model is whatever the argv says it loaded.
+func local(name, model, cgroup string) Result {
+	if u := unitName(cgroup); u != "" {
+		name = strings.TrimPrefix(u, "hermes-")
+	}
+	return Result{
+		Role:           types.RoleSidecar,
+		Runtime:        types.RuntimeLocal,
+		CollapseKey:    "local:" + name,
+		AgentRoot:      true,
+		ProvenNameHint: name,
+		ModelHint:      model,
+	}
+}
+
+// unitName extracts "foo" from a cgroup path ending in .../foo.service.
+func unitName(cgroup string) string {
+	for _, line := range strings.Split(cgroup, "\n") {
+		i := strings.LastIndex(line, ".service")
+		if i < 0 {
+			continue
+		}
+		head := line[:i]
+		if j := strings.LastIndexByte(head, '/'); j >= 0 {
+			head = head[j+1:]
+		}
+		if head != "" {
+			return head
+		}
+	}
+	return ""
+}
+
+// modelArg returns the basename (no extension) of the model file named by
+// -m / --model / --model-path, or "" when argv does not say.
+func modelArg(argv []string) string {
+	for i, a := range argv {
+		switch {
+		case (a == "-m" || a == "--model" || a == "--model-path") && i+1 < len(argv):
+			return modelBase(argv[i+1])
+		case strings.HasPrefix(a, "--model="):
+			return modelBase(strings.TrimPrefix(a, "--model="))
+		}
+	}
+	return ""
+}
+
+func modelBase(p string) string {
+	b := path.Base(p)
+	for _, ext := range []string{".gguf", ".safetensors", ".bin"} {
+		b = strings.TrimSuffix(b, ext)
+	}
+	return b
 }
 
 func hasChatGPTType(argv []string) bool {
