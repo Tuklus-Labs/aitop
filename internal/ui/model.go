@@ -85,9 +85,7 @@ func (m *Model) absorb(now time.Time) {
 	if s == nil {
 		return
 	}
-	if !m.sparkAt.IsZero() && now.Sub(m.sparkAt) < sparkEvery {
-		// still record a changed snapshot
-	} else {
+	if m.sparkAt.IsZero() || now.Sub(m.sparkAt) >= sparkEvery {
 		m.sparkAt = now
 		if s.Host.CPUKnown {
 			m.spark = append(m.spark, s.Host.CPUBusyPct)

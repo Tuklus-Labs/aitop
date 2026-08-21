@@ -21,7 +21,6 @@ type Styles struct {
 	Div      lipgloss.Style // dividers, tree rails
 	Misc     lipgloss.Style // proc_misc, the slate accent
 	Selected lipgloss.Style // selected_bg + selected_fg
-	SelFill  lipgloss.Style // selected_bg only, for the rest of the row
 	MeterBg  lipgloss.Style // meter_bg, the empty part of a meter
 
 	status map[string]lipgloss.Style
@@ -42,7 +41,6 @@ func NewStyles(t theme.Theme) *Styles {
 	s.Div = lipgloss.NewStyle().Foreground(c(t.DivLine))
 	s.Misc = lipgloss.NewStyle().Foreground(c(t.ProcMisc))
 	s.Selected = lipgloss.NewStyle().Foreground(c(t.SelectedFg)).Background(c(t.SelectedBg)).Bold(true)
-	s.SelFill = lipgloss.NewStyle().Background(c(t.SelectedBg))
 	s.MeterBg = lipgloss.NewStyle().Foreground(c(t.MeterBg))
 
 	s.status = map[string]lipgloss.Style{
