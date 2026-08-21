@@ -574,3 +574,66 @@ func derefTokens(p *int64) any {
 	}
 	return *p
 }
+
+// A 200 KB tool result can fill the whole first window after the partial-line
+// discard. The parse must widen rather than report a live session with no
+// model; and the widening must not cost a second open.
+func TestTailWidensPastAGiantToolResult(t *testing.T) {
+	assistant := `{"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}},"cwd":"/home/aegis/Projects/aitop"}` + "\n"
+	giant := `{"type":"attachment","blob":"` + strings.Repeat("x", tailBytes+1000) + `"}` + "\n"
+	data := []byte(assistant + giant + `{"type":"user","cwd":"/home/aegis/Projects/aitop"}` + "\n")
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	sp := installSpy(c)
+	tr, ok := c.transcript(path)
+	if !ok || tr.model != "claude-fable-5" || !tr.hasTokens || tr.tokens != 6 {
+		t.Fatalf("claude-tail-widens-past-giant-line violated: ok=%v model=%q tokens=%d", ok, tr.model, tr.tokens)
+	}
+	if sp.opens != 1 {
+		t.Fatalf("claude-widening-reuses-the-open-handle violated: opens=%d", sp.opens)
+	}
+}
+
+// Append-only growth must never blank a value the previous parse saw.
+func TestReparseKeepsKnownModelWhenWindowHoldsOnlyToolOutput(t *testing.T) {
+	assistant := `{"type":"assistant","message":{"model":"claude-opus-5","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}` + "\n"
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(assistant), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	sp := installSpy(c)
+	if tr, _ := c.transcript(path); tr.model != "claude-opus-5" {
+		t.Fatalf("setup: model %q", tr.model)
+	}
+	// Grow past maxTail with tool output only.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"type":"attachment","blob":"` + strings.Repeat("y", maxTail+100) + `"}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	tr, ok := c.transcript(path)
+	if sp.opens != 2 {
+		t.Fatalf("claude-grown-transcript-is-reparsed violated: opens=%d", sp.opens)
+	}
+	if !ok || tr.model != "claude-opus-5" || !tr.hasTokens || tr.tokens != 10 {
+		t.Fatalf("claude-reparse-keeps-known-values violated: ok=%v model=%q tokens=%d hasTokens=%v", ok, tr.model, tr.tokens, tr.hasTokens)
+	}
+}
+
+// One line over maxLine is skipped; the records after it still count.
+func TestOversizedLineIsSkippedNotFatal(t *testing.T) {
+	var tr transcript
+	data := []byte(`{"type":"attachment","blob":"` + strings.Repeat("z", maxLine+10) + `"}` + "\n" +
+		`{"type":"ai-title","aiTitle":"after the giant"}` + "\n")
+	scan(data, &tr)
+	if tr.title != "after the giant" {
+		t.Fatalf("claude-scan-survives-oversized-line violated: title=%q", tr.title)
+	}
+}

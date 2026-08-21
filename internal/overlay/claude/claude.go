@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -19,6 +18,11 @@ import (
 // tailBytes is the most of any transcript we ever read. Transcripts run to many
 // MB; the occupancy of the current turn lives in the last few records.
 const tailBytes = 256 * 1024
+
+// maxTail caps how far the window widens when the tail holds no assistant
+// record (a 200 KB tool result can fill the whole first window). Past this we
+// accept the miss; the previous parse's values stay via the cache merge.
+const maxTail = 4 * 1024 * 1024
 
 // maxLine is the scanner token ceiling. No line inside a tailBytes window can
 // exceed it, so ErrTooLong is unreachable today; the ceiling is there for the
@@ -200,10 +204,40 @@ func (c *Collector) transcript(path string) (transcript, bool) {
 	if err != nil {
 		return transcript{}, false
 	}
+	if hit {
+		// Append-only file: a value the previous parse saw is still the last
+		// one until a newer record replaces it. A window that happens to
+		// hold only tool output must not blank a known model or token count.
+		t = t.mergeOnto(ent.res)
+	}
 	c.mu.Lock()
 	c.cache[path] = cacheEntry{size: size, mtime: mtime, res: t}
 	c.mu.Unlock()
 	return t, true
+}
+
+// mergeOnto fills fields this parse did not see from an older parse of the
+// same file.
+func (t transcript) mergeOnto(old transcript) transcript {
+	if t.model == "" {
+		t.model = old.model
+	}
+	if !t.hasTokens && old.hasTokens {
+		t.tokens, t.hasTokens = old.tokens, true
+	}
+	if t.title == "" {
+		t.title = old.title
+	}
+	if t.cwd == "" {
+		t.cwd = old.cwd
+	}
+	if t.branch == "" {
+		t.branch = old.branch
+	}
+	if t.effort == "" {
+		t.effort = old.effort
+	}
+	return t
 }
 
 func (c *Collector) parse(path string) (transcript, int64, time.Time, error) {
@@ -217,36 +251,54 @@ func (c *Collector) parse(path string) (transcript, int64, time.Time, error) {
 		return transcript{}, 0, time.Time{}, err
 	}
 	size := st.Size()
-	var off int64
-	if size > tailBytes {
-		off = size - tailBytes
+	// Read the last window. If it holds no assistant record, widen and read
+	// again from the same handle, up to maxTail.
+	var t transcript
+	for window := int64(tailBytes); ; window *= 4 {
+		t = transcript{}
+		var off int64
+		if size > window {
+			off = size - window
+		}
 		if _, err := f.Seek(off, io.SeekStart); err != nil {
 			return transcript{}, 0, time.Time{}, err
 		}
-	}
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return transcript{}, 0, time.Time{}, err
-	}
-	if off > 0 {
-		// The window opened mid-record: everything up to and including the
-		// first newline is the tail of a line whose head we never saw.
-		if i := bytes.IndexByte(data, '\n'); i >= 0 {
-			data = data[i+1:]
-		} else {
-			data = nil
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return transcript{}, 0, time.Time{}, err
+		}
+		if off > 0 {
+			// The window opened mid-record: everything up to and including
+			// the first newline is the tail of a line whose head we never saw.
+			if i := bytes.IndexByte(data, '\n'); i >= 0 {
+				data = data[i+1:]
+			} else {
+				data = nil
+			}
+		}
+		scan(data, &t)
+		if t.model != "" || off == 0 || window >= maxTail {
+			break
 		}
 	}
-	var t transcript
-	scan(data, &t)
 	return t, size, st.ModTime(), nil
 }
 
+// scan splits on newlines by hand: bufio.Scanner stops dead at a line over
+// its ceiling, which would drop every record after one giant tool result.
+// An oversized line is skipped on its own.
 func scan(data []byte, t *transcript) {
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	sc.Buffer(make([]byte, 0, 64*1024), maxLine)
-	for sc.Scan() {
-		parseLine(sc.Bytes(), t)
+	for len(data) > 0 {
+		var line []byte
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			line, data = data[:i], data[i+1:]
+		} else {
+			line, data = data, nil
+		}
+		if len(line) > maxLine {
+			continue
+		}
+		parseLine(line, t)
 	}
 }
 

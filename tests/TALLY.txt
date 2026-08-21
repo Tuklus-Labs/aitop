@@ -7,7 +7,7 @@ ok  	aitop/internal/overlay/grok	(cached)
 ok  	aitop/internal/overlay/heartbeat	(cached)
 ok  	aitop/internal/present	(cached)
 ok  	aitop/internal/proc	(cached)
-ok  	aitop/internal/snapshot	0.002s
+ok  	aitop/internal/snapshot	(cached)
 ok  	aitop/internal/theme	(cached)
 ok  	aitop/internal/types	(cached)
 ok  	aitop/internal/ui	(cached)

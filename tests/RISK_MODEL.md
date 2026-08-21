@@ -46,3 +46,4 @@ Axes: invariants populated above. State: dual-index Tick vs overlay. Boundaries:
 | Claude transcript: tokens formula, synthetic skip, tail window, missing transcript, encoder, cache, no window inference | `claude.Test*` (26 tests across claude+theme) |
 | Theme: btop parse variants, fallback, precedence, lerp, steps, never-empty | `theme.Test*` |
 | Grok finished subagents emitted with type and timestamps | `grok.TestCollectJoinsActiveSessionAndCountsRunningSubs` |
+| Claude tail: giant tool result fills the window / append-only growth / oversized line | `claude.TestTailWidensPastAGiantToolResult`, `TestReparseKeepsKnownModelWhenWindowHoldsOnlyToolOutput`, `TestOversizedLineIsSkippedNotFatal` |
