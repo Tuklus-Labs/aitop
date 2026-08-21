@@ -1,0 +1,8 @@
+# Every color here is malformed except main_fg.
+theme[main_fg]="#A1B2C3"
+theme[title]="#GGG"
+theme[hi_fg]="red"
+theme[selected_bg]="#12345"
+theme[proc_misc]=""
+theme[cpu_start]="#1234567"
+theme[cpu_end]="rgb(1,2,3)"

@@ -1,169 +1,322 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"aitop/internal/snapshot"
-	"aitop/internal/types"
+	"aitop/internal/theme"
 )
 
-var (
-	cyan   = lipgloss.Color("#00FFFF")
-	dim    = lipgloss.Color("#555555")
-	green  = lipgloss.Color("#00FF00")
-	orange = lipgloss.Color("#FFA500")
-	red    = lipgloss.Color("#FF6B6B")
+const (
+	paintEvery  = 100 * time.Millisecond
+	sparkEvery  = 500 * time.Millisecond
+	sparkWindow = 60 // samples kept: 30s at 500ms
 )
 
 type tickMsg time.Time
 
+// Model is the bubbletea model. It paints the engine's latest snapshot and
+// never performs IO of its own: the 100ms path is read-only over memory.
 type Model struct {
-	rows    *atomic.Value // []types.Row
-	width   int
-	height  int
-	filter  string
-	overlay time.Time
+	src    *atomic.Pointer[snapshot.Snapshot]
+	styles *Styles
+	shaper *shaper
+
+	width, height int
+	lines         []line
+	census        census
+	cursor        int
+	cursorKey     string
+	scroll        int
+	detail        bool
+	filterMode    bool
+	lastSeq       uint64
+	spark         []float64
+	sparkAt       time.Time
+	now           func() time.Time
 }
 
-func New(rows *atomic.Value) Model {
-	return Model{rows: rows, overlay: time.Now()}
+func New(src *atomic.Pointer[snapshot.Snapshot], t theme.Theme) Model {
+	return Model{
+		src:    src,
+		styles: NewStyles(t),
+		shaper: newShaper(),
+		now:    time.Now,
+	}
 }
 
-func (m Model) Init() tea.Cmd {
-	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (m Model) Init() tea.Cmd { return tick() }
+
+func tick() tea.Cmd {
+	return tea.Tick(paintEvery, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func (m Model) snap() *snapshot.Snapshot {
+	if m.src == nil {
+		return nil
+	}
+	return m.src.Load()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		}
+		m.clampScroll()
+		return m, nil
 	case tickMsg:
-		return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+		m.absorb(time.Time(msg))
+		return m, tick()
+	case tea.KeyMsg:
+		if m.filterMode {
+			return m.filterKey(msg), nil
+		}
+		return m.key(msg)
 	}
 	return m, nil
 }
 
+// absorb pulls the newest snapshot if it changed and reshapes the table.
+func (m *Model) absorb(now time.Time) {
+	s := m.snap()
+	if s == nil {
+		return
+	}
+	if !m.sparkAt.IsZero() && now.Sub(m.sparkAt) < sparkEvery {
+		// still record a changed snapshot
+	} else {
+		m.sparkAt = now
+		if s.Host.CPUKnown {
+			m.spark = append(m.spark, s.Host.CPUBusyPct)
+			if len(m.spark) > sparkWindow {
+				m.spark = m.spark[len(m.spark)-sparkWindow:]
+			}
+		}
+	}
+	if s.Seq == m.lastSeq {
+		return
+	}
+	m.lastSeq = s.Seq
+	m.reshape(now)
+}
+
+func (m *Model) reshape(now time.Time) {
+	s := m.snap()
+	if s == nil {
+		m.lines = nil
+		m.census = census{}
+		return
+	}
+	m.lines = m.shaper.shape(s.Rows, s.Host, now)
+	m.census = takeCensus(s.Rows)
+	// Keep the cursor on the same row across re-sorts.
+	if m.cursorKey != "" {
+		for i, l := range m.lines {
+			if l.key == m.cursorKey {
+				m.cursor = i
+				break
+			}
+		}
+	}
+	m.clampCursor()
+}
+
+func (m *Model) clampCursor() {
+	if m.cursor >= len(m.lines) {
+		m.cursor = len(m.lines) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if len(m.lines) > 0 {
+		m.cursorKey = m.lines[m.cursor].key
+	}
+	m.clampScroll()
+}
+
+func (m *Model) rowsVisible() int {
+	detailH := 0
+	if m.detail {
+		detailH = 10
+		if m.height < 30 {
+			detailH = 7
+		}
+	}
+	n := m.height - headerH - detailH - 3
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+func (m *Model) clampScroll() {
+	vis := m.rowsVisible()
+	if m.cursor < m.scroll {
+		m.scroll = m.cursor
+	}
+	if m.cursor >= m.scroll+vis {
+		m.scroll = m.cursor - vis + 1
+	}
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
+}
+
+func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	now := m.now()
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "j", "down":
+		m.cursor++
+		m.clampCursor()
+	case "k", "up":
+		m.cursor--
+		m.clampCursor()
+	case "g", "home":
+		m.cursor = 0
+		m.clampCursor()
+	case "G", "end":
+		m.cursor = len(m.lines) - 1
+		m.clampCursor()
+	case "ctrl+d", "pgdown":
+		m.cursor += m.rowsVisible() / 2
+		m.clampCursor()
+	case "ctrl+u", "pgup":
+		m.cursor -= m.rowsVisible() / 2
+		m.clampCursor()
+	case "enter", "l", "right", " ":
+		if m.cursor < len(m.lines) {
+			l := m.lines[m.cursor]
+			if l.children > 0 {
+				m.shaper.collapsed[l.key] = !m.shaper.collapsed[l.key]
+				m.reshape(now)
+			} else if msg.String() == "enter" {
+				m.detail = !m.detail
+				m.clampScroll()
+			}
+		}
+	case "h", "left":
+		if m.cursor < len(m.lines) {
+			l := m.lines[m.cursor]
+			if l.children > 0 && !m.shaper.collapsed[l.key] {
+				m.shaper.collapsed[l.key] = true
+			} else if l.depth > 0 {
+				// jump to parent
+				for i := m.cursor - 1; i >= 0; i-- {
+					if m.lines[i].depth < l.depth {
+						m.cursor = i
+						break
+					}
+				}
+			}
+			m.reshape(now)
+		}
+	case "i":
+		m.detail = !m.detail
+		m.clampScroll()
+	case "d":
+		m.shaper.showDone = !m.shaper.showDone
+		m.reshape(now)
+	case "/":
+		m.filterMode = true
+	case "esc":
+		if m.shaper.filter != "" {
+			m.shaper.filter = ""
+			m.reshape(now)
+		}
+	case "R":
+		m.shaper.reverse = !m.shaper.reverse
+		m.reshape(now)
+	case "c":
+		m.setSort(sortCPU, now)
+	case "r":
+		m.setSort(sortRSS, now)
+	case "t":
+		m.setSort(sortTok, now)
+	case "a":
+		m.setSort(sortAge, now)
+	case "n":
+		m.setSort(sortName, now)
+	case "$":
+		m.setSort(sortCost, now)
+	}
+	return m, nil
+}
+
+func (m *Model) setSort(k sortKey, now time.Time) {
+	if m.shaper.sort == k {
+		m.shaper.reverse = !m.shaper.reverse
+	} else {
+		m.shaper.sort = k
+		m.shaper.reverse = false
+	}
+	m.reshape(now)
+}
+
+func (m Model) filterKey(msg tea.KeyMsg) Model {
+	now := m.now()
+	switch msg.String() {
+	case "esc":
+		m.filterMode = false
+		m.shaper.filter = ""
+		m.reshape(now)
+	case "enter":
+		m.filterMode = false
+	case "backspace":
+		if f := m.shaper.filter; f != "" {
+			r := []rune(f)
+			m.shaper.filter = string(r[:len(r)-1])
+			m.reshape(now)
+		}
+	case "ctrl+c":
+		m.filterMode = false
+	default:
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			m.shaper.filter += string(msg.Runes)
+			if msg.Type == tea.KeySpace {
+				m.shaper.filter += " "
+			}
+			m.reshape(now)
+		}
+	}
+	return m
+}
+
 func (m Model) View() string {
-	var rows []types.Row
-	if m.rows != nil {
-		if v := m.rows.Load(); v != nil {
-			rows, _ = v.([]types.Row)
-		}
-	}
-	if m.width > 0 && m.width < 80 && m.height > 0 && m.height < 12 {
-		return fmt.Sprintf("aitop  80x24 required (now %dx%d)\n", m.width, m.height)
-	}
-	return Render(rows, time.Since(m.overlay))
+	return m.styles.render(frame{
+		snap:       m.snap(),
+		lines:      m.lines,
+		census:     m.census,
+		width:      m.width,
+		height:     m.height,
+		cursor:     m.cursor,
+		scroll:     m.scroll,
+		detail:     m.detail,
+		filterMode: m.filterMode,
+		filter:     m.shaper.filter,
+		sort:       m.shaper.sort,
+		reverse:    m.shaper.reverse,
+		showDone:   m.shaper.showDone,
+		spark:      m.spark,
+		now:        m.now(),
+	})
 }
 
-func Render(rows []types.Row, overlayAge time.Duration) string {
-	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Foreground(cyan).Bold(true).Render("aitop"))
-	fmt.Fprintf(&b, "  %d live  overlay %s  %s\n", len(rows), overlayAge.Truncate(100*time.Millisecond), snapshot.Canary)
-	b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("TREE NAME            PROJECT     MODEL        CPU    RSS   TOKS  SUB  STAT"))
-	b.WriteByte('\n')
-	if len(rows) == 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("(none)\n"))
-		return b.String()
+// Render paints one frame from a snapshot at the given size, for tests and
+// --once screenshots. It shares every code path with the live view.
+func Render(s *snapshot.Snapshot, t theme.Theme, width, height int, now time.Time) string {
+	m := New(nil, t)
+	m.width, m.height = width, height
+	if s != nil {
+		m.lines = m.shaper.shape(s.Rows, s.Host, now)
+		m.census = takeCensus(s.Rows)
 	}
-	for _, r := range rows {
-		writeRow(&b, r, 0)
-	}
-	b.WriteString(lipgloss.NewStyle().Foreground(dim).Render("q quit"))
-	b.WriteByte('\n')
-	return b.String()
-}
-
-func writeRow(b *strings.Builder, r types.Row, depth int) {
-	indent := strings.Repeat("  ", depth)
-	glyph := "▸"
-	if r.OverlayOnly {
-		glyph = "◌"
-	}
-	name := r.Process.Comm
-	if r.Process.NameHint != "" && r.Process.NameHint != "unknown" {
-		name = strings.TrimPrefix(r.Process.NameHint, "machine-gary-")
-	}
-	if r.OverlayOK && r.Overlay.ProvenName != "" {
-		name = r.Overlay.ProvenName
-	}
-	if r.OverlayOnly {
-		name = r.Overlay.Title
-		if name == "" {
-			name = r.Overlay.SubagentID
-		}
-	}
-	if len(name) > 16 {
-		name = name[:15] + "…"
-	}
-	proj := r.Overlay.Project
-	model := r.Overlay.Model
-	if len(model) > 14 {
-		model = model[:13] + "…"
-	}
-	tok := "—"
-	if r.Overlay.TokensUsed != nil {
-		tok = fmt.Sprintf("%d", *r.Overlay.TokensUsed)
-	}
-	stat := "wait"
-	if r.Process.CPUKnown && r.Process.CPUPct >= 8 {
-		stat = "busy"
-	}
-	if r.OverlayOnly {
-		stat = r.Overlay.SubagentStatus
-		if stat == "" {
-			stat = "wait"
-		}
-	}
-	stStyle := lipgloss.NewStyle().Foreground(green)
-	switch stat {
-	case "busy", "running":
-		stStyle = lipgloss.NewStyle().Foreground(orange)
-	case "error", "failed":
-		stStyle = lipgloss.NewStyle().Foreground(red)
-	}
-	cpu := "—"
-	if r.Process.CPUKnown {
-		cpu = fmt.Sprintf("%.0f", r.Process.CPUPct)
-	}
-	fmt.Fprintf(b, "%s%s %-16s %-11s %-12s %5s %6s %6s %3d  %s\n",
-		indent, glyph, name, trunc(proj, 11), trunc(model, 12),
-		cpu, rss(r.Process.RSS), tok, r.Overlay.SubagentLive, stStyle.Render(stat))
-	for _, c := range r.Children {
-		writeRow(b, c, depth+1)
-	}
-}
-
-func trunc(s string, n int) string {
-	if s == "" {
-		return "—"
-	}
-	if len(s) > n {
-		return s[:n-1] + "…"
-	}
-	return s
-}
-
-func rss(n uint64) string {
-	if n == 0 {
-		return "—"
-	}
-	if n >= 1<<30 {
-		return fmt.Sprintf("%.1fG", float64(n)/float64(1<<30))
-	}
-	if n >= 1<<20 {
-		return fmt.Sprintf("%.0fM", float64(n)/float64(1<<20))
-	}
-	return fmt.Sprintf("%.0fK", float64(n)/1024)
+	return m.styles.render(frame{
+		snap: s, lines: m.lines, census: m.census, width: width, height: height,
+		sort: m.shaper.sort, now: now,
+	})
 }

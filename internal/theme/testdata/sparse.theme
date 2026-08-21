@@ -1,0 +1,9 @@
+# A theme that sets almost nothing. btop interpolates the missing mids.
+theme[main_fg]="#DDEEFF"
+
+# start and end, no mid
+theme[cpu_start]="#204060"
+theme[cpu_end]="#80A0C0"
+
+# only one endpoint moved; the other stays whatever the fallback palette says
+theme[used_start]="#000000"

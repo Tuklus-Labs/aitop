@@ -158,3 +158,22 @@ func TestCodexNodeWrapperIsNotSecondAgent(t *testing.T) {
 		t.Fatalf("codex-node-wrapper-is-not-a-second-agent violated: role=%s", got.Role)
 	}
 }
+
+// Every comm the table matches on must be a proc.Candidate, or the two-pass
+// walk hands the classifier a process with no cmdline/exe and the rule
+// silently never fires.
+func TestEveryTableCommIsACandidate(t *testing.T) {
+	for _, comm := range []string{
+		"chrome_crashpad", "browser_crashpa", "ChatGPT", "electron", "node-MainThread", "node",
+		"zsh", "bash", "systemd-inhibit", "ollama", "python", "python3", "forgejo", "forgejo-runner",
+		"parlor_relayd", "llama-server", "local-brain", "parlor-doorman", "parlor-impulse", "charon",
+		"hermes", "claude", "grok", "codex", "codex-code-mode",
+	} {
+		if !proc.Candidate(comm) {
+			t.Fatalf("classifier-comm-is-walk-candidate violated: %q would reach the table with no cmdline", comm)
+		}
+	}
+	if proc.Candidate("kworker/0:1") || proc.Candidate("firefox") {
+		t.Fatal("non-agent-comm-is-not-candidate violated: walk would read cmdline for every process")
+	}
+}

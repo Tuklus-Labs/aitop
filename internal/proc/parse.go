@@ -115,8 +115,8 @@ func CPUPercent(prev, cur Sample, clkTck int64, wallSec float64) (float64, bool)
 		return 0, false
 	}
 	d := int64(cur.Utime+cur.Stime) - int64(prev.Utime+prev.Stime)
-	if d <= 0 {
-		return 0, false
+	if d < 0 {
+		return 0, false // counter went backwards: pid reuse
 	}
 	return 100.0 * float64(d) / float64(clkTck) / wallSec, true
 }
@@ -146,6 +146,35 @@ func Walk(root string) ([]types.Process, error) {
 	return out, nil
 }
 
+// candidateComms are the comm values the classifier can match on. Processes
+// outside this set (and not fuzzy-matched) get stat/statm only: they still
+// roll CPU/RSS into an agent ancestor, but the 100ms path does not read their
+// cmdline, exe, cwd, or cgroup. classify.TestEveryTableCommIsACandidate keeps
+// this list honest.
+var candidateComms = map[string]bool{
+	"claude": true, "grok": true, "codex": true, "codex-code-mode": true,
+	"ChatGPT": true, "chrome_crashpad": true, "browser_crashpa": true, "electron": true,
+	"node-MainThread": true, "node": true, "zsh": true, "bash": true, "sh": true,
+	"python": true, "python3": true, "hermes": true,
+	"parlor-doorman": true, "parlor-impulse": true, "parlor_relayd": true, "charon": true,
+	"systemd-inhibit": true, "ollama": true, "llama-server": true, "local-brain": true,
+	"forgejo": true, "forgejo-runner": true,
+}
+
+// Candidate reports whether a comm deserves the full /proc read.
+func Candidate(comm string) bool {
+	if candidateComms[comm] {
+		return true
+	}
+	l := strings.ToLower(comm)
+	for _, k := range []string{"claude", "grok", "codex", "hermes", "parlor", "forge", "chatgpt"} {
+		if strings.Contains(l, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func readOne(root, name string, pid int32, page int) (types.Process, error) {
 	dir := filepath.Join(root, name)
 	statb, err := os.ReadFile(filepath.Join(dir, "stat"))
@@ -165,32 +194,26 @@ func readOne(root, name string, pid int32, page int) (types.Process, error) {
 	} else {
 		rss = st.RSSPages * uint64(page)
 	}
-	comm := st.Comm
-	if cb, err := os.ReadFile(filepath.Join(dir, "comm")); err == nil {
-		comm = strings.TrimSpace(string(cb))
-	}
-	var argv []string
-	if raw, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
-		argv = ParseCmdline(raw)
-	}
-	exe, _ := os.Readlink(filepath.Join(dir, "exe"))
-	cwd, _ := os.Readlink(filepath.Join(dir, "cwd"))
-	var cgroup string
-	if gb, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
-		cgroup = strings.TrimSpace(string(gb))
-	}
-	return types.Process{
+	p := types.Process{
 		PID:       pid,
 		PPID:      st.PPID,
 		StartTime: st.StartTime,
-		Comm:      comm,
-		Exe:       exe,
-		Cmdline:   argv,
-		CWD:       cwd,
+		Comm:      st.Comm,
 		RSS:       rss,
 		Utime:     st.Utime,
 		Stime:     st.Stime,
 		State:     st.State,
-		Cgroup:    cgroup,
-	}, nil
+	}
+	if !Candidate(st.Comm) {
+		return p, nil
+	}
+	if raw, err := os.ReadFile(filepath.Join(dir, "cmdline")); err == nil {
+		p.Cmdline = ParseCmdline(raw)
+	}
+	p.Exe, _ = os.Readlink(filepath.Join(dir, "exe"))
+	p.CWD, _ = os.Readlink(filepath.Join(dir, "cwd"))
+	if gb, err := os.ReadFile(filepath.Join(dir, "cgroup")); err == nil {
+		p.Cgroup = strings.TrimSpace(string(gb))
+	}
+	return p, nil
 }

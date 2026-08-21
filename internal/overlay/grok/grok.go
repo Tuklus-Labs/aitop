@@ -123,10 +123,12 @@ func loadSession(grokHome string, e activeEntry) (types.Overlay, []types.Overlay
 			}
 		}
 	}
+	if t, err := time.Parse(time.RFC3339Nano, e.OpenedAt); err == nil {
+		ov.StartedAt = t
+	}
 	subs, err := os.ReadDir(filepath.Join(dir, "subagents"))
 	var children []types.Overlay
 	if err == nil {
-		ov.SubagentDeclared = len(subs)
 		for _, s := range subs {
 			if !s.IsDir() {
 				continue
@@ -136,28 +138,40 @@ func loadSession(grokHome string, e activeEntry) (types.Overlay, []types.Overlay
 				continue
 			}
 			var meta struct {
-				ID     string `json:"subagent_id"`
-				Parent string `json:"parent_session_id"`
-				Child  string `json:"child_session_id"`
-				Status string `json:"status"`
-				Desc   string `json:"description"`
-				Model  string `json:"effective_model_id"`
+				ID        string `json:"subagent_id"`
+				Parent    string `json:"parent_session_id"`
+				Child     string `json:"child_session_id"`
+				Status    string `json:"status"`
+				Desc      string `json:"description"`
+				Model     string `json:"effective_model_id"`
+				Type      string `json:"subagent_type"`
+				Started   string `json:"started_at"`
+				Completed string `json:"completed_at"`
 			}
 			if json.Unmarshal(mb, &meta) != nil {
 				continue
 			}
+			ov.SubagentDeclared++
 			if meta.Status == "running" {
 				ov.SubagentLive++
-				children = append(children, types.Overlay{
-					SessionID:      meta.Child,
-					Runtime:        types.RuntimeGrok,
-					ParentSession:  e.SessionID,
-					SubagentID:     meta.ID,
-					SubagentStatus: meta.Status,
-					Title:          meta.Desc,
-					Model:          meta.Model,
-				})
 			}
+			c := types.Overlay{
+				SessionID:      meta.Child,
+				Runtime:        types.RuntimeGrok,
+				ParentSession:  e.SessionID,
+				SubagentID:     meta.ID,
+				SubagentStatus: meta.Status,
+				SubagentType:   meta.Type,
+				Title:          meta.Desc,
+				Model:          meta.Model,
+			}
+			if t, err := time.Parse(time.RFC3339Nano, meta.Started); err == nil {
+				c.StartedAt = t
+			}
+			if t, err := time.Parse(time.RFC3339Nano, meta.Completed); err == nil {
+				c.CompletedAt = t
+			}
+			children = append(children, c)
 		}
 	}
 	return ov, children, nil

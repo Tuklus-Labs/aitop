@@ -25,7 +25,7 @@ func TestCollectJoinsActiveSessionAndCountsRunningSubs(t *testing.T) {
 	}`)
 	must(t, filepath.Join(sess, "signals.json"), `{"contextTokensUsed":99033,"contextWindowTokens":500000,"contextWindowUsage":19,"primaryModelId":"grok-4.6"}`)
 	must(t, filepath.Join(sess, "subagents", "child1", "meta.json"), `{"subagent_id":"child1","parent_session_id":"01abc","status":"running","description":"detector table"}`)
-	must(t, filepath.Join(sess, "subagents", "child2", "meta.json"), `{"subagent_id":"child2","parent_session_id":"01abc","status":"completed","description":"done"}`)
+	must(t, filepath.Join(sess, "subagents", "child2", "meta.json"), `{"subagent_id":"child2","parent_session_id":"01abc","status":"completed","description":"done","subagent_type":"explore","started_at":"2026-08-21T07:48:27.350731148Z","completed_at":"2026-08-21T07:48:37.357064547Z"}`)
 
 	ovs, err := Collect(root)
 	if err != nil {
@@ -63,6 +63,21 @@ func TestCollectJoinsActiveSessionAndCountsRunningSubs(t *testing.T) {
 	}
 	if parent != 1 || child != 1 {
 		t.Fatalf("grok-parent-and-running-child violated: parent=%d running-child=%d n=%d", parent, child, len(ovs))
+	}
+	var done int
+	for _, o := range ovs {
+		if o.ParentSession == "01abc" && o.SubagentStatus == "completed" {
+			done++
+			if o.SubagentType != "explore" {
+				t.Fatalf("finished-subagent-keeps-type violated: %q", o.SubagentType)
+			}
+			if o.StartedAt.IsZero() || o.CompletedAt.IsZero() || !o.CompletedAt.After(o.StartedAt) {
+				t.Fatalf("finished-subagent-has-timestamps violated: start=%v done=%v", o.StartedAt, o.CompletedAt)
+			}
+		}
+	}
+	if done != 1 {
+		t.Fatalf("finished-subagents-are-emitted-for-history violated: completed=%d", done)
 	}
 }
 

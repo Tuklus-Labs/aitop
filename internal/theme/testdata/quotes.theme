@@ -1,0 +1,5 @@
+theme[main_fg]='#ff0000'
+theme[title]=#00ff00  # unquoted with a trailing comment
+theme[hi_fg]="#0000ff" # double quoted with a trailing comment
+   theme[proc_misc]   =   "#abcdef"
+theme[div_line]="#ff"

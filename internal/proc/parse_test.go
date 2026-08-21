@@ -49,10 +49,15 @@ func TestParseCmdlineChatGPTSpaceBlob(t *testing.T) {
 }
 
 func TestCPUFirstSampleUnknown(t *testing.T) {
+	// First-sample-unknown lives in the Tracker (no prior sample). A zero
+	// delta between two real samples is a known 0%, not absence.
 	a := Sample{Utime: 10, Stime: 2}
 	pct, ok := CPUPercent(a, a, 100, 0.1)
-	if ok {
-		t.Fatalf("first-cpu-sample-is-unknown violated: got ok=true pct=%v (zero-delta / first sample must paint — not 0.0)", pct)
+	if !ok || pct != 0 {
+		t.Fatalf("zero-delta-is-known-zero violated: ok=%v pct=%v", ok, pct)
+	}
+	if _, ok := CPUPercent(Sample{Utime: 20}, Sample{Utime: 10}, 100, 0.1); ok {
+		t.Fatal("backwards-counter-is-unknown violated: pid reuse reported as a percentage")
 	}
 	b := Sample{Utime: 20, Stime: 2}
 	pct, ok = CPUPercent(a, b, 100, 0.1)
