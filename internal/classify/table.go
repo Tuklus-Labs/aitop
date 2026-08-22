@@ -65,8 +65,12 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 	if proc.ArgvContains(argv, "aegis-model-proxy.py") {
 		return local("model-proxy", "", cgroup)
 	}
-	if comm == "llama-server" || comm == "local-brain" || strings.HasPrefix(comm, "vllm") || (len(argv) > 1 && path.Base(argv[0]) == "vllm" && argv[1] == "serve") {
-		return local(comm, modelArg(argv), cgroup)
+	if comm == "llama-server" || comm == "local-brain" || strings.HasPrefix(comm, "vllm") || isVLLM(argv) {
+		name := comm
+		if isVLLM(argv) {
+			name = "vllm"
+		}
+		return local(name, modelArg(argv), cgroup)
 	}
 	if comm == "forgejo" || comm == "forgejo-runner" || strings.Contains(exe, "/usr/bin/forgejo") {
 		return Result{Role: types.RoleIgnore}
@@ -167,6 +171,19 @@ func local(name, model, cgroup string) Result {
 	}
 }
 
+// isVLLM: `vllm serve ...` via the console script, or `python -m vllm.entrypoints...`.
+func isVLLM(argv []string) bool {
+	for i, a := range argv {
+		if path.Base(a) == "vllm" && i+1 < len(argv) && argv[i+1] == "serve" {
+			return true
+		}
+		if strings.Contains(a, "vllm.entrypoints") {
+			return true
+		}
+	}
+	return false
+}
+
 // unitName returns "foo" when the cgroup's final path component is
 // foo.service. The user manager (user@1000.service) and session scopes sit
 // higher up the path and are not a process's own unit.
@@ -192,8 +209,13 @@ func unitName(cgroup string) string {
 // -m / --model / --model-path, or "" when argv does not say.
 func modelArg(argv []string) string {
 	for i, a := range argv {
+		if a == "serve" && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") && i > 0 && path.Base(argv[i-1]) == "vllm" {
+			return modelBase(argv[i+1])
+		}
 		switch {
-		case (a == "-m" || a == "--model" || a == "--model-path") && i+1 < len(argv):
+		case a == "-m" && i+1 < len(argv) && !strings.HasPrefix(path.Base(argv[0]), "python"):
+			return modelBase(argv[i+1]) // llama-server -m; python -m is a module, not a model
+		case (a == "--model" || a == "--model-path") && i+1 < len(argv):
 			return modelBase(argv[i+1])
 		case strings.HasPrefix(a, "--model="):
 			return modelBase(strings.TrimPrefix(a, "--model="))

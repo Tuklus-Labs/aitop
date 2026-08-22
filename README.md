@@ -61,8 +61,18 @@ go build -o aitop ./cmd/aitop
   inference backends (`llama-server` units such as Iris's `hermes-qwen38`,
   `ollama serve`, `vllm`, the model proxy, talaria) sit in a `locals` group
   that starts expanded, named from their unit, MODEL from the file they
-  loaded, TITLE from the unit's `Description=`. The Hermes agent herself is
-  a primary named `Iris`; her backends are locals.
+  loaded, TITLE from the unit's `Description=` (or the model file, quant, and
+  llama.cpp build when launched by hand). The Hermes agent herself is a
+  primary named `Iris`; her backends are locals.
+- **Local tokens** come from the server itself, polled on a separate clock so
+  a generating model never stalls the board. llama-server: `/slots` gives TOK
+  (prompt + decoded across slots), CTX (against the summed slot windows),
+  STAT (`busy` while any slot is processing), `+N` requests in flight; `/props`
+  gives the alias; `/metrics` adds lifetime usage only if started with
+  `--metrics`. vLLM: `/metrics` gives busy, KV-cache fill as CTX, and lifetime
+  prompt/generation counters; `/v1/models` gives the model id and window.
+  Host and port are read from argv (`--host`/`--port`, wildcard binds probed
+  on loopback). No counters means `—`, never 0.
 
 ## Keys
 

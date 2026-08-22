@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
@@ -47,8 +48,10 @@ func main() {
 		HBDir:      hbDir,
 		Interval:   *interval,
 		Prices:     prices,
+		Inference:  inference.NewPoller(procRoot),
 	}
 	if *jsonOnce || *once {
+		eng.Inference.Poll() // one synchronous probe so locals carry tokens
 		eng.RefreshOverlay()
 		time.Sleep(200 * time.Millisecond) // second sample so CPU% is known
 		eng.RefreshOverlay()
@@ -66,6 +69,7 @@ func main() {
 			os.Exit(2)
 		}
 		lipgloss.SetColorProfile(termenv.TrueColor) // piped output keeps its ink
+		eng.Inference.Poll()
 		eng.RefreshOverlay()
 		time.Sleep(300 * time.Millisecond)
 		eng.RefreshOverlay()

@@ -10,6 +10,7 @@ import (
 	"aitop/internal/overlay/codex"
 	"aitop/internal/overlay/grok"
 	"aitop/internal/overlay/heartbeat"
+	"aitop/internal/overlay/inference"
 	"aitop/internal/overlay/local"
 	"aitop/internal/price"
 	"aitop/internal/proc"
@@ -36,8 +37,9 @@ type Engine struct {
 	ClaudeHome string
 	CodexHome  string
 	HBDir      string
-	Overlay    OverlayFn    // tests inject a spy
-	Prices     *price.Table // nil = no estimates
+	Overlay    OverlayFn         // tests inject a spy
+	Prices     *price.Table      // nil = no estimates
+	Inference  *inference.Poller // nil = no model-server probes
 	Interval   time.Duration
 	cpu        *proc.Tracker
 	host       *proc.Host
@@ -84,6 +86,9 @@ func (e *Engine) collectOverlays() ([]types.Overlay, error) {
 		}
 	}
 	ovs = append(ovs, local.Collect(e.ProcRoot, nil)...)
+	if e.Inference != nil {
+		ovs = append(ovs, e.Inference.Latest()...)
+	}
 	return ovs, nil
 }
 
@@ -158,6 +163,9 @@ func (e *Engine) Start() *atomic.Pointer[Snapshot] {
 	iv := e.Interval
 	if iv <= 0 {
 		iv = 100 * time.Millisecond
+	}
+	if e.Inference != nil {
+		e.Inference.Start()
 	}
 	e.RefreshOverlay()
 	go func() {

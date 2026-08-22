@@ -236,3 +236,15 @@ func TestRemoteControlSessionIsAPrimaryNotASubagent(t *testing.T) {
 		t.Fatalf("claude-child-process-is-its-own-session violated: %+v", got)
 	}
 }
+
+func TestVLLMIsALocalRow(t *testing.T) {
+	p := types.Process{PID: 1, Comm: "python", Cmdline: []string{"/opt/venv/bin/python", "/opt/venv/bin/vllm", "serve", "Qwen/Qwen3-32B", "--port", "8123"}}
+	got := Classify(p)
+	if got.Runtime != types.RuntimeLocal || got.ProvenNameHint != "vllm" || got.ModelHint != "Qwen3-32B" {
+		t.Fatalf("vllm-serve-is-a-local-row violated: %+v", got)
+	}
+	m := types.Process{PID: 2, Comm: "python3", Cmdline: []string{"python3", "-m", "vllm.entrypoints.openai.api_server", "--model", "meta-llama/Llama-3-8B"}}
+	if got := Classify(m); got.Runtime != types.RuntimeLocal || got.ModelHint != "Llama-3-8B" {
+		t.Fatalf("vllm-module-is-a-local-row violated: %+v", got)
+	}
+}
