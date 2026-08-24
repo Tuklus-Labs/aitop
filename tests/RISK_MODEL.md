@@ -70,3 +70,16 @@ Axes: invariants populated above. State: dual-index Tick vs overlay. Boundaries:
 | Slow model server: poll bounded by client timeout, last answer kept, Latest never blocks, dead server dropped | `inference.TestSlowServerKeepsLastAnswerAndDoesNotBlockLatest` |
 | Server discovery from argv (kind, host, port, wildcard bind, defaults) | `inference.TestKindAndHostPortFromArgv` |
 | vLLM classified local via console script or python module; python -m is not a model | `classify.TestVLLMIsALocalRow` |
+
+## Control (2026-08-24, actor skeleton)
+
+Paint stays a 100ms memory-only clock. This package is the fourth clock. There is no paint path here: Enqueue returns, adapters run on the actor.
+
+| Risk | Test |
+|------|------|
+| Actor never on the paint path (enqueue only; paint does not exist in this package) | `act.TestActorRunsOffCaller` |
+| Unsupported is loud (`unsupported` in the error and in Result.Err) | `act.TestUnsupportedErrorContainsUnsupported`, `act.TestMessageUnsupportedIsLoudInResult` |
+| Queue bound does not drop a confirmed kill | `act.TestQueueFullDoesNotDropConfirmedKill` |
+| Same Target.Key serializes | `act.TestSameKeySerializes` |
+
+Remaining Control axes (SIGINT/TERM, pid-reuse, key remap, dark roster, packing, capsule, fork vs clone argv, split/merge) land in later tasks. Occupancy rows above are unchanged.
