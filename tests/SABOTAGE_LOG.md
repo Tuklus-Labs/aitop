@@ -75,3 +75,12 @@ Source of truth: the model server itself. llama-server `/slots` (per-slot n_ctx,
 | PF-I5 | python `-m` read as llama's model switch | TestVLLMIsALocalRow RED | RED: `ModelHint:vllm.entrypoints.openai.api_server` | Load-bearing; born from the live failure. |
 
 Restore after each: 15/15 packages green (`tests/TALLY.txt`).
+
+## Control epoch (2026-08-24, Grok, tree `ffb84f2` + working copy)
+
+Kill helper. Same-epoch plants against uncommitted `internal/act/kill.go`; restore by invert, not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C6 | Drop the starttime equality check in `Kill` | TestKillPidReuseDoesNotSignal RED | RED: `kill-pid-reuse-is-loud violated: err=<nil>` | Load-bearing. Join key is (pid, starttime); a reused pid is a refusal, not a signal. |
+| PF-C7 | `Signal(SIGINT)` replaced with `Signal(SIGKILL)` | TestKillSendsSIGINTFirstNeverSIGKILL RED | RED: `kill-sends-sigint-first violated: [killed terminated]` | Load-bearing. k never SIGKILL; the inversion showed up in the spy slice as SIGKILL then SIGTERM. |

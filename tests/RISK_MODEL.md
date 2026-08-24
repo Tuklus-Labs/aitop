@@ -81,5 +81,9 @@ Paint stays a 100ms memory-only clock. This package is the fourth clock. There i
 | Unsupported is loud (`unsupported` in the error and in Result.Err) | `act.TestUnsupportedErrorContainsUnsupported`, `act.TestMessageUnsupportedIsLoudInResult` |
 | Queue bound does not drop a confirmed kill | `act.TestQueueFullDoesNotDropConfirmedKill` |
 | Same Target.Key serializes | `act.TestSameKeySerializes` |
+| Kill is SIGINT then SIGTERM, never SIGKILL | `act.TestKillSendsSIGINTFirstNeverSIGKILL` |
+| pid-reuse is loud and does not signal | `act.TestKillPidReuseDoesNotSignal` |
+| Kill refuses self and pid 0 | `act.TestKillRefusesSelf`, `act.TestKillPidZeroDoesNotSignal` |
+| SIGTERM skipped if the pid is gone after SIGINT | `act.TestKillGoneAfterINTDoesNotTERM` |
 
-Remaining Control axes (SIGINT/TERM, pid-reuse, key remap, dark roster, packing, capsule, fork vs clone argv, split/merge) land in later tasks. Occupancy rows above are unchanged.
+Remaining Control axes (key remap, dark roster, packing, capsule, fork vs clone argv, split/merge) land in later tasks. Occupancy rows above are unchanged.
