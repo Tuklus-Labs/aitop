@@ -105,6 +105,14 @@ type Overlay struct {
 	Branch      string
 	Effort      string
 	Entrypoint  string // runtime's own word: cli | sdk-cli | sdk-ts
+
+	ForkOf    string // parent session id for a fork/clone/fanout
+	CapsuleID string
+	Worktree  string
+	Kind      string   // fork | clone | fanout | slot
+	TokPerSec *float64 // nil = unknown; never coerce 0 on first sample
+	SlotIndex *int     // llama-server slot; nil = not a slot row
+	Dark      bool     // local unit with no pid
 }
 
 type Row struct {

@@ -14,3 +14,10 @@ func TestZeroOverlayCostIsAbsentNotZero(t *testing.T) {
 		t.Fatalf("unproven-name-is-empty violated: ProvenName=%q", o.ProvenName)
 	}
 }
+
+func TestOverlayControlFieldsZeroMeanAbsent(t *testing.T) {
+	var o Overlay
+	if o.ForkOf != "" || o.CapsuleID != "" || o.Worktree != "" || o.Kind != "" || o.TokPerSec != nil || o.SlotIndex != nil || o.Dark {
+		t.Fatalf("control-fields-zero-mean-absent violated: %+v", o)
+	}
+}
