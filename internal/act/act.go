@@ -57,6 +57,11 @@ type Actor struct {
 	bound    int // max outstanding data-path intents (waiting plus in flight); default 16
 	results  atomic.Pointer[Result]
 
+	// CapsuleDir is where Fork/Clone write capsule.json+md before adapter.Fork.
+	// Empty skips the write so occupancy-only tests stay file-free; production
+	// sets CapsuleRoot().
+	CapsuleDir string
+
 	mu       sync.Mutex
 	started  bool
 	stopped  bool
@@ -250,9 +255,21 @@ func (a *Actor) dispatch(in Intent) {
 	var err error
 	switch in.Op {
 	case OpFork:
-		_, err = ad.Fork(ctx, in.Target, Capsule{}, in.Args)
+		var cap Capsule
+		cap, err = a.writeCapsule(in)
+		if err != nil {
+			a.storeResult(in, err)
+			return
+		}
+		_, err = ad.Fork(ctx, in.Target, cap, in.Args)
 	case OpClone:
-		_, err = ad.Clone(ctx, in.Target, Capsule{})
+		var cap Capsule
+		cap, err = a.writeCapsule(in)
+		if err != nil {
+			a.storeResult(in, err)
+			return
+		}
+		_, err = ad.Clone(ctx, in.Target, cap)
 	case OpMessage:
 		err = ad.Message(ctx, in.Target, in.Args)
 	case OpRestart:

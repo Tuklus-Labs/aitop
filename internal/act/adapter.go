@@ -38,13 +38,6 @@ type Spawned struct {
 	CapsuleID string
 }
 
-// Capsule is a stub. Full writer (json+md under XDG_RUNTIME_DIR) is Task 8.
-type Capsule struct {
-	Schema int    `json:"schema"`
-	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-}
-
 // Adapter is one runtime family. Missing methods return ErrUnsupported;
 // they do not no-op. Exec and HTTP live in the per-runtime packages, not here.
 type Adapter interface {
