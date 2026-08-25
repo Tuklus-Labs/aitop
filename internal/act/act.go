@@ -62,6 +62,11 @@ type Actor struct {
 	// sets CapsuleRoot().
 	CapsuleDir string
 
+	// ForksDir is where a successful Fork/Clone writes <child-session>.json
+	// so join can nest before the runtime records parent_session_id. Empty
+	// skips the write; production sets ForksRoot().
+	ForksDir string
+
 	mu       sync.Mutex
 	started  bool
 	stopped  bool
@@ -261,7 +266,11 @@ func (a *Actor) dispatch(in Intent) {
 			a.storeResult(in, err)
 			return
 		}
-		_, err = ad.Fork(ctx, in.Target, cap, in.Args)
+		var spawned Spawned
+		spawned, err = ad.Fork(ctx, in.Target, cap, in.Args)
+		if err == nil {
+			err = a.writeForkSidecar(in, cap, spawned)
+		}
 	case OpClone:
 		var cap Capsule
 		cap, err = a.writeCapsule(in)
@@ -269,7 +278,11 @@ func (a *Actor) dispatch(in Intent) {
 			a.storeResult(in, err)
 			return
 		}
-		_, err = ad.Clone(ctx, in.Target, cap)
+		var spawned Spawned
+		spawned, err = ad.Clone(ctx, in.Target, cap)
+		if err == nil {
+			err = a.writeForkSidecar(in, cap, spawned)
+		}
 	case OpMessage:
 		err = ad.Message(ctx, in.Target, in.Args)
 	case OpRestart:

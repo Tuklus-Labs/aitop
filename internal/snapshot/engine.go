@@ -8,6 +8,7 @@ import (
 	"aitop/internal/join"
 	"aitop/internal/overlay/claude"
 	"aitop/internal/overlay/codex"
+	"aitop/internal/overlay/forks"
 	"aitop/internal/overlay/grok"
 	"aitop/internal/overlay/heartbeat"
 	"aitop/internal/overlay/inference"
@@ -37,6 +38,7 @@ type Engine struct {
 	ClaudeHome string
 	CodexHome  string
 	HBDir      string
+	ForksDir   string
 	Overlay    OverlayFn         // tests inject a spy
 	Prices     *price.Table      // nil = no estimates
 	Inference  *inference.Poller // nil = no model-server probes
@@ -83,6 +85,11 @@ func (e *Engine) collectOverlays() ([]types.Overlay, error) {
 	if e.HBDir != "" {
 		if h, err := heartbeat.Collect(e.HBDir, time.Now(), 5*time.Second); err == nil {
 			ovs = append(ovs, h...)
+		}
+	}
+	if e.ForksDir != "" {
+		if f, err := forks.Collect(e.ForksDir); err == nil {
+			ovs = append(ovs, f...)
 		}
 	}
 	ovs = append(ovs, local.Collect(e.ProcRoot, nil)...)

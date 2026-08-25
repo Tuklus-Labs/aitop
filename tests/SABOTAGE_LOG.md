@@ -138,3 +138,11 @@ Same-epoch plant against uncommitted `internal/act/grok/grok.go`; restore by inv
 | ID | Mutation | Prediction | Observed | Conclusion |
 |----|----------|------------|----------|------------|
 | PF-C2 | Grok `Fork` argv inserts `--fork-session` after `-p` | TestGrokForkIsNotForkSession RED; TestGrokCloneUsesForkSession, TestForkCwdNotGitIsLoud, TestGrokKillUsesHelper, claude/codex packages GREEN | RED: `fork-argv-is-not-clone violated: grok -p --fork-session --cwd /tmp/wt --session-id 11111111-2222-4333-8444-555555555555 -m grok-4.6 --always-approve --prompt-file /tmp/caps/cafef00ddeadbeef/capsule.md`. Sisters PASS | Load-bearing. `f` is a new session plus capsule, not `--fork-session`. Token check, not substring: `--prompt-file` contains `-p`. |
+
+## Control epoch, fork sidecar nest by session (2026-08-24, Grok, working copy then this commit)
+
+Same-epoch plant against uncommitted `internal/join/join.go`; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C11 | `nestsUnder` returns false for `Kind=="fork" && PID==0` | TestForkChildNestsBySessionNotPPID RED; TestInProcessSubagentsNest, TestSlotNestsUnderLocalPidNotRoot, TestDarkLocalUnitIsRootOff, TestGrokOverlayWithoutPidStillNotRoot, TestParentKey* GREEN | RED: `fork-child-nests-by-session-not-ppid violated` with `Children:[]`. Sisters PASS | Load-bearing. A PID-less fork overlay nests by ParentSession, not unix ppid. Slots and in-process subagents are other kinds and stay nested. |

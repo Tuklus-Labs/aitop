@@ -45,13 +45,14 @@ func main() {
 		}
 	}
 
-	procRoot, grokHome, claudeHome, codexHome, hbDir := snapshot.DefaultHomes()
+	procRoot, grokHome, claudeHome, codexHome, hbDir, forksDir := snapshot.DefaultHomes()
 	eng := &snapshot.Engine{
 		ProcRoot:   procRoot,
 		GrokHome:   grokHome,
 		ClaudeHome: claudeHome,
 		CodexHome:  codexHome,
 		HBDir:      hbDir,
+		ForksDir:   forksDir,
 		Interval:   *interval,
 		Prices:     prices,
 		Inference:  inference.NewPoller(procRoot),
@@ -90,6 +91,7 @@ func main() {
 		types.RuntimeCodex:  actcodex.New(),
 	})
 	actor.CapsuleDir = act.CapsuleRoot()
+	actor.ForksDir = act.ForksRoot()
 	actor.Start()
 	defer actor.Stop()
 	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen())

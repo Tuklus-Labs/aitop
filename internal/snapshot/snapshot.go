@@ -11,6 +11,7 @@ import (
 	"aitop/internal/classify"
 	"aitop/internal/join"
 	"aitop/internal/overlay/claude"
+	"aitop/internal/overlay/forks"
 	"aitop/internal/overlay/grok"
 	"aitop/internal/present"
 	"aitop/internal/proc"
@@ -276,13 +277,14 @@ func WriteJSON(s *Snapshot, w io.Writer) error {
 	return enc.Encode(ToDumpSnapshot(s, time.Now()))
 }
 
-func DefaultHomes() (procRoot, grokHome, claudeHome, codexHome, hbDir string) {
+func DefaultHomes() (procRoot, grokHome, claudeHome, codexHome, hbDir, forksDir string) {
 	home, _ := os.UserHomeDir()
 	return "/proc",
 		filepath.Join(home, ".grok"),
 		filepath.Join(home, ".claude"),
 		filepath.Join(home, ".codex"),
-		heartbeatDir()
+		heartbeatDir(),
+		forks.DefaultDir()
 }
 
 func heartbeatDir() string {

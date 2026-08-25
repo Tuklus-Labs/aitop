@@ -213,6 +213,23 @@ func TestCapsuleRootUsesXDG(t *testing.T) {
 	}
 }
 
+func TestForksRootPrefersAITOP(t *testing.T) {
+	t.Setenv("AITOP_FORKS_DIR", "/tmp/forks")
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	if got := ForksRoot(); got != "/tmp/forks" {
+		t.Fatalf("forks-root-prefers-aitop violated: %q", got)
+	}
+}
+
+func TestForksRootUsesXDG(t *testing.T) {
+	t.Setenv("AITOP_FORKS_DIR", "")
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	want := filepath.Join("/run/user/1000", "aitop", "forks")
+	if got := ForksRoot(); got != want {
+		t.Fatalf("forks-root-uses-xdg violated: got=%q want=%q", got, want)
+	}
+}
+
 type statBeforeForkAdapter struct {
 	fakeAdapter
 	root string

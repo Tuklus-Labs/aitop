@@ -2,7 +2,10 @@ package act
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,12 +16,13 @@ import (
 )
 
 type fakeAdapter struct {
-	name     types.Runtime
-	forks    atomic.Int32
-	kills    atomic.Int32
-	err      error
-	forkHook func()
-	killHook func()
+	name         types.Runtime
+	forks        atomic.Int32
+	kills        atomic.Int32
+	err          error
+	forkHook     func()
+	killHook     func()
+	spawnSession string
 }
 
 func (f *fakeAdapter) Name() types.Runtime { return f.name }
@@ -28,7 +32,7 @@ func (f *fakeAdapter) Fork(context.Context, Target, Capsule, string) (Spawned, e
 	if f.forkHook != nil {
 		f.forkHook()
 	}
-	return Spawned{}, f.err
+	return Spawned{SessionID: f.spawnSession}, f.err
 }
 
 func (f *fakeAdapter) Clone(context.Context, Target, Capsule) (Spawned, error) {
@@ -106,6 +110,50 @@ func (b *blockingAdapter) Transcript(context.Context, Target) (string, error) {
 	return "", ErrUnsupported
 }
 func (b *blockingAdapter) Fanout(context.Context, Target, int) error { return ErrUnsupported }
+
+func TestActorForkWritesSidecar(t *testing.T) {
+	caps := t.TempDir()
+	forksDir := t.TempDir()
+	ad := &fakeAdapter{name: types.RuntimeGrok, spawnSession: "C"}
+	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+	a.CapsuleDir = caps
+	a.ForksDir = forksDir
+	a.Start()
+	t.Cleanup(a.Stop)
+
+	if err := a.Enqueue(Intent{
+		Op: OpFork,
+		Target: Target{
+			Key:       "pid:5:1",
+			Runtime:   types.RuntimeGrok,
+			SessionID: "P",
+			Worktree:  "/tmp/wt",
+		},
+	}); err != nil {
+		t.Fatalf("enqueue-fork violated: %v", err)
+	}
+
+	path := filepath.Join(forksDir, "C.json")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			var got map[string]string
+			if json.Unmarshal(raw, &got) != nil {
+				t.Fatalf("fork-sidecar-json violated: %s", raw)
+			}
+			if got["parent"] != "P" || got["child_session"] != "C" {
+				t.Fatalf("fork-sidecar-parent-child violated: %s", raw)
+			}
+			if got["fork_of"] != "P" || got["kind"] != "fork" || got["worktree"] != "/tmp/wt" {
+				t.Fatalf("fork-sidecar-fields violated: %s", raw)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("fork-sidecar-written-after-spawn violated: forks=%d result=%v missing %s", ad.forks.Load(), a.LastResult(), path)
+}
 
 func TestUnsupportedErrorContainsUnsupported(t *testing.T) {
 	if ErrUnsupported == nil || !errors.Is(ErrUnsupported, ErrUnsupported) {

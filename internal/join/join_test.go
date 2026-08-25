@@ -191,6 +191,18 @@ func TestGrokOverlayWithoutPidStillNotRoot(t *testing.T) {
 	}
 }
 
+func TestForkChildNestsBySessionNotPPID(t *testing.T) {
+	spine := []types.Process{{PID: 5, StartTime: 1, AgentRoot: true, Role: types.RolePrimary, Runtime: types.RuntimeGrok}}
+	ov := []types.Overlay{
+		{PID: 5, StartTime: 1, SessionID: "P", Runtime: types.RuntimeGrok},
+		{SessionID: "C", ParentSession: "P", ForkOf: "P", Kind: "fork", Worktree: "/tmp/wt"},
+	}
+	rows := Join(spine, ov)
+	if len(rows) != 1 || len(rows[0].Children) != 1 || rows[0].Children[0].Overlay.SessionID != "C" {
+		t.Fatalf("fork-child-nests-by-session-not-ppid violated: %+v", rows)
+	}
+}
+
 func TestProjectFromProjectsDir(t *testing.T) {
 	if g := ProjectName("/home/aegis/Projects/mira/.worktrees/faithful-emotion-vectors"); g != "mira/faithful-emotion-vectors" {
 		t.Fatalf("project-derivation worktree violated: got %q", g)
