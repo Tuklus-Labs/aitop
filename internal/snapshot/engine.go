@@ -30,6 +30,7 @@ type Snapshot struct {
 	OverlayErr string    // last overlay failure, empty when healthy
 	TickDur    time.Duration
 	Seq        uint64
+	Logs       map[string][]string // sessionID -> cached transcript lines; paint never opens files
 }
 
 type Engine struct {

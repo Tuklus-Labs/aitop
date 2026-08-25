@@ -198,11 +198,22 @@ type frame struct {
 	promptMode string
 	prompt     string
 	lastErr    string
+	mode       viewMode
+	pagerRow   types.Row
+	splitLeft  types.Row
+	splitRight types.Row
+	splitFocus int
 }
 
 func (s *Styles) render(f frame) string {
 	if f.width < minWidth || f.height < minHeight {
 		return fmt.Sprintf("aitop  80x24 required (now %dx%d)  %s\n", f.width, f.height, snapshot.Canary)
+	}
+	if f.mode == modePager {
+		return s.renderPager(f)
+	}
+	if f.mode == modeSplit {
+		return s.renderSplit(f)
 	}
 	var b strings.Builder
 	detailH := 0
@@ -889,4 +900,133 @@ func fmtTime(t time.Time) string {
 		return ""
 	}
 	return t.Local().Format("15:04:05")
+}
+
+func (s *Styles) renderPager(f frame) string {
+	var b strings.Builder
+	s.renderHeader(&b, f)
+	h := f.height - headerH
+	if h < 3 {
+		h = 3
+	}
+	w := f.width
+	o := f.pagerRow.Overlay
+	title := o.SessionID
+	if title == "" {
+		title = o.Title
+	}
+	if title == "" {
+		title = "log"
+	}
+	b.WriteString(s.boxTop(w, []string{s.tab(s.Title.Render(" " + title + " "))}, nil))
+	b.WriteByte('\n')
+	body := overlayPagerLines(o, logsFor(f, o.SessionID))
+	bodyH := h - 2
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	for i := 0; i < bodyH; i++ {
+		line := ""
+		if i < len(body) {
+			line = " " + body[i]
+		}
+		b.WriteString(s.boxLine(line, w))
+		b.WriteByte('\n')
+	}
+	left := []string{s.key("q", "close")}
+	if f.lastErr != "" {
+		left = []string{s.tab(s.Hi.Render(" " + f.lastErr + " ")), s.key("q", "close")}
+	} else if f.confirm != "" {
+		left = []string{s.tab(s.Hi.Render(" " + f.confirm + " "))}
+	}
+	b.WriteString(s.boxBottom(w, left, nil))
+	return b.String()
+}
+
+func (s *Styles) renderSplit(f frame) string {
+	var b strings.Builder
+	s.renderHeader(&b, f)
+	w := f.width
+	h := f.height - headerH
+	if h < 3 {
+		h = 3
+	}
+	inner := w - 2
+	leftW := inner / 2
+	rightW := inner - leftW
+	leftTitle := splitPaneTitle(f.splitLeft)
+	rightTitle := splitPaneTitle(f.splitRight)
+	leftTab := s.tab(s.Title.Render(" " + leftTitle + " "))
+	rightTab := s.tab(s.Title.Render(" " + rightTitle + " "))
+	if f.splitFocus == 0 {
+		leftTab = s.tab(s.Hi.Render(" " + leftTitle + " "))
+	} else {
+		rightTab = s.tab(s.Hi.Render(" " + rightTitle + " "))
+	}
+	b.WriteString(s.boxTop(w, []string{leftTab, rightTab}, nil))
+	b.WriteByte('\n')
+	leftBody := overlayPagerLines(f.splitLeft.Overlay, logsFor(f, f.splitLeft.Overlay.SessionID))
+	rightBody := overlayPagerLines(f.splitRight.Overlay, logsFor(f, f.splitRight.Overlay.SessionID))
+	bodyH := h - 2
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	for i := 0; i < bodyH; i++ {
+		lp, rp := "", ""
+		if i < len(leftBody) {
+			lp = " " + leftBody[i]
+		}
+		if i < len(rightBody) {
+			rp = " " + rightBody[i]
+		}
+		b.WriteString(s.boxLine(fit(lp, leftW)+fit(rp, rightW), w))
+		b.WriteByte('\n')
+	}
+	left := []string{s.key("M", "merge focused"), s.key("q", "close")}
+	if f.confirm != "" {
+		left = []string{s.tab(s.Hi.Render(" " + f.confirm + " "))}
+	} else if f.lastErr != "" {
+		left = []string{s.tab(s.Hi.Render(" " + f.lastErr + " ")), s.key("M", "merge focused"), s.key("q", "close")}
+	}
+	b.WriteString(s.boxBottom(w, left, nil))
+	return b.String()
+}
+
+func splitPaneTitle(r types.Row) string {
+	if r.Overlay.SessionID != "" {
+		return r.Overlay.SessionID
+	}
+	if r.Overlay.Title != "" {
+		return r.Overlay.Title
+	}
+	return "log"
+}
+
+func logsFor(f frame, sessionID string) []string {
+	if f.snap == nil || f.snap.Logs == nil || sessionID == "" {
+		return nil
+	}
+	return f.snap.Logs[sessionID]
+}
+
+func overlayPagerLines(o types.Overlay, logs []string) []string {
+	var out []string
+	add := func(k, v string) {
+		if v == "" {
+			return
+		}
+		out = append(out, k+" "+v)
+	}
+	add("session", o.SessionID)
+	add("path", o.SessionPath)
+	add("model", o.Model)
+	add("title", o.Title)
+	add("worktree", o.Worktree)
+	add("kind", o.Kind)
+	add("fork_of", o.ForkOf)
+	if len(logs) > 0 {
+		out = append(out, "")
+		out = append(out, logs...)
+	}
+	return out
 }

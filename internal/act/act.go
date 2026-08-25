@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,6 +67,9 @@ type Actor struct {
 	// so join can nest before the runtime records parent_session_id. Empty
 	// skips the write; production sets ForksRoot().
 	ForksDir string
+
+	// Merger runs git merge --no-ff for OpMerge. nil uses exec git.
+	Merger *Merger
 
 	mu       sync.Mutex
 	started  bool
@@ -295,6 +299,26 @@ func (a *Actor) dispatch(in Intent) {
 		err = ad.Budget(ctx, in.Target, in.Args)
 	case OpMerge:
 		err = ad.Merge(ctx, in.Parent, in.Winner, in.Loser)
+		if isUnsupported(err) {
+			mer := a.Merger
+			if mer == nil {
+				mer = &Merger{}
+			}
+			err = mer.Merge(in.Parent, in.Winner, in.Loser)
+		}
+		if err == nil {
+			parent := in.Parent
+			if parent.Runtime == "" {
+				parent = in.Target
+			}
+			msg := mergeMessage(in.Winner)
+			msgErr := ad.Message(ctx, parent, msg)
+			if isUnsupported(msgErr) {
+				_ = WriteMergeNote(parent, mergeNoteID(in.Winner), msg)
+			} else if msgErr != nil {
+				err = msgErr
+			}
+		}
 	case OpFanout:
 		err = ad.Fanout(ctx, in.Target, in.N)
 	case OpTranscript:
@@ -303,6 +327,10 @@ func (a *Actor) dispatch(in Intent) {
 		err = fmt.Errorf("unsupported: unknown op %s", in.Op)
 	}
 	a.storeResult(in, err)
+}
+
+func isUnsupported(err error) bool {
+	return err != nil && (errors.Is(err, ErrUnsupported) || strings.Contains(err.Error(), "unsupported"))
 }
 
 func (a *Actor) storeResult(in Intent, err error) {

@@ -10,6 +10,15 @@ import (
 	"aitop/internal/act"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
+	"aitop/internal/types"
+)
+
+type viewMode int
+
+const (
+	modeTable viewMode = iota
+	modePager
+	modeSplit
 )
 
 const (
@@ -47,6 +56,12 @@ type Model struct {
 	sortPrefix bool
 	markKey    string
 	lastErr    string
+
+	mode       viewMode
+	pagerRow   types.Row
+	splitLeft  types.Row
+	splitRight types.Row
+	splitFocus int // 0 left (parent), 1 right (winner candidate)
 }
 
 func New(src *atomic.Pointer[snapshot.Snapshot], t theme.Theme, enqueue func(act.Intent) error) Model {
@@ -94,6 +109,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.confirmOp != "" {
 			return m.confirmKey(msg)
+		}
+		if m.mode == modePager || m.mode == modeSplit {
+			return m.pagerKey(msg)
 		}
 		return m.key(msg)
 	}
@@ -231,12 +249,12 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", "l", "right", " ":
 		if m.cursor < len(m.lines) {
 			l := m.lines[m.cursor]
+			if k == "enter" && m.handleEnter(l) {
+				return m, nil
+			}
 			if l.children > 0 {
 				m.shaper.collapsed[l.key] = !m.shaper.collapsed[l.key]
 				m.reshape(now)
-			} else if k == "enter" {
-				m.detail = !m.detail
-				m.clampScroll()
 			}
 		}
 	case "h", "left":
@@ -287,8 +305,114 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b":
 		m.promptMode, m.prompt = "budget", ""
 	case "v":
-		if m.cursor < len(m.lines) {
-			m.markKey = m.lines[m.cursor].key
+		m.markCurrent()
+	}
+	return m, nil
+}
+
+func (m *Model) markCurrent() {
+	if m.cursor >= len(m.lines) {
+		return
+	}
+	cur := m.lines[m.cursor].key
+	if m.markKey != "" && m.markKey != cur {
+		if marked, ok := m.lineByKey(m.markKey); ok && sameAncestry(marked.row.Overlay, m.lines[m.cursor].row.Overlay) {
+			return
+		}
+	}
+	m.markKey = cur
+}
+
+func (m Model) lineByKey(key string) (line, bool) {
+	if key == "" {
+		return line{}, false
+	}
+	for _, l := range m.lines {
+		if l.key == key {
+			return l, true
+		}
+	}
+	return line{}, false
+}
+
+func (m *Model) handleEnter(l line) bool {
+	if m.markKey != "" && m.markKey != l.key {
+		if marked, ok := m.lineByKey(m.markKey); ok && sameAncestry(marked.row.Overlay, l.row.Overlay) {
+			if m.width < 120 {
+				m.openPager(l.row)
+				m.lastErr = "unsupported: split needs 120"
+				return true
+			}
+			m.openSplit(marked.row, l.row)
+			return true
+		}
+	}
+	if l.children == 0 {
+		m.openPager(l.row)
+		m.lastErr = ""
+		return true
+	}
+	return false
+}
+
+func (m *Model) openPager(r types.Row) {
+	m.mode = modePager
+	m.pagerRow = r
+}
+
+func (m *Model) openSplit(a, b types.Row) {
+	left, right := a, b
+	if isAncestorOf(b.Overlay, a.Overlay) {
+		left, right = b, a
+	} else if isAncestorOf(a.Overlay, b.Overlay) {
+		left, right = a, b
+	}
+	m.mode = modeSplit
+	m.splitLeft = left
+	m.splitRight = right
+	m.splitFocus = 1
+	m.lastErr = ""
+}
+
+func isAncestorOf(parent, child types.Overlay) bool {
+	if parent.SessionID == "" {
+		return false
+	}
+	return child.ForkOf == parent.SessionID || child.ParentSession == parent.SessionID
+}
+
+func sameAncestry(a, b types.Overlay) bool {
+	if a.ForkOf != "" && a.ForkOf == b.ForkOf {
+		return true
+	}
+	if a.SessionID != "" && (b.ForkOf == a.SessionID || b.ParentSession == a.SessionID) {
+		return true
+	}
+	if b.SessionID != "" && (a.ForkOf == b.SessionID || a.ParentSession == b.SessionID) {
+		return true
+	}
+	return false
+}
+
+func (m Model) pagerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.mode = modeTable
+		m.lastErr = ""
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "h", "left":
+		if m.mode == modeSplit {
+			m.splitFocus = 0
+		}
+	case "l", "right":
+		if m.mode == modeSplit {
+			m.splitFocus = 1
+		}
+	case "M":
+		if m.mode == modeSplit {
+			m.confirmOp = act.OpMerge
 		}
 	}
 	return m, nil
@@ -297,7 +421,11 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) confirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.pushIntent(m.confirmOp, true, "")
+		if m.confirmOp == act.OpMerge {
+			m.pushMerge()
+		} else {
+			m.pushIntent(m.confirmOp, true, "")
+		}
 		m.confirmOp = ""
 	case "esc":
 		m.confirmOp = ""
@@ -348,6 +476,37 @@ func (m *Model) armConfirm(op act.Op) {
 		return
 	}
 	m.confirmOp = op
+}
+
+func (m *Model) pushMerge() {
+	if m.enqueue == nil || m.mode != modeSplit {
+		return
+	}
+	focused, other := m.splitLeft, m.splitRight
+	if m.splitFocus == 1 {
+		focused, other = m.splitRight, m.splitLeft
+	}
+	parent := m.splitLeft
+	if isAncestorOf(m.splitRight.Overlay, m.splitLeft.Overlay) {
+		parent = m.splitRight
+	}
+	in := act.Intent{
+		Op:        act.OpMerge,
+		Target:    targetFromRow(parent),
+		Parent:    targetFromRow(parent),
+		Winner:    targetFromRow(focused),
+		Loser:     targetFromRow(other),
+		Confirmed: true,
+	}
+	if err := m.enqueue(in); err != nil {
+		m.lastErr = err.Error()
+	} else {
+		m.lastErr = ""
+	}
+}
+
+func targetFromRow(r types.Row) act.Target {
+	return targetFromLine(line{key: rowKey(r), row: r})
 }
 
 func (m *Model) pushIntent(op act.Op, confirmed bool, args string) {
@@ -402,6 +561,16 @@ func (m Model) confirmLine() string {
 		return fmt.Sprintf("kill %s pid %d? [y/N]", l.name, l.row.Process.PID)
 	case act.OpRestart:
 		return fmt.Sprintf("restart %s pid %d? [y/N]", l.name, l.row.Process.PID)
+	case act.OpMerge:
+		w := m.splitLeft
+		if m.splitFocus == 1 {
+			w = m.splitRight
+		}
+		name := w.Overlay.SessionID
+		if name == "" {
+			name = w.Overlay.Title
+		}
+		return fmt.Sprintf("merge %s? [y/N]", name)
 	default:
 		return ""
 	}
@@ -467,6 +636,11 @@ func (m Model) View() string {
 		promptMode: m.promptMode,
 		prompt:     m.prompt,
 		lastErr:    m.lastErr,
+		mode:       m.mode,
+		pagerRow:   m.pagerRow,
+		splitLeft:  m.splitLeft,
+		splitRight: m.splitRight,
+		splitFocus: m.splitFocus,
 	})
 }
 

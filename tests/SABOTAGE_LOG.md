@@ -146,3 +146,11 @@ Same-epoch plant against uncommitted `internal/join/join.go`; restore by invert 
 | ID | Mutation | Prediction | Observed | Conclusion |
 |----|----------|------------|----------|------------|
 | PF-C11 | `nestsUnder` returns false for `Kind=="fork" && PID==0` | TestForkChildNestsBySessionNotPPID RED; TestInProcessSubagentsNest, TestSlotNestsUnderLocalPidNotRoot, TestDarkLocalUnitIsRootOff, TestGrokOverlayWithoutPidStillNotRoot, TestParentKey* GREEN | RED: `fork-child-nests-by-session-not-ppid violated` with `Children:[]`. Sisters PASS | Load-bearing. A PID-less fork overlay nests by ParentSession, not unix ppid. Slots and in-process subagents are other kinds and stay nested. |
+
+## Control epoch, merge without abort (2026-08-24, Grok, working copy then this commit)
+
+Same-epoch plant against uncommitted `internal/act/merge.go`; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C12 | On merge error, `run("git", "-C", cwd, "merge", "--abort")` | TestMergeConflictDoesNotAbort RED; TestMergeCleanNoFF GREEN (abort is on the error path only) | RED: `merge-conflict-does-not-abort violated: git -C /repo merge --abort` | Load-bearing. Conflict is loud and leaves the worktrees; aitop never `--abort`. |

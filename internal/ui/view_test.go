@@ -412,6 +412,211 @@ func press(tm tea.Model, k string) tea.Model {
 	return tm
 }
 
+func TestEnterOnLeafOpensPager(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	snap := fixtureSnapshot()
+	snap.Rows[1].Overlay.SessionPath = "/tmp/claude/62fee278.jsonl"
+	snap.Logs = map[string][]string{
+		"62fee278": {"cached transcript line"},
+	}
+	src.Store(snap)
+	m := New(src, theme.Nightfable(), nil)
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	tm, _ = tm.Update(tickMsg(now))
+	mm := tm.(Model)
+	idx := indexBySession(mm, "62fee278")
+	if idx < 0 {
+		t.Fatalf("enter-on-leaf-opens-pager violated: claude row missing, lines=%v", lineNames(mm.lines))
+	}
+	mm.cursor = idx
+	mm.cursorKey = mm.lines[idx].key
+	tm = press(mm, "enter")
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "62fee278") {
+		t.Fatalf("pager-shows-session-id violated:\n%s", view)
+	}
+	if !strings.Contains(view, "cached transcript line") {
+		t.Fatalf("pager-shows-cached-logs violated:\n%s", view)
+	}
+	if !strings.Contains(view, snapshot.Canary) {
+		t.Fatalf("pager-carries-canary violated:\n%s", view)
+	}
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) != 32 {
+		t.Fatalf("pager-keeps-frame-height violated: %d lines", len(lines))
+	}
+	for i, l := range lines {
+		if w := ansi.StringWidth(l); w != 140 {
+			t.Fatalf("pager-line-is-terminal-width violated: line %d width %d", i, w)
+		}
+	}
+	if tm.(Model).mode != modePager {
+		t.Fatalf("enter-on-leaf-opens-pager violated: mode=%v", tm.(Model).mode)
+	}
+	tm = press(tm, "q")
+	mm = tm.(Model)
+	if mm.mode != modeTable {
+		t.Fatalf("q-closes-pager violated: mode=%v", mm.mode)
+	}
+	closed := ansi.Strip(tm.View())
+	if strings.Contains(closed, "cached transcript line") {
+		t.Fatalf("q-closes-pager violated: cache still painted\n%s", closed)
+	}
+}
+
+func TestTickDoesNotReadSessionPath(t *testing.T) {
+	// Model has no ReadFile hook. Tick is absorb-only over the in-memory
+	// snapshot; SessionPath is overlay data and must not be opened from
+	// View or Update(tickMsg). This is the enqueue-count sister of
+	// TestTickDoesNotEnqueue, not a file spy.
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	snap := fixtureSnapshot()
+	snap.Rows[1].Overlay.SessionPath = "/no/such/aitop-tick-must-not-open.jsonl"
+	src.Store(snap)
+	n := 0
+	m := New(src, theme.Nightfable(), func(act.Intent) error {
+		n++
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	before := n
+	tm, _ = tm.Update(tickMsg(now))
+	tm, _ = tm.Update(tickMsg(now.Add(paintEvery)))
+	_ = tm.View()
+	if n != before {
+		t.Fatalf("tick-does-not-enqueue violated: enqueue count %d -> %d (Update(tickMsg) must not call enqueue)", before, n)
+	}
+}
+
+func TestMarkAndSplit(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	snap := fixtureSnapshot()
+	snap.Rows[0].Children[0].Overlay.SessionID = "c0ffee"
+	snap.Rows[0].Children[0].Overlay.ParentSession = "01a022e3"
+	snap.Rows[0].Children[0].Overlay.ForkOf = "01a022e3"
+	snap.Rows[0].Children[0].Overlay.Kind = "fork"
+	src.Store(snap)
+	m := New(src, theme.Nightfable(), nil)
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	tm, _ = tm.Update(tickMsg(now))
+	mm := tm.(Model)
+	if len(mm.lines) < 2 || mm.lines[0].row.Overlay.SessionID != "01a022e3" {
+		t.Fatalf("mark-and-split precondition violated: first=%q lines=%v", firstName(mm.lines), lineNames(mm.lines))
+	}
+	tm = press(tm, "v")
+	tm = press(tm, "down")
+	tm = press(tm, "v")
+	tm = press(tm, "enter")
+	mm = tm.(Model)
+	if mm.mode != modeSplit {
+		t.Fatalf("mark-and-enter-opens-split violated: mode=%v", mm.mode)
+	}
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "01a022e3") || !strings.Contains(view, "c0ffee") {
+		t.Fatalf("split-shows-both-panes violated:\n%s", view)
+	}
+	if !strings.Contains(view, "M merge focused") || !strings.Contains(view, "q close") {
+		t.Fatalf("split-footer-merge-and-close violated:\n%s", view)
+	}
+	if !strings.Contains(view, snapshot.Canary) {
+		t.Fatalf("split-carries-canary violated:\n%s", view)
+	}
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) != 32 {
+		t.Fatalf("split-keeps-frame-height violated: %d lines", len(lines))
+	}
+	for i, l := range lines {
+		if w := ansi.StringWidth(l); w != 140 {
+			t.Fatalf("split-line-is-terminal-width violated: line %d width %d", i, w)
+		}
+	}
+
+	tm = press(tm, "q")
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	tm = press(tm, "v")
+	tm = press(tm, "enter")
+	view = ansi.Strip(tm.View())
+	if !strings.Contains(view, "unsupported: split needs 120") {
+		t.Fatalf("split-needs-120-is-loud violated:\n%s", view)
+	}
+	if tm.(Model).mode == modeSplit {
+		t.Fatalf("narrow-stays-pager-not-split violated: mode=%v", tm.(Model).mode)
+	}
+	narrow := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(narrow) != 24 {
+		t.Fatalf("pager-keeps-frame-height violated: %d lines at 80x24", len(narrow))
+	}
+	for i, l := range narrow {
+		if w := ansi.StringWidth(l); w != 80 {
+			t.Fatalf("pager-line-is-terminal-width violated at 80x24 line %d: width %d", i, w)
+		}
+	}
+}
+
+func TestMergeKeyEnqueues(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	snap := fixtureSnapshot()
+	snap.Rows[0].Children[0].Overlay.SessionID = "c0ffee"
+	snap.Rows[0].Children[0].Overlay.ParentSession = "01a022e3"
+	snap.Rows[0].Children[0].Overlay.ForkOf = "01a022e3"
+	snap.Rows[0].Children[0].Overlay.Kind = "fork"
+	src.Store(snap)
+	var got []act.Intent
+	m := New(src, theme.Nightfable(), func(in act.Intent) error {
+		got = append(got, in)
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	tm, _ = tm.Update(tickMsg(now))
+	tm = press(tm, "v")
+	tm = press(tm, "down")
+	tm = press(tm, "v")
+	tm = press(tm, "enter")
+	if tm.(Model).mode != modeSplit {
+		t.Fatalf("merge-key-enqueues precondition violated: mode=%v", tm.(Model).mode)
+	}
+	n := len(got)
+	tm = press(tm, "M")
+	if len(got) != n {
+		t.Fatalf("merge-waits-for-confirm violated: enqueued on M: %+v", got[n:])
+	}
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "y/N") {
+		t.Fatalf("merge-confirm-shows-yn violated:\n%s", view)
+	}
+	tm = press(tm, "y")
+	if len(got) != n+1 || got[n].Op != act.OpMerge || !got[n].Confirmed {
+		t.Fatalf("merge-key-enqueues-confirmed violated: got=%+v", got)
+	}
+	in := got[n]
+	if in.Parent.SessionID != "01a022e3" {
+		t.Fatalf("merge-parent-is-ancestry-root violated: parent=%q", in.Parent.SessionID)
+	}
+	if in.Winner.SessionID != "c0ffee" {
+		t.Fatalf("merge-winner-is-focused-pane violated: winner=%q", in.Winner.SessionID)
+	}
+	if in.Loser.SessionID != "01a022e3" {
+		t.Fatalf("merge-loser-is-other-pane violated: loser=%q", in.Loser.SessionID)
+	}
+}
+
+func indexBySession(m Model, id string) int {
+	for i, l := range m.lines {
+		if l.row.Overlay.SessionID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func firstName(ls []line) string {
 	if len(ls) == 0 {
 		return ""
