@@ -69,6 +69,44 @@ func TestAgeSources(t *testing.T) {
 	}
 }
 
+func TestDarkLocalStatusIsOff(t *testing.T) {
+	r := types.Row{
+		OverlayOnly: true,
+		OverlayOK:   true,
+		Overlay:     types.Overlay{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "off", Dark: true, Title: "Iris: Qwen3.8"},
+	}
+	if got := Status(r); got != StatusOff {
+		t.Fatalf("dark-local-status-is-off violated: got %q", got)
+	}
+}
+
+func TestDarkLocalNameIsUnit(t *testing.T) {
+	r := types.Row{
+		OverlayOnly: true,
+		OverlayOK:   true,
+		Overlay:     types.Overlay{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "off", Dark: true, Title: "Iris: Qwen3.8"},
+	}
+	if got := Name(r); got != "qwen38" {
+		t.Fatalf("dark-local-name-is-unit violated: got %q (title dump is not the unit name)", got)
+	}
+}
+
+func TestSlotStatusFollowsOverlayNotWait(t *testing.T) {
+	idx := 0
+	r := types.Row{
+		OverlayOnly: true,
+		OverlayOK:   true,
+		Overlay:     types.Overlay{Runtime: types.RuntimeLocal, Kind: "slot", SlotIndex: &idx, Status: "busy"},
+	}
+	if got := Status(r); got != StatusBusy {
+		t.Fatalf("slot-status-follows-overlay violated: got %q", got)
+	}
+	r.Overlay.Status = "idle"
+	if got := Status(r); got != StatusIdle {
+		t.Fatalf("idle-slot-status-follows-overlay violated: got %q", got)
+	}
+}
+
 func TestContextFillNeedsBothSides(t *testing.T) {
 	tok := int64(50)
 	if _, ok := ContextFill(types.Overlay{TokensUsed: &tok}); ok {

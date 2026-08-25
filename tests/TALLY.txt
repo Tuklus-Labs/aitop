@@ -1,17 +1,17 @@
 ?   	aitop/cmd/aitop	[no test files]
-ok  	aitop/internal/act
-ok  	aitop/internal/classify
-ok  	aitop/internal/join
-ok  	aitop/internal/overlay/claude
-ok  	aitop/internal/overlay/codex
-ok  	aitop/internal/overlay/grok
-ok  	aitop/internal/overlay/heartbeat
-ok  	aitop/internal/overlay/inference
-ok  	aitop/internal/overlay/local
-ok  	aitop/internal/present
-ok  	aitop/internal/price
-ok  	aitop/internal/proc
-ok  	aitop/internal/snapshot
-ok  	aitop/internal/theme
-ok  	aitop/internal/types
-ok  	aitop/internal/ui
+ok  	aitop/internal/act	0.058s
+ok  	aitop/internal/classify	0.001s
+ok  	aitop/internal/join	0.002s
+ok  	aitop/internal/overlay/claude	0.014s
+ok  	aitop/internal/overlay/codex	0.002s
+ok  	aitop/internal/overlay/grok	0.005s
+ok  	aitop/internal/overlay/heartbeat	0.002s
+ok  	aitop/internal/overlay/inference	0.409s
+ok  	aitop/internal/overlay/local	0.003s
+ok  	aitop/internal/present	0.003s
+ok  	aitop/internal/price	0.003s
+ok  	aitop/internal/proc	0.023s
+ok  	aitop/internal/snapshot	0.004s
+ok  	aitop/internal/theme	0.006s
+ok  	aitop/internal/types	0.002s
+ok  	aitop/internal/ui	0.015s

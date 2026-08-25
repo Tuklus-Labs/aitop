@@ -1,6 +1,70 @@
 package join
 
-import "aitop/internal/types"
+import (
+	"strconv"
+
+	"aitop/internal/types"
+)
+
+// ParentKey is the stable identity a child ParentSession can point at.
+// SessionID wins; local units fall back to local:<SessionName>, then local-pid:<pid>.
+func ParentKey(r types.Row) string {
+	if r.Overlay.SessionID != "" {
+		return r.Overlay.SessionID
+	}
+	local := r.Overlay.Runtime == types.RuntimeLocal || r.Process.Runtime == types.RuntimeLocal
+	if local && r.Overlay.SessionName != "" {
+		return "local:" + r.Overlay.SessionName
+	}
+	pid := r.Process.PID
+	if pid == 0 {
+		pid = r.Overlay.PID
+	}
+	if pid != 0 && local {
+		return "local-pid:" + strconv.Itoa(int(pid))
+	}
+	return ""
+}
+
+func parentIdents(r types.Row) []string {
+	var keys []string
+	seen := map[string]struct{}{}
+	add := func(k string) {
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+	add(r.Overlay.SessionID)
+	local := r.Overlay.Runtime == types.RuntimeLocal || r.Process.Runtime == types.RuntimeLocal
+	if local && r.Overlay.SessionName != "" {
+		add("local:" + r.Overlay.SessionName)
+	}
+	pid := r.Process.PID
+	if pid == 0 {
+		pid = r.Overlay.PID
+	}
+	if pid != 0 && local {
+		add("local-pid:" + strconv.Itoa(int(pid)))
+	}
+	return keys
+}
+
+func nestsUnder(c types.Overlay, parent types.Row) bool {
+	if c.ParentSession == "" {
+		return false
+	}
+	for _, k := range parentIdents(parent) {
+		if c.ParentSession == k {
+			return true
+		}
+	}
+	return false
+}
 
 func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 	byPID := map[int32]types.Overlay{}
@@ -29,6 +93,7 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 	}
 
 	var rows []types.Row
+	consumed := make([]bool, len(orphans))
 	for _, p := range spine {
 		if !p.AgentRoot && p.Role != types.RolePrimary && p.Role != types.RoleDesktop && p.Role != types.RoleSidecar && p.Role != types.RoleMonitor {
 			continue
@@ -41,12 +106,14 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 				r.OverlayOK = true
 			}
 		}
-		if r.OverlayOK {
-			for _, c := range orphans {
-				if c.ParentSession != "" && c.ParentSession == r.Overlay.SessionID {
-					cr := types.Row{Overlay: sanitize(c), OverlayOK: true, OverlayOnly: true}
-					r.Children = append(r.Children, cr)
-				}
+		for i, c := range orphans {
+			if consumed[i] {
+				continue
+			}
+			if nestsUnder(c, r) {
+				consumed[i] = true
+				cr := types.Row{Overlay: sanitize(c), OverlayOK: true, OverlayOnly: true}
+				r.Children = append(r.Children, cr)
 			}
 		}
 		rows = append(rows, r)
@@ -91,6 +158,12 @@ func merge(a, b types.Overlay) types.Overlay {
 	}
 	if a.SessionID == "" {
 		a.SessionID = b.SessionID
+	}
+	if a.SessionName == "" {
+		a.SessionName = b.SessionName
+	}
+	if a.Status == "" {
+		a.Status = b.Status
 	}
 	if a.Runtime == "" {
 		a.Runtime = b.Runtime

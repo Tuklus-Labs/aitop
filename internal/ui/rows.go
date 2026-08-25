@@ -66,12 +66,22 @@ func newShaper() *shaper {
 
 func rowKey(r types.Row) string {
 	if r.OverlayOnly {
+		if r.Overlay.Kind == "slot" && r.Overlay.SlotIndex != nil {
+			return "slot:" + r.Overlay.ParentSession + ":" + itoa(int32(*r.Overlay.SlotIndex))
+		}
 		if r.Overlay.SubagentID != "" {
 			return "sub:" + r.Overlay.SubagentID
+		}
+		if r.Overlay.Runtime == types.RuntimeLocal && r.Overlay.SessionName != "" {
+			return "local:" + r.Overlay.SessionName
 		}
 		return "sub:" + r.Overlay.SessionID
 	}
 	return "pid:" + itoa(r.Process.PID) + ":" + utoa(r.Process.StartTime)
+}
+
+func isLocal(r types.Row) bool {
+	return r.Process.Runtime == types.RuntimeLocal || r.Overlay.Runtime == types.RuntimeLocal
 }
 
 func itoa(n int32) string { return utoa(uint64(n)) }
@@ -99,7 +109,7 @@ func (s *shaper) shape(rows []types.Row, host proc.HostSample, now time.Time) []
 			monitors = append(monitors, r)
 		case r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar:
 			parlor = append(parlor, r)
-		case r.Process.Runtime == types.RuntimeLocal:
+		case isLocal(r):
 			locals = append(locals, r)
 		default:
 			agents = append(agents, r)
@@ -236,8 +246,11 @@ func (s *shaper) groupLines(name, key string, members []types.Row, host proc.Hos
 		if !s.collapsed[key] {
 			for i := range kids {
 				kids[i].last = i == len(kids)-1
+				out = append(out, kids[i])
+				if !s.collapsed[kids[i].key] {
+					out = append(out, s.childLines(kids[i].row, host, now, kids[i].depth+1)...)
+				}
 			}
-			out = append(out, kids...)
 		}
 		return out
 	}
@@ -253,6 +266,9 @@ func (s *shaper) groupLines(name, key string, members []types.Row, host proc.Hos
 	for i := range kids {
 		kids[i].last = i == len(kids)-1
 		out = append(out, kids[i])
+		if !s.collapsed[kids[i].key] {
+			out = append(out, s.childLines(kids[i].row, host, now, kids[i].depth+1)...)
+		}
 	}
 	return out
 }
@@ -354,7 +370,7 @@ func takeCensus(rows []types.Row) census {
 			return
 		}
 		isParlor := r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar
-		if r.Process.Runtime == types.RuntimeLocal {
+		if isLocal(r) {
 			c.locals++
 			c.rss += r.Process.RSS
 			return

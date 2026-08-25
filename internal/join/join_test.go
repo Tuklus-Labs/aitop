@@ -140,6 +140,50 @@ func TestLivePidJoinsDarkUnitNotDuplicate(t *testing.T) {
 	}
 }
 
+func TestParentKeyLocalPid(t *testing.T) {
+	r := types.Row{
+		Process: types.Process{PID: 10, Runtime: types.RuntimeLocal},
+		Overlay: types.Overlay{Runtime: types.RuntimeLocal},
+	}
+	if got := ParentKey(r); got != "local-pid:10" {
+		t.Fatalf("parent-key-local-pid violated: got %q", got)
+	}
+	ovOnly := types.Row{Overlay: types.Overlay{PID: 11, Runtime: types.RuntimeLocal}}
+	if got := ParentKey(ovOnly); got != "local-pid:11" {
+		t.Fatalf("parent-key-overlay-pid violated: got %q", got)
+	}
+}
+
+func TestParentKeyLocalUnit(t *testing.T) {
+	r := types.Row{
+		Process: types.Process{PID: 10, Runtime: types.RuntimeLocal},
+		Overlay: types.Overlay{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38"},
+	}
+	if got := ParentKey(r); got != "local:hermes-qwen38" {
+		t.Fatalf("parent-key-local-unit violated: got %q", got)
+	}
+	r.Overlay.SessionID = "sess"
+	if got := ParentKey(r); got != "sess" {
+		t.Fatalf("parent-key-session-id-wins violated: got %q", got)
+	}
+}
+
+func TestSlotNestsUnderLocalPidNotRoot(t *testing.T) {
+	spine := []types.Process{{PID: 10, StartTime: 1, Comm: "llama-server", AgentRoot: true, Role: types.RoleSidecar, Runtime: types.RuntimeLocal}}
+	idx := 0
+	ov := []types.Overlay{
+		{PID: 10, StartTime: 1, Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "busy"},
+		{Runtime: types.RuntimeLocal, ParentSession: "local-pid:10", Kind: "slot", SlotIndex: &idx, Status: "busy"},
+	}
+	rows := Join(spine, ov)
+	if len(rows) != 1 {
+		t.Fatalf("dark-or-slot-became-root violated: n=%d rows=%+v", len(rows), rows)
+	}
+	if len(rows[0].Children) != 1 || rows[0].Children[0].Overlay.Kind != "slot" {
+		t.Fatalf("slot-nests-under-local-not-root violated: %+v", rows)
+	}
+}
+
 func TestGrokOverlayWithoutPidStillNotRoot(t *testing.T) {
 	rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeGrok, SessionID: "x", ParentSession: ""}})
 	if len(rows) != 0 {

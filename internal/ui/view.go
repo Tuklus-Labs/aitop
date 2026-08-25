@@ -21,7 +21,7 @@ const (
 )
 
 // column is one table column. drop is the order columns leave at narrow
-// widths (1 first); 0 never drops. Spec order: COST, CTX, TOK, MODEL,
+// widths (1 first); 0 never drops. Spec order: COST, T/S, CTX, TOK, MODEL,
 // PROJECT, AGE, RSS, CPU, STAT. TREE/NAME and TITLE are handled apart.
 type column struct {
 	name  string
@@ -32,15 +32,16 @@ type column struct {
 
 var allColumns = []column{
 	{"NAME", 22, false, 0},
-	{"PROJECT", 12, false, 5},
-	{"MODEL", 14, false, 4},
-	{"CPU", 5, true, 8},
-	{"RSS", 6, true, 7},
-	{"TOK", 6, true, 3},
-	{"CTX", 10, false, 2},
+	{"PROJECT", 12, false, 6},
+	{"MODEL", 14, false, 5},
+	{"CPU", 5, true, 9},
+	{"RSS", 6, true, 8},
+	{"TOK", 6, true, 4},
+	{"CTX", 10, false, 3},
 	{"COST", 7, true, 1},
-	{"AGE", 6, true, 6},
-	{"STAT", 6, false, 9},
+	{"T/S", 5, true, 2},
+	{"AGE", 6, true, 7},
+	{"STAT", 6, false, 10},
 }
 
 // layoutColumns picks which columns fit in inner cells and how wide TITLE is.
@@ -553,6 +554,12 @@ func (s *Styles) renderLine(l line, cols []column, titleW int, selected bool) st
 			} else {
 				b.WriteString(paint(s.Dim, rfit(absent, c.width)))
 			}
+		case "T/S":
+			if l.row.Overlay.TokPerSec != nil {
+				b.WriteString(paint(s.Used(*l.row.Overlay.TokPerSec/100), rfit(TokS(l.row.Overlay.TokPerSec), c.width)))
+			} else {
+				b.WriteString(paint(s.Dim, rfit(absent, c.width)))
+			}
 		case "AGE":
 			b.WriteString(paint(s.Dim, rfit(Age(l.age), c.width)))
 		case "STAT":
@@ -846,7 +853,7 @@ func (s *Styles) groupMembers(f frame, g line) []string {
 	for _, r := range f.snap.Rows {
 		isMon := r.Process.Role == types.RoleMonitor
 		isParlor := r.Process.Runtime == types.RuntimeParlor && r.Process.Role == types.RoleSidecar
-		isLocal := r.Process.Runtime == types.RuntimeLocal
+		isLocal := r.Process.Runtime == types.RuntimeLocal || r.Overlay.Runtime == types.RuntimeLocal
 		if (g.key == "group:monitors" && isMon) || (g.key == "group:parlor" && isParlor) || (g.key == "group:locals" && isLocal) {
 			cpu := absent
 			if r.Process.CPUKnown {

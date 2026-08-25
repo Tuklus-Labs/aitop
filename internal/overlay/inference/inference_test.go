@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -57,10 +58,10 @@ func TestLlamaSlotsGiveContextOccupancyAndStatus(t *testing.T) {
 	p := pollerWith(serverOf(t, srv, "llama", 1298775))
 	p.Poll()
 	ovs := p.Latest()
-	if len(ovs) != 1 {
-		t.Fatalf("llama-server-gets-one-overlay violated: %d", len(ovs))
+	o, slots := splitServerSlots(ovs)
+	if o.PID != 1298775 {
+		t.Fatalf("llama-server-gets-one-overlay violated: server=%+v n=%d", o, len(ovs))
 	}
-	o := ovs[0]
 	if o.TokensUsed == nil || *o.TokensUsed != 516+40+1000 {
 		t.Fatalf("llama-tokens-are-prompt-plus-decoded-over-slots violated: %v", o.TokensUsed)
 	}
@@ -85,6 +86,83 @@ func TestLlamaSlotsGiveContextOccupancyAndStatus(t *testing.T) {
 	if o.Runtime != types.RuntimeLocal || o.PID != 1298775 {
 		t.Fatalf("overlay-targets-the-server-pid violated: %+v", o)
 	}
+	if len(slots) != o.SubagentDeclared || len(slots) != 2 {
+		t.Fatalf("llama-emits-one-overlay-per-declared-slot violated: slots=%d declared=%d", len(slots), o.SubagentDeclared)
+	}
+	wantParent := "local-pid:1298775"
+	for i, sl := range slots {
+		if sl.PID != 0 || sl.Kind != "slot" || sl.ParentSession != wantParent || sl.SlotIndex == nil {
+			t.Fatalf("slot-overlay-is-child-not-server violated: i=%d %+v", i, sl)
+		}
+		if sl.TokPerSec != nil {
+			t.Fatalf("tok-per-sec-first-sample-is-absent violated: i=%d v=%v", i, *sl.TokPerSec)
+		}
+	}
+}
+
+func splitServerSlots(ovs []types.Overlay) (types.Overlay, []types.Overlay) {
+	var server types.Overlay
+	var slots []types.Overlay
+	for _, o := range ovs {
+		if o.Kind == "slot" {
+			slots = append(slots, o)
+			continue
+		}
+		if o.PID != 0 {
+			server = o
+		}
+	}
+	return server, slots
+}
+
+func TestLlamaSlotTokPerSecIsDecodeDelta(t *testing.T) {
+	var decoded atomic.Int64
+	decoded.Store(40)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/slots":
+			n := decoded.Load()
+			fmt.Fprintf(w, `[{"id":0,"n_ctx":32768,"is_processing":true,"n_prompt_tokens":516,"next_token":[{"n_decoded":%d}]},{"id":1,"n_ctx":32768,"is_processing":false,"n_prompt_tokens":1000,"next_token":[{"n_decoded":0}]}]`, n)
+		case "/props":
+			w.Write([]byte(props))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	p := pollerWith(serverOf(t, srv, "llama", 10))
+	t0 := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	p.now = func() time.Time { return t0 }
+	p.Poll()
+	_, slots := splitServerSlots(p.Latest())
+	if len(slots) != 2 {
+		t.Fatalf("slot-count-before-tok-per-sec violated: %d", len(slots))
+	}
+	busy := slotByIndex(slots, 0)
+	if busy.TokPerSec != nil {
+		t.Fatalf("tok-per-sec-first-sample-is-absent violated: %v", *busy.TokPerSec)
+	}
+	decoded.Store(140)
+	p.now = func() time.Time { return t0.Add(time.Second) }
+	p.Poll()
+	_, slots = splitServerSlots(p.Latest())
+	busy = slotByIndex(slots, 0)
+	if busy.TokPerSec == nil || *busy.TokPerSec <= 0 {
+		t.Fatalf("tok-per-sec-is-decode-delta violated: %+v", busy.TokPerSec)
+	}
+	idle := slotByIndex(slots, 1)
+	if idle.TokPerSec != nil {
+		t.Fatalf("idle-slot-tok-per-sec-stays-absent violated: %v", *idle.TokPerSec)
+	}
+}
+
+func slotByIndex(slots []types.Overlay, want int) types.Overlay {
+	for _, sl := range slots {
+		if sl.SlotIndex != nil && *sl.SlotIndex == want {
+			return sl
+		}
+	}
+	return types.Overlay{}
 }
 
 func TestLlamaMetricsGiveLifetimeWhenEnabled(t *testing.T) {
@@ -101,7 +179,7 @@ func TestLlamaMetricsGiveLifetimeWhenEnabled(t *testing.T) {
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "llama", 10))
 	p.Poll()
-	o := p.Latest()[0]
+	o, _ := splitServerSlots(p.Latest())
 	if !o.Usage.Known || o.Usage.Input != 123456 || o.Usage.Output != 7890 {
 		t.Fatalf("llama-metrics-lifetime violated: %+v", o.Usage)
 	}
@@ -124,7 +202,7 @@ func TestVLLMMetricsAndModels(t *testing.T) {
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "vllm", 20))
 	p.Poll()
-	o := p.Latest()[0]
+	o, _ := splitServerSlots(p.Latest())
 	if o.Model != "Qwen/Qwen3-32B" || o.ContextWindow == nil || *o.ContextWindow != 40960 {
 		t.Fatalf("vllm-model-and-window-from-v1-models violated: %q %v", o.Model, o.ContextWindow)
 	}
@@ -160,8 +238,9 @@ func TestSlowServerKeepsLastAnswerAndDoesNotBlockLatest(t *testing.T) {
 	p := pollerWith(serverOf(t, srv, "llama", 30))
 	p.Client.Timeout = 100 * time.Millisecond
 	p.Poll()
-	if len(p.Latest()) != 1 {
-		t.Fatal("setup: first poll failed")
+	first, firstSlots := splitServerSlots(p.Latest())
+	if first.PID != 30 || first.TokensUsed == nil || len(firstSlots) != 2 {
+		t.Fatalf("setup: first poll failed: server=%+v slots=%d", first, len(firstSlots))
 	}
 	slow.Store(true)
 	t0 := time.Now()
@@ -169,8 +248,9 @@ func TestSlowServerKeepsLastAnswerAndDoesNotBlockLatest(t *testing.T) {
 	if d := time.Since(t0); d > 300*time.Millisecond {
 		t.Fatalf("inference-poll-bounded-by-client-timeout violated: %v", d)
 	}
-	if ovs := p.Latest(); len(ovs) != 1 || ovs[0].TokensUsed == nil {
-		t.Fatalf("inference-slow-server-keeps-last-answer violated: %+v", ovs)
+	kept, keptSlots := splitServerSlots(p.Latest())
+	if kept.TokensUsed == nil || len(keptSlots) != 2 {
+		t.Fatalf("inference-slow-server-keeps-last-answer violated: server=%+v slots=%d", kept, len(keptSlots))
 	}
 	t1 := time.Now()
 	_ = p.Latest()

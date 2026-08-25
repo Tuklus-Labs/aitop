@@ -73,6 +73,19 @@ func Pct(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
+// TokS formats tokens per second in five cells: 12.3, 42.5, 120.
+// Nil is absent, never "0".
+func TokS(v *float64) string {
+	if v == nil {
+		return absent
+	}
+	x := *v
+	if x >= 100 {
+		return fmt.Sprintf("%.0f", x)
+	}
+	return fmt.Sprintf("%.1f", x)
+}
+
 // Cost keeps three significant figures where the eye needs them: $0.83,
 // $1.07, $45.1, $323, $1234.
 func Cost(v *float64) string {

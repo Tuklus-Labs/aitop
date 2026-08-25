@@ -130,16 +130,28 @@ func HostPort(argv []string, kind string) (string, int) {
 	return host, port
 }
 
+type slotKey struct {
+	pid int32
+	idx int
+}
+
+type decodeSample struct {
+	n  int64
+	at time.Time
+}
+
 // Poller probes servers on its own clock and keeps the last good overlays.
 type Poller struct {
 	ProcRoot string
 	Client   *http.Client
 	Interval time.Duration
 	Discover func(string) []Server // tests inject
+	now      func() time.Time      // tests inject; nil is time.Now
 
 	latest atomic.Pointer[[]types.Overlay]
 	mu     sync.Mutex
 	static map[int32]staticInfo // per pid: things that do not change while it lives
+	decode map[slotKey]decodeSample
 }
 
 type staticInfo struct {
@@ -158,7 +170,15 @@ func NewPoller(procRoot string) *Poller {
 		Interval: time.Second,
 		Discover: Discover,
 		static:   map[int32]staticInfo{},
+		decode:   map[slotKey]decodeSample{},
 	}
+}
+
+func (p *Poller) clock() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
 }
 
 // Latest returns the overlays from the most recent completed poll.
@@ -184,44 +204,66 @@ func (p *Poller) Start() {
 // /proc is dropped.
 func (p *Poller) Poll() {
 	servers := p.Discover(p.ProcRoot)
-	prev := map[int32]types.Overlay{}
+	prevByPID := map[int32][]types.Overlay{}
 	for _, o := range p.Latest() {
-		prev[o.PID] = o
+		if o.Kind == "slot" || o.PID == 0 {
+			continue
+		}
+		prevByPID[o.PID] = []types.Overlay{o}
 	}
+	const pfx = "local-pid:"
+	for _, o := range p.Latest() {
+		if o.Kind != "slot" || !strings.HasPrefix(o.ParentSession, pfx) {
+			continue
+		}
+		pid, err := strconv.Atoi(o.ParentSession[len(pfx):])
+		if err != nil {
+			continue
+		}
+		prevByPID[int32(pid)] = append(prevByPID[int32(pid)], o)
+	}
+	live := map[int32]struct{}{}
 	var out []types.Overlay
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+	now := p.clock()
 	for _, s := range servers {
+		live[s.PID] = struct{}{}
 		wg.Add(1)
 		go func(s Server) {
 			defer wg.Done()
-			ov, ok := p.probe(s)
+			ov, ok := p.probe(s, now)
 			if !ok {
-				if old, had := prev[s.PID]; had {
+				if old := prevByPID[s.PID]; len(old) > 0 {
 					ov, ok = old, true
 				}
 			}
 			if ok {
 				mu.Lock()
-				out = append(out, ov)
+				out = append(out, ov...)
 				mu.Unlock()
 			}
 		}(s)
 	}
 	wg.Wait()
+	p.dropDecode(live)
 	p.latest.Store(&out)
 }
 
-func (p *Poller) probe(s Server) (types.Overlay, bool) {
+func (p *Poller) probe(s Server, now time.Time) ([]types.Overlay, bool) {
 	base := "http://" + s.Host + ":" + strconv.Itoa(s.Port)
 	ov := types.Overlay{PID: s.PID, StartTime: s.StartTime, Runtime: types.RuntimeLocal}
 	switch s.Kind {
 	case "llama":
-		return p.probeLlama(base, s, ov)
+		return p.probeLlama(base, s, ov, now)
 	case "vllm":
-		return p.probeVLLM(base, s, ov)
+		o, ok := p.probeVLLM(base, s, ov)
+		if !ok {
+			return nil, false
+		}
+		return []types.Overlay{o}, true
 	}
-	return ov, false
+	return nil, false
 }
 
 func (p *Poller) getJSON(url string, v any) bool {
@@ -243,6 +285,7 @@ func (p *Poller) getJSON(url string, v any) bool {
 // ---- llama-server ----
 
 type llamaSlot struct {
+	ID           int   `json:"id"`
 	NCtx         int64 `json:"n_ctx"`
 	IsProcessing bool  `json:"is_processing"`
 	NPrompt      int64 `json:"n_prompt_tokens"`
@@ -263,7 +306,7 @@ type llamaProps struct {
 	} `json:"default_generation_settings"`
 }
 
-func (p *Poller) probeLlama(base string, s Server, ov types.Overlay) (types.Overlay, bool) {
+func (p *Poller) probeLlama(base string, s Server, ov types.Overlay, now time.Time) ([]types.Overlay, bool) {
 	st := p.staticFor(s)
 	if st.model == "" || st.checked.IsZero() {
 		var pr llamaProps
@@ -287,20 +330,49 @@ func (p *Poller) probeLlama(base string, s Server, ov types.Overlay) (types.Over
 	}
 	var slots []llamaSlot
 	if !p.getJSON(base+"/slots", &slots) {
-		return ov, false
+		return nil, false
 	}
 	var used, window int64
 	busy := 0
-	for _, sl := range slots {
+	parent := "local-pid:" + strconv.Itoa(int(s.PID))
+	children := make([]types.Overlay, 0, len(slots))
+	for i, sl := range slots {
 		n := sl.NPrompt
+		decoded := int64(0)
 		if len(sl.NextToken) > 0 {
-			n += sl.NextToken[0].NDecoded
+			decoded = sl.NextToken[0].NDecoded
+			n += decoded
 		}
 		used += n
 		window += sl.NCtx
 		if sl.IsProcessing {
 			busy++
 		}
+		idx := i
+		if sl.ID != 0 {
+			idx = sl.ID
+		}
+		si := idx
+		tok := n
+		child := types.Overlay{
+			Runtime:       types.RuntimeLocal,
+			ParentSession: parent,
+			Kind:          "slot",
+			SlotIndex:     &si,
+			Status:        "idle",
+			TokensUsed:    &tok,
+		}
+		if sl.IsProcessing {
+			child.Status = "busy"
+			child.TokPerSec = p.tokPerSec(s.PID, idx, decoded, now)
+		} else {
+			p.noteDecode(s.PID, idx, decoded, now)
+		}
+		if sl.NCtx > 0 {
+			w := sl.NCtx
+			child.ContextWindow = &w
+		}
+		children = append(children, child)
 	}
 	if window == 0 {
 		window = st.window
@@ -328,7 +400,44 @@ func (p *Poller) probeLlama(base string, s Server, ov types.Overlay) (types.Over
 			}
 		}
 	}
-	return ov, true
+	return append([]types.Overlay{ov}, children...), true
+}
+
+func (p *Poller) tokPerSec(pid int32, idx int, decoded int64, now time.Time) *float64 {
+	key := slotKey{pid: pid, idx: idx}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	prev, ok := p.decode[key]
+	p.decode[key] = decodeSample{n: decoded, at: now}
+	if !ok {
+		return nil
+	}
+	dt := now.Sub(prev.at).Seconds()
+	if dt <= 0 {
+		return nil
+	}
+	d := decoded - prev.n
+	if d < 0 {
+		return nil
+	}
+	rate := float64(d) / dt
+	return &rate
+}
+
+func (p *Poller) noteDecode(pid int32, idx int, decoded int64, now time.Time) {
+	p.mu.Lock()
+	p.decode[slotKey{pid: pid, idx: idx}] = decodeSample{n: decoded, at: now}
+	p.mu.Unlock()
+}
+
+func (p *Poller) dropDecode(live map[int32]struct{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k := range p.decode {
+		if _, ok := live[k.pid]; !ok {
+			delete(p.decode, k)
+		}
+	}
 }
 
 // ---- vLLM ----

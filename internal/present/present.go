@@ -4,6 +4,7 @@
 package present
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ const (
 	StatusError     = "error"
 	StatusDone      = "done"
 	StatusCancelled = "cancelled"
+	StatusOff       = "off"
 )
 
 const busyCPUPct = 8.0
@@ -30,6 +32,12 @@ const busyCPUPct = 8.0
 // comm. Overlay-only subagents use their description or short id.
 func Name(r types.Row) string {
 	if r.OverlayOnly {
+		if r.Overlay.Runtime == types.RuntimeLocal && r.Overlay.SessionName != "" {
+			return strings.TrimPrefix(r.Overlay.SessionName, "hermes-")
+		}
+		if r.Overlay.Kind == "slot" && r.Overlay.SlotIndex != nil {
+			return "slot " + strconv.Itoa(*r.Overlay.SlotIndex)
+		}
 		// Short identity here; the task description is the title.
 		if r.Overlay.SubagentType != "" {
 			return r.Overlay.SubagentType
@@ -67,6 +75,10 @@ func ShortID(id string) string {
 // Status applies the overlay-wins-downgrade, proc-may-upgrade rule.
 func Status(r types.Row) string {
 	if r.OverlayOnly {
+		st := strings.ToLower(r.Overlay.Status)
+		if r.Overlay.Dark || st == StatusOff {
+			return StatusOff
+		}
 		switch r.Overlay.SubagentStatus {
 		case "running":
 			return StatusBusy
@@ -77,6 +89,10 @@ func Status(r types.Row) string {
 		case "failed", "error", "errored":
 			return StatusError
 		case "":
+			switch st {
+			case StatusBusy, StatusIdle, StatusWait, StatusError, StatusShell:
+				return st
+			}
 			return StatusWait
 		default:
 			return r.Overlay.SubagentStatus

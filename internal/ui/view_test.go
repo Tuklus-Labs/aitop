@@ -117,7 +117,7 @@ func TestEveryLineIsExactlyTerminalWidth(t *testing.T) {
 	}
 }
 
-func TestColumnDropOrderIsCostCtxTokFirst(t *testing.T) {
+func TestColumnDropOrderIsCostTSCtxTokFirst(t *testing.T) {
 	wide, _ := layoutColumns(200)
 	if len(wide) != len(allColumns) {
 		t.Fatalf("wide-keeps-every-column violated: %d of %d", len(wide), len(allColumns))
@@ -138,8 +138,8 @@ func TestColumnDropOrderIsCostCtxTokFirst(t *testing.T) {
 		}
 		return false
 	}
-	if has(narrow, "COST") || has(narrow, "CTX") {
-		t.Fatalf("column-drop-order-cost-ctx-first violated: narrow=%v", names(narrow))
+	if has(narrow, "COST") || has(narrow, "T/S") {
+		t.Fatalf("column-drop-order-cost-ts-first violated: narrow=%v", names(narrow))
 	}
 	if !has(narrow, "NAME") || !has(narrow, "STAT") {
 		t.Fatalf("never-drop-name-or-stat violated: narrow=%v", names(narrow))
@@ -417,6 +417,71 @@ func firstName(ls []line) string {
 		return ""
 	}
 	return ls[0].name
+}
+
+func TestCensusCountsDarkLocalNotAsAgent(t *testing.T) {
+	rows := []types.Row{{
+		OverlayOnly: true,
+		OverlayOK:   true,
+		Overlay:     types.Overlay{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "off", Dark: true, Title: "Iris: Qwen3.8"},
+	}}
+	c := takeCensus(rows)
+	if c.locals != 1 || c.agents != 0 {
+		t.Fatalf("census-counts-dark-local-not-as-agent violated: locals=%d agents=%d", c.locals, c.agents)
+	}
+	s := newShaper()
+	lines := s.shape(rows, proc.HostSample{}, now)
+	var inLocals, inAgents bool
+	for _, l := range lines {
+		if l.group && l.key == "group:locals" {
+			inLocals = true
+		}
+		if !l.group && l.name == "qwen38" {
+			if l.depth == 0 {
+				inAgents = true
+			}
+		}
+	}
+	if !inLocals || inAgents {
+		t.Fatalf("dark-local-sits-in-locals-group violated: localsGroup=%v agentRoot=%v lines=%v", inLocals, inAgents, lineNames(lines))
+	}
+}
+
+func lineNames(ls []line) []string {
+	var o []string
+	for _, l := range ls {
+		o = append(o, l.name)
+	}
+	return o
+}
+
+func TestTokPerSecColumnPaintsOnWideFrame(t *testing.T) {
+	rate := 42.5
+	idx := 0
+	used := int64(100)
+	win := int64(1000)
+	snap := fixtureSnapshot()
+	snap.Rows = append(snap.Rows, types.Row{
+		Process:   types.Process{PID: 10, StartTime: 500, Comm: "llama-server", Runtime: types.RuntimeLocal, Role: types.RoleSidecar, AgentRoot: true, NameHint: "qwen38"},
+		OverlayOK: true,
+		Overlay:   types.Overlay{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "busy", Title: "Iris: Qwen3.8", TokensUsed: &used, ContextWindow: &win, SubagentLive: 1, SubagentDeclared: 1},
+		Children: []types.Row{{
+			OverlayOnly: true,
+			OverlayOK:   true,
+			Overlay:     types.Overlay{Runtime: types.RuntimeLocal, Kind: "slot", ParentSession: "local-pid:10", SlotIndex: &idx, Status: "busy", TokensUsed: &used, ContextWindow: &win, TokPerSec: &rate},
+		}},
+	})
+	s := ansi.Strip(Render(snap, theme.Nightfable(), 200, 40, now))
+	if !strings.Contains(s, "T/S") {
+		t.Fatalf("tok-per-sec-column-header-on-wide-frame violated:\n%s", s)
+	}
+	row := rowLine(s, "slot 0")
+	if row == "" || !strings.Contains(row, "42.5") {
+		t.Fatalf("tok-per-sec-paints-on-slot-row violated: %q\n%s", row, s)
+	}
+	if !strings.Contains(s, "▴ 1 local") {
+		t.Fatalf("live-local-counted-in-header violated:\n%s", s)
+	}
 }
 
 func TestCensusExcludesParlorAndMonitorsFromAgents(t *testing.T) {

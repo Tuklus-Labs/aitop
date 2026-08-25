@@ -100,3 +100,12 @@ Dark local units are roots. Same-epoch plant against uncommitted `internal/join/
 | ID | Mutation | Prediction | Observed | Conclusion |
 |----|----------|------------|----------|------------|
 | PF-C8 | `continue` before the post-spine dark-root emit | TestDarkLocalUnitIsRootOff RED; TestLivePidJoinsDarkUnitNotDuplicate, TestGrokOverlayWithoutPidStillNotRoot, TestOverlayOnlyPIDDoesNotCreateRootRow stay GREEN | RED: `dark-local-unit-is-root-off violated: []`. Sisters stayed PASS (live pid already occupies the unit; grok-without-pid and ghost pid 99 never were roots) | Load-bearing. Overlay-only local units with a SessionName are roots at STAT=off. Grok/Claude/Codex overlays with no pid still do not create roots. |
+
+## Control epoch, slot children + tok/s (2026-08-24, Grok, working copy then this commit)
+
+Slot ParentSession nests under a live local even when SessionID is empty. Same-epoch plants against uncommitted join/inference; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C9 | `nestsUnder` matches only `Overlay.SessionID` (drops ParentKey / local-pid idents) | TestSlotNestsUnderLocalPidNotRoot RED; TestInProcessSubagentsNest, TestDarkLocalUnitIsRootOff, TestParentKey*, TestGrokOverlayWithoutPidStillNotRoot, TestOverlayOnlyPIDDoesNotCreateRootRow stay GREEN | RED: `slot-nests-under-local-not-root violated` with `Children:[]`. Sisters PASS (grok children still match SessionID; dark roots and ParentKey helpers do not go through nest) | Load-bearing. Inference slots point at `local-pid:<pid>`; SessionID-only join drops them. |
+| PF-C9b | first-sample `TokPerSec` returns `&0` instead of nil | TestLlamaSlotTokPerSecIsDecodeDelta and TestLlamaSlotsGiveContextOccupancyAndStatus RED on `tok-per-sec-first-sample-is-absent` | RED: `tok-per-sec-first-sample-is-absent violated: i=0 v=0` and `violated: 0` | Load-bearing. First decode sample is absent, never a painted 0. |

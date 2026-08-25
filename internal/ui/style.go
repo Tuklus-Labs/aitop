@@ -51,6 +51,7 @@ func NewStyles(t theme.Theme) *Styles {
 		present.StatusError:     s.Hi,
 		present.StatusCancelled: s.Dim,
 		present.StatusDone:      lipgloss.NewStyle().Foreground(c(t.CPU[0])),
+		present.StatusOff:       s.Dim,
 	}
 	s.cpuGrad = gradStyles(t.CPU)
 	s.usedGrad = gradStyles(t.Used)
