@@ -91,7 +91,7 @@ Sort lives under `s` then a letter.
 | `f` | fork: new session, capsule as first prompt, always a worktree. Locals: one packing-gated fanout clone (`f` is fanout-1; no N prompt) |
 | `c` | clone: verbatim history (`--fork-session` / `codex fork`). Locals: packing-gated `systemd-run --user` clone |
 | `m` | message. Codex: `codex queue --thread --message`. Grok and Claude: unsupported |
-| `r` | restart (confirm) |
+| `r` | restart (confirm). Locals with a unit: `systemctl --user restart`. Agents: unsupported until a resume-spawn path lands |
 | `k` | kill (confirm `y`). SIGINT, then SIGTERM after 5s if still alive. Never SIGKILL. Locals with a unit: `systemctl --user stop` |
 | `p` | promote: model id as typed. Takes effect on the next fork (`-m` / `--model`). Hermes templates: clone first |
 | `b` | budget. Claude: `--effort` `low\|medium\|high\|max`. Grok: `--max-turns N`. Codex: `-c model_reasoning_effort`. Hermes templates: clone first |
