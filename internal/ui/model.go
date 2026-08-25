@@ -376,16 +376,19 @@ func targetFromLine(l line) act.Target {
 		rt = l.row.Overlay.Runtime
 	}
 	return act.Target{
-		Key:       l.key,
-		Runtime:   rt,
-		PID:       l.row.Process.PID,
-		StartTime: l.row.Process.StartTime,
-		SessionID: l.row.Overlay.SessionID,
-		Unit:      l.row.Overlay.SessionName,
-		CWD:       l.row.Overlay.OverlayCWD,
-		Model:     l.row.Overlay.Model,
-		Worktree:  l.row.Overlay.Worktree,
-		Overlay:   l.row.Overlay,
+		Key:          l.key,
+		Runtime:      rt,
+		PID:          l.row.Process.PID,
+		StartTime:    l.row.Process.StartTime,
+		SessionID:    l.row.Overlay.SessionID,
+		Unit:         l.row.Overlay.SessionName,
+		CWD:          l.row.Overlay.OverlayCWD,
+		Model:        l.row.Overlay.Model,
+		Worktree:     l.row.Overlay.Worktree,
+		Overlay:      l.row.Overlay,
+		Argv:         append([]string(nil), l.row.Process.Cmdline...),
+		TemplatePort: act.PortFromArgv(l.row.Process.Cmdline),
+		RSS:          l.row.Process.RSS,
 	}
 }
 

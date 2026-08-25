@@ -11,10 +11,12 @@ import (
 	"github.com/muesli/termenv"
 
 	"aitop/internal/act"
+	actlocal "aitop/internal/act/local"
 	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
+	"aitop/internal/types"
 	"aitop/internal/ui"
 )
 
@@ -78,7 +80,9 @@ func main() {
 		return
 	}
 	src := eng.Start()
-	actor := act.New(nil)
+	actor := act.New(map[types.Runtime]act.Adapter{
+		types.RuntimeLocal: actlocal.New(),
+	})
 	actor.Start()
 	defer actor.Stop()
 	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen())

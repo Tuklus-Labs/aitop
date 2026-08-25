@@ -613,3 +613,36 @@ func TestTallPaneOpensDetailByDefaultAndKeepsFrameHeight(t *testing.T) {
 		t.Fatal("short-pane-keeps-table-rows violated: detail opened at 24 rows")
 	}
 }
+
+func TestTargetFromLineCopiesArgvAndTemplatePort(t *testing.T) {
+	l := line{
+		key: "pid:10:1",
+		row: types.Row{
+			Process: types.Process{
+				PID:       10,
+				StartTime: 1,
+				Runtime:   types.RuntimeLocal,
+				Cmdline:   []string{"llama-server", "-m", "x.gguf", "--port", "8193"},
+				RSS:       20 << 30,
+			},
+			Overlay: types.Overlay{SessionName: "hermes-qwen38", Runtime: types.RuntimeLocal},
+		},
+	}
+	got := targetFromLine(l)
+	if got.TemplatePort != 8193 {
+		t.Fatalf("target-from-line-template-port violated: %d", got.TemplatePort)
+	}
+	if len(got.Argv) != 5 || got.Argv[0] != "llama-server" || got.Argv[4] != "8193" {
+		t.Fatalf("target-from-line-copies-argv violated: %v", got.Argv)
+	}
+	if got.Unit != "hermes-qwen38" {
+		t.Fatalf("target-from-line-unit-from-session-name violated: %q", got.Unit)
+	}
+	if got.RSS != 20<<30 {
+		t.Fatalf("target-from-line-copies-rss violated: %d", got.RSS)
+	}
+	got.Argv[0] = "mutated"
+	if l.row.Process.Cmdline[0] != "llama-server" {
+		t.Fatalf("target-from-line-clones-argv violated: backing array shared")
+	}
+}

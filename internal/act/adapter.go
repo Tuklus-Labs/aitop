@@ -14,16 +14,19 @@ var ErrUnsupported = errors.New("unsupported")
 // Target is the occupancy row an intent acts on. Join key remains
 // (pid, starttime) for live processes; Key is the UI row key.
 type Target struct {
-	Key       string
-	Runtime   types.Runtime
-	PID       int32
-	StartTime uint64
-	SessionID string
-	Unit      string
-	CWD       string
-	Model     string
-	Worktree  string
-	Overlay   types.Overlay
+	Key          string
+	Runtime      types.Runtime
+	PID          int32
+	StartTime    uint64
+	SessionID    string
+	Unit         string
+	CWD          string
+	Model        string
+	Worktree     string
+	Overlay      types.Overlay
+	Argv         []string // live cmdline or template ExecStart; required for local fanout
+	TemplatePort int      // --port of the template; never reused by a clone
+	RSS          uint64   // live instance RSS, bytes; packing uses an 8GiB guess when 0
 }
 
 // Spawned is what an adapter reports after Fork/Clone. PID is 0 until /proc
