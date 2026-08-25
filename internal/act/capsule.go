@@ -49,6 +49,7 @@ type Capsule struct {
 	Task      CapsuleTask   `json:"task"`
 	Ancestry  []string      `json:"ancestry,omitempty"`
 	Child     CapsuleChild  `json:"child"`
+	Dir       string        `json:"-"` // written directory (root/id); adapters read capsule.md here
 }
 
 // CapsuleRoot is $AITOP_CAPSULE_ROOT, else $XDG_RUNTIME_DIR/aitop/capsule.
@@ -119,7 +120,64 @@ func PrepareFork(root string, in Intent) (Capsule, string, error) {
 		cap.ID = id
 	}
 	path, err := Write(root, cap)
+	cap.Dir = path
 	return cap, path, err
+}
+
+// PromptFile is root/id/capsule.md when Dir is set, else capsule.md.
+func PromptFile(cap Capsule) string {
+	if cap.Dir != "" {
+		return filepath.Join(cap.Dir, "capsule.md")
+	}
+	return "capsule.md"
+}
+
+// CapsulePrompt is the child's first prompt: capsule.md if present, else the
+// short branch directive. Used when the CLI takes a prompt argument, not a file.
+func CapsulePrompt(cap Capsule) string {
+	if b, err := os.ReadFile(PromptFile(cap)); err == nil && len(b) > 0 {
+		return string(b)
+	}
+	if cap.Kind == "clone" {
+		return "You are a cloned branch. The parent is still running.\n"
+	}
+	return "You are a branch. The parent is still running.\n"
+}
+
+// ChildSession is a preallocated child UUID, or a new one.
+func ChildSession(cap Capsule) (string, error) {
+	if cap.Child.SessionID != "" {
+		return cap.Child.SessionID, nil
+	}
+	return NewSessionID()
+}
+
+// ShortForkID is 8 hex chars for aitop-fork-<id> names.
+func ShortForkID(cap Capsule) string {
+	raw := strings.ReplaceAll(cap.ID, "-", "")
+	if len(raw) >= 8 {
+		return strings.ToLower(raw[:8])
+	}
+	raw = strings.ReplaceAll(cap.Child.SessionID, "-", "")
+	if len(raw) >= 8 {
+		return strings.ToLower(raw[:8])
+	}
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "00000000"
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// NewSessionID returns a random UUID v4 string.
+func NewSessionID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("session id: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }
 
 func capsuleFromIntent(in Intent) Capsule {

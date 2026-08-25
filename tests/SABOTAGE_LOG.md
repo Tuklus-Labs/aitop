@@ -130,3 +130,11 @@ Same-epoch plants against uncommitted `internal/act/capsule.go` and `act.go`; re
 | PF-C10 | `dispatch` calls `adapter.Fork` then `writeCapsule` | TestActorForkWritesCapsuleBeforeAdapter and TestActorForkDoesNotSpawnIfCapsuleWriteFails RED; TestCapsuleWrittenBeforeCallerContinues, TestCapsuleMustNotTellChildToWait, TestCapsuleOmitsEmptyHead GREEN | RED: `capsule-exists-before-fork violated: empty capsule id at Fork`; `capsule-write-fail-does-not-fork violated: forks=1`. Write sisters PASS | Load-bearing. Capsule files exist before Fork; a write failure must not spawn. |
 | PF-C10b | `renderMarkdown` copies spec prose "Do not wait for the parent." into capsule.md | TestCapsuleMustNotTellChildToWait and TestCapsuleWrittenBeforeCallerContinues RED; TestCapsuleOmitsEmptyHead, TestCapsuleIncludesHeadWhenSet, packing, pid-reuse GREEN | RED: `capsule-must-not-tell-child-to-wait violated`. Head/pack/kill sisters PASS | Load-bearing. Spec "do not wait" is an author rule, not child prompt text. Substring `wait for the parent` is forbidden even negated. |
 | PF-C10c | Skip `WriteFile` of capsule.md (json only) | TestCapsuleWrittenBeforeCallerContinues RED | RED: `capsule-json-and-md-exist violated: md: ... capsule.md: no such file or directory` | Load-bearing. Both siblings must exist when Write returns. |
+
+## Control epoch, agent fork vs clone argv (2026-08-24, Grok, working copy then this commit)
+
+Same-epoch plant against uncommitted `internal/act/grok/grok.go`; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C2 | Grok `Fork` argv inserts `--fork-session` after `-p` | TestGrokForkIsNotForkSession RED; TestGrokCloneUsesForkSession, TestForkCwdNotGitIsLoud, TestGrokKillUsesHelper, claude/codex packages GREEN | RED: `fork-argv-is-not-clone violated: grok -p --fork-session --cwd /tmp/wt --session-id 11111111-2222-4333-8444-555555555555 -m grok-4.6 --always-approve --prompt-file /tmp/caps/cafef00ddeadbeef/capsule.md`. Sisters PASS | Load-bearing. `f` is a new session plus capsule, not `--fork-session`. Token check, not substring: `--prompt-file` contains `-p`. |

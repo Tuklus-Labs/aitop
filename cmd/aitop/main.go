@@ -11,6 +11,9 @@ import (
 	"github.com/muesli/termenv"
 
 	"aitop/internal/act"
+	actclaude "aitop/internal/act/claude"
+	actcodex "aitop/internal/act/codex"
+	actgrok "aitop/internal/act/grok"
 	actlocal "aitop/internal/act/local"
 	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
@@ -81,8 +84,12 @@ func main() {
 	}
 	src := eng.Start()
 	actor := act.New(map[types.Runtime]act.Adapter{
-		types.RuntimeLocal: actlocal.New(),
+		types.RuntimeLocal:  actlocal.New(),
+		types.RuntimeGrok:   actgrok.New(),
+		types.RuntimeClaude: actclaude.New(),
+		types.RuntimeCodex:  actcodex.New(),
 	})
+	actor.CapsuleDir = act.CapsuleRoot()
 	actor.Start()
 	defer actor.Stop()
 	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen())
