@@ -193,6 +193,10 @@ type frame struct {
 	showDone   bool
 	spark      []float64
 	now        time.Time
+	confirm    string
+	promptMode string
+	prompt     string
+	lastErr    string
 }
 
 func (s *Styles) render(f frame) string {
@@ -417,18 +421,40 @@ func (s *Styles) renderTable(b *strings.Builder, f frame, tableH int) {
 		}
 	}
 
-	// Bottom border: key hints as tabs.
-	keys := []string{
-		s.key("q", "quit"),
-		s.key("↑↓", "move"),
-		s.key("⏎", "expand"),
-		s.key("i", "detail"),
-		s.key("/", "filter"),
-		s.key("c r t a n", "sort"),
-		s.key("R", "reverse"),
-		s.key("d", "finished"),
+	// Bottom border: confirm/prompt replace the idle key row. Height stays
+	// one line either way.
+	if f.confirm != "" {
+		b.WriteString(s.boxBottom(w, []string{s.tab(s.Hi.Render(" " + f.confirm + " "))}, nil))
+	} else if f.promptMode != "" {
+		label := f.promptMode
+		switch f.promptMode {
+		case "message":
+			label = "msg"
+		case "promote":
+			label = "promo"
+		}
+		b.WriteString(s.boxBottom(w, []string{s.tab(s.Hi.Render(" "+label+" ") + s.Text.Render(f.prompt) + s.Hi.Render("▏"))}, nil))
+	} else {
+		keys := []string{
+			s.key("q", "quit"),
+			s.key("↑↓j", "move"),
+			s.key("f", "fork"),
+			s.key("m", "msg"),
+			s.key("c", "clone"),
+			s.key("r", "restart"),
+			s.key("k", "kill"),
+			s.key("p", "promo"),
+			s.key("b", "budget"),
+			s.key("⏎", "log"),
+			s.key("s", "sort"),
+			s.key("v", "mark"),
+		}
+		var right []string
+		if f.lastErr != "" {
+			right = append(right, s.tab(s.Hi.Render(" "+f.lastErr+" ")))
+		}
+		b.WriteString(s.boxBottom(w, keys, right))
 	}
-	b.WriteString(s.boxBottom(w, keys, nil))
 	if f.detail {
 		b.WriteByte('\n')
 	}

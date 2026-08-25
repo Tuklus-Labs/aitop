@@ -84,3 +84,11 @@ Kill helper. Same-epoch plants against uncommitted `internal/act/kill.go`; resto
 |----|----------|------------|----------|------------|
 | PF-C6 | Drop the starttime equality check in `Kill` | TestKillPidReuseDoesNotSignal RED | RED: `kill-pid-reuse-is-loud violated: err=<nil>` | Load-bearing. Join key is (pid, starttime); a reused pid is a refusal, not a signal. |
 | PF-C7 | `Signal(SIGINT)` replaced with `Signal(SIGKILL)` | TestKillSendsSIGINTFirstNeverSIGKILL RED | RED: `kill-sends-sigint-first violated: [killed terminated]` | Load-bearing. k never SIGKILL; the inversion showed up in the spy slice as SIGKILL then SIGTERM. |
+
+## Control epoch, key remap (2026-08-24, Grok, working copy then this commit)
+
+Paint/tick must not enqueue. Same-epoch plant against uncommitted `internal/ui/model.go`; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C1 | `Update(tickMsg)` calls `m.enqueue(Intent{Op: OpKill})` after absorb | TestTickDoesNotEnqueue RED; TestActionKeysEnqueueAndConfirm `tick-does-not-enqueue` / `confirmed-kill-enqueues` RED | RED: `tick-does-not-enqueue violated: enqueue count 0 -> 2 (Update(tickMsg) must not call enqueue)`; confirmed-kill-enqueues saw the tick's empty kill ahead of the real one | Load-bearing. The 100ms path is memory-only; a tick that enqueues is a fourth-clock leak into paint. |

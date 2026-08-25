@@ -85,5 +85,7 @@ Paint stays a 100ms memory-only clock. This package is the fourth clock. There i
 | pid-reuse is loud and does not signal | `act.TestKillPidReuseDoesNotSignal` |
 | Kill refuses self and pid 0 | `act.TestKillRefusesSelf`, `act.TestKillPidZeroDoesNotSignal` |
 | SIGTERM skipped if the pid is gone after SIGINT | `act.TestKillGoneAfterINTDoesNotTERM` |
+| Tick/paint never enqueues (PF-C1) | `ui.TestTickDoesNotEnqueue`, `ui.TestActionKeysEnqueueAndConfirm` |
+| `k` is kill not move; sort lives under `s` then letter | `ui.TestActionKeysEnqueueAndConfirm`, `ui.TestKeysSortFilterAndExpand` |
 
-Remaining Control axes (key remap, dark roster, packing, capsule, fork vs clone argv, split/merge) land in later tasks. Occupancy rows above are unchanged.
+Remaining Control axes (dark roster, packing, capsule, fork vs clone argv, split/merge) land in later tasks. Occupancy rows above are unchanged.

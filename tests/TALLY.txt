@@ -1,16 +1,17 @@
 ?   	aitop/cmd/aitop	[no test files]
-ok  	aitop/internal/classify	(cached)
-ok  	aitop/internal/join	(cached)
-ok  	aitop/internal/overlay/claude	(cached)
-ok  	aitop/internal/overlay/codex	(cached)
-ok  	aitop/internal/overlay/grok	(cached)
-ok  	aitop/internal/overlay/heartbeat	(cached)
-ok  	aitop/internal/overlay/inference	(cached)
-ok  	aitop/internal/overlay/local	(cached)
-ok  	aitop/internal/present	(cached)
-ok  	aitop/internal/price	(cached)
-ok  	aitop/internal/proc	(cached)
-ok  	aitop/internal/snapshot	(cached)
-ok  	aitop/internal/theme	(cached)
-ok  	aitop/internal/types	(cached)
-ok  	aitop/internal/ui	(cached)
+ok  	aitop/internal/act
+ok  	aitop/internal/classify
+ok  	aitop/internal/join
+ok  	aitop/internal/overlay/claude
+ok  	aitop/internal/overlay/codex
+ok  	aitop/internal/overlay/grok
+ok  	aitop/internal/overlay/heartbeat
+ok  	aitop/internal/overlay/inference
+ok  	aitop/internal/overlay/local
+ok  	aitop/internal/present
+ok  	aitop/internal/price
+ok  	aitop/internal/proc
+ok  	aitop/internal/snapshot
+ok  	aitop/internal/theme
+ok  	aitop/internal/types
+ok  	aitop/internal/ui

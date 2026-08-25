@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"aitop/internal/act"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
 )
@@ -21,9 +23,10 @@ type tickMsg time.Time
 // Model is the bubbletea model. It paints the engine's latest snapshot and
 // never performs IO of its own: the 100ms path is read-only over memory.
 type Model struct {
-	src    *atomic.Pointer[snapshot.Snapshot]
-	styles *Styles
-	shaper *shaper
+	src     *atomic.Pointer[snapshot.Snapshot]
+	styles  *Styles
+	shaper  *shaper
+	enqueue func(act.Intent) error
 
 	width, height int
 	lines         []line
@@ -37,14 +40,22 @@ type Model struct {
 	spark         []float64
 	sparkAt       time.Time
 	now           func() time.Time
+
+	confirmOp  act.Op
+	promptMode string
+	prompt     string
+	sortPrefix bool
+	markKey    string
+	lastErr    string
 }
 
-func New(src *atomic.Pointer[snapshot.Snapshot], t theme.Theme) Model {
+func New(src *atomic.Pointer[snapshot.Snapshot], t theme.Theme, enqueue func(act.Intent) error) Model {
 	return Model{
-		src:    src,
-		styles: NewStyles(t),
-		shaper: newShaper(),
-		now:    time.Now,
+		src:     src,
+		styles:  NewStyles(t),
+		shaper:  newShaper(),
+		now:     time.Now,
+		enqueue: enqueue,
 	}
 }
 
@@ -77,6 +88,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.filterMode {
 			return m.filterKey(msg), nil
+		}
+		if m.promptMode != "" {
+			return m.promptKey(msg), nil
+		}
+		if m.confirmOp != "" {
+			return m.confirmKey(msg)
 		}
 		return m.key(msg)
 	}
@@ -166,13 +183,37 @@ func (m *Model) clampScroll() {
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	now := m.now()
-	switch msg.String() {
+	k := msg.String()
+	if m.sortPrefix {
+		m.sortPrefix = false
+		switch k {
+		case "c":
+			m.setSort(sortCPU, now)
+			return m, nil
+		case "r":
+			m.setSort(sortRSS, now)
+			return m, nil
+		case "t":
+			m.setSort(sortTok, now)
+			return m, nil
+		case "a":
+			m.setSort(sortAge, now)
+			return m, nil
+		case "n":
+			m.setSort(sortName, now)
+			return m, nil
+		case "$":
+			m.setSort(sortCost, now)
+			return m, nil
+		}
+	}
+	switch k {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "j", "down":
 		m.cursor++
 		m.clampCursor()
-	case "k", "up":
+	case "up":
 		m.cursor--
 		m.clampCursor()
 	case "g", "home":
@@ -193,7 +234,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if l.children > 0 {
 				m.shaper.collapsed[l.key] = !m.shaper.collapsed[l.key]
 				m.reshape(now)
-			} else if msg.String() == "enter" {
+			} else if k == "enter" {
 				m.detail = !m.detail
 				m.clampScroll()
 			}
@@ -204,7 +245,6 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if l.children > 0 && !m.shaper.collapsed[l.key] {
 				m.shaper.collapsed[l.key] = true
 			} else if l.depth > 0 {
-				// jump to parent
 				for i := m.cursor - 1; i >= 0; i-- {
 					if m.lines[i].depth < l.depth {
 						m.cursor = i
@@ -230,20 +270,138 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "R":
 		m.shaper.reverse = !m.shaper.reverse
 		m.reshape(now)
-	case "c":
-		m.setSort(sortCPU, now)
+	case "s":
+		m.sortPrefix = true
+	case "k":
+		m.armConfirm(act.OpKill)
 	case "r":
-		m.setSort(sortRSS, now)
-	case "t":
-		m.setSort(sortTok, now)
-	case "a":
-		m.setSort(sortAge, now)
-	case "n":
-		m.setSort(sortName, now)
-	case "$":
-		m.setSort(sortCost, now)
+		m.armConfirm(act.OpRestart)
+	case "c":
+		m.pushIntent(act.OpClone, false, "")
+	case "f":
+		m.pushIntent(act.OpFork, false, "")
+	case "m":
+		m.promptMode, m.prompt = "message", ""
+	case "p":
+		m.promptMode, m.prompt = "promote", ""
+	case "b":
+		m.promptMode, m.prompt = "budget", ""
+	case "v":
+		if m.cursor < len(m.lines) {
+			m.markKey = m.lines[m.cursor].key
+		}
 	}
 	return m, nil
+}
+
+func (m Model) confirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.pushIntent(m.confirmOp, true, "")
+		m.confirmOp = ""
+	case "esc":
+		m.confirmOp = ""
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) promptKey(msg tea.KeyMsg) Model {
+	switch msg.String() {
+	case "esc":
+		m.promptMode, m.prompt = "", ""
+	case "enter":
+		var op act.Op
+		switch m.promptMode {
+		case "message":
+			op = act.OpMessage
+		case "promote":
+			op = act.OpPromote
+		case "budget":
+			op = act.OpBudget
+		}
+		m.pushIntent(op, false, m.prompt)
+		m.promptMode, m.prompt = "", ""
+	case "backspace":
+		if m.prompt != "" {
+			r := []rune(m.prompt)
+			m.prompt = string(r[:len(r)-1])
+		}
+	case "ctrl+c":
+		m.promptMode, m.prompt = "", ""
+	case "up", "down", "home", "end", "pgup", "pgdown", "ctrl+u", "ctrl+d":
+		// movement ignored while the prompt is up
+	default:
+		if msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace {
+			m.prompt += string(msg.Runes)
+			if msg.Type == tea.KeySpace {
+				m.prompt += " "
+			}
+		}
+	}
+	return m
+}
+
+func (m *Model) armConfirm(op act.Op) {
+	if m.cursor >= len(m.lines) {
+		return
+	}
+	m.confirmOp = op
+}
+
+func (m *Model) pushIntent(op act.Op, confirmed bool, args string) {
+	if m.cursor >= len(m.lines) || op == "" {
+		return
+	}
+	if m.enqueue == nil {
+		return
+	}
+	in := act.Intent{
+		Op:        op,
+		Target:    targetFromLine(m.lines[m.cursor]),
+		Args:      args,
+		Confirmed: confirmed,
+	}
+	if err := m.enqueue(in); err != nil {
+		m.lastErr = err.Error()
+	} else {
+		m.lastErr = ""
+	}
+}
+
+func targetFromLine(l line) act.Target {
+	rt := l.row.Process.Runtime
+	if rt == "" {
+		rt = l.row.Overlay.Runtime
+	}
+	return act.Target{
+		Key:       l.key,
+		Runtime:   rt,
+		PID:       l.row.Process.PID,
+		StartTime: l.row.Process.StartTime,
+		SessionID: l.row.Overlay.SessionID,
+		Unit:      l.row.Overlay.SessionName,
+		CWD:       l.row.Overlay.OverlayCWD,
+		Model:     l.row.Overlay.Model,
+		Worktree:  l.row.Overlay.Worktree,
+		Overlay:   l.row.Overlay,
+	}
+}
+
+func (m Model) confirmLine() string {
+	if m.confirmOp == "" || m.cursor >= len(m.lines) {
+		return ""
+	}
+	l := m.lines[m.cursor]
+	switch m.confirmOp {
+	case act.OpKill:
+		return fmt.Sprintf("kill %s pid %d? [y/N]", l.name, l.row.Process.PID)
+	case act.OpRestart:
+		return fmt.Sprintf("restart %s pid %d? [y/N]", l.name, l.row.Process.PID)
+	default:
+		return ""
+	}
 }
 
 func (m *Model) setSort(k sortKey, now time.Time) {
@@ -302,13 +460,17 @@ func (m Model) View() string {
 		showDone:   m.shaper.showDone,
 		spark:      m.spark,
 		now:        m.now(),
+		confirm:    m.confirmLine(),
+		promptMode: m.promptMode,
+		prompt:     m.prompt,
+		lastErr:    m.lastErr,
 	})
 }
 
 // Render paints one frame from a snapshot at the given size, for tests and
 // --once screenshots. It shares every code path with the live view.
 func Render(s *snapshot.Snapshot, t theme.Theme, width, height int, now time.Time) string {
-	m := New(nil, t)
+	m := New(nil, t, nil)
 	m.width, m.height = width, height
 	if s != nil {
 		m.lines = m.shaper.shape(s.Rows, s.Host, now)

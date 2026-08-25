@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
+	"aitop/internal/act"
 	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
 	"aitop/internal/snapshot"
@@ -77,7 +78,10 @@ func main() {
 		return
 	}
 	src := eng.Start()
-	p := tea.NewProgram(ui.New(src, th), tea.WithAltScreen())
+	actor := act.New(nil)
+	actor.Start()
+	defer actor.Stop()
+	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "aitop: %v\n", err)
 		os.Exit(1)

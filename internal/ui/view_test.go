@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"aitop/internal/act"
 	"aitop/internal/proc"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
@@ -70,7 +71,7 @@ func TestTickDoesNotCallOverlay(t *testing.T) {
 	calls := 0
 	src := &atomic.Pointer[snapshot.Snapshot]{}
 	src.Store(fixtureSnapshot())
-	m := New(src, theme.Nightfable())
+	m := New(src, theme.Nightfable(), nil)
 	// The model has no overlay hook at all; the spy is the engine's. Here we
 	// assert the tick reschedules and reshapes from memory only.
 	_, cmd := m.Update(tickMsg(now))
@@ -79,6 +80,25 @@ func TestTickDoesNotCallOverlay(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("100ms-path-must-not-touch-overlays violated: overlayParseCalls=%d", calls)
+	}
+}
+
+func TestTickDoesNotEnqueue(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(fixtureSnapshot())
+	n := 0
+	m := New(src, theme.Nightfable(), func(act.Intent) error {
+		n++
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	before := n
+	tm, _ = tm.Update(tickMsg(now))
+	_, _ = tm.Update(tickMsg(now.Add(paintEvery)))
+	if n != before {
+		t.Fatalf("tick-does-not-enqueue violated: enqueue count %d -> %d (Update(tickMsg) must not call enqueue)", before, n)
 	}
 }
 
@@ -167,7 +187,7 @@ func TestRenderedContentMatchesData(t *testing.T) {
 func TestKeysSortFilterAndExpand(t *testing.T) {
 	src := &atomic.Pointer[snapshot.Snapshot]{}
 	src.Store(fixtureSnapshot())
-	m := New(src, theme.Nightfable())
+	m := New(src, theme.Nightfable(), nil)
 	m.now = func() time.Time { return now }
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32}) // below autoDetailHeight: i opens the pane
@@ -180,7 +200,8 @@ func TestKeysSortFilterAndExpand(t *testing.T) {
 	if first != "Grok" {
 		t.Fatalf("default-sort-is-busy-then-cpu violated: first=%q", first)
 	}
-	// Sort by name, reverse.
+	// Sort by name, reverse. Sort lives under s then letter.
+	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	tm, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	mm = tm.(Model)
 	if mm.lines[0].name != "claude" {
@@ -236,6 +257,159 @@ func TestKeysSortFilterAndExpand(t *testing.T) {
 	if len(lines) != 32 {
 		t.Fatalf("detail-pane-keeps-frame-height violated: %d lines", len(lines))
 	}
+}
+
+func TestActionKeysEnqueueAndConfirm(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(fixtureSnapshot())
+	var got []act.Intent
+	m := New(src, theme.Nightfable(), func(in act.Intent) error {
+		got = append(got, in)
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	tm, _ = tm.Update(tickMsg(now))
+	mm := tm.(Model)
+	if len(mm.lines) < 3 {
+		t.Fatalf("tick-reshapes-from-snapshot violated: lines=%d", len(mm.lines))
+	}
+
+	// Leave row 0 so k-is-kill-not-move is load-bearing. vim-k at cursor 0
+	// clamped and hid the move.
+	tm = press(tm, "down")
+	tm = press(tm, "down")
+	mm = tm.(Model)
+	cur := mm.cursor
+	if cur == 0 {
+		t.Fatal("k-is-kill-not-move precondition violated: cursor still 0 after down")
+	}
+	hit := mm.lines[mm.cursor]
+	wantPID := hit.row.Process.PID
+	wantStart := hit.row.Process.StartTime
+
+	tm = press(tm, "k")
+	mm = tm.(Model)
+	if mm.cursor < cur {
+		t.Fatalf("k-is-kill-not-move violated: cursor %d -> %d", cur, mm.cursor)
+	}
+	if mm.cursor != cur {
+		t.Fatalf("k-is-kill-not-move violated: cursor moved %d -> %d", cur, mm.cursor)
+	}
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "kill") || !strings.Contains(view, "y/N") {
+		t.Fatalf("kill-confirm-shows-yn violated:\n%s", view)
+	}
+
+	tm = press(tm, "n")
+	mm = tm.(Model)
+	view = ansi.Strip(tm.View())
+	if mm.cursor != cur {
+		t.Fatalf("confirm-ignores-move violated: cursor %d -> %d", cur, mm.cursor)
+	}
+	if !strings.Contains(view, "kill") || !strings.Contains(view, "y/N") {
+		t.Fatalf("confirm-ignores-move violated: left confirm on n\n%s", view)
+	}
+
+	tm = press(tm, "y")
+	mm = tm.(Model)
+	view = ansi.Strip(tm.View())
+	if strings.Contains(view, "y/N") {
+		t.Fatalf("confirmed-kill-enqueues violated: confirm still up after y\n%s", view)
+	}
+	if len(got) != 1 || got[0].Op != act.OpKill || !got[0].Confirmed {
+		t.Fatalf("confirmed-kill-enqueues violated: got=%+v", got)
+	}
+	if got[0].Target.PID != wantPID || got[0].Target.StartTime != wantStart {
+		t.Fatalf("confirmed-kill-enqueues violated: pid/starttime got %d/%d want %d/%d",
+			got[0].Target.PID, got[0].Target.StartTime, wantPID, wantStart)
+	}
+
+	n := len(got)
+	tm, _ = tm.Update(tickMsg(now.Add(paintEvery)))
+	if len(got) != n {
+		t.Fatalf("tick-does-not-enqueue violated: enqueue count %d -> %d", n, len(got))
+	}
+
+	mm = tm.(Model)
+	sortBefore, revBefore := mm.shaper.sort, mm.shaper.reverse
+	tm = press(tm, "c")
+	mm = tm.(Model)
+	if mm.shaper.sort != sortBefore || mm.shaper.reverse != revBefore {
+		t.Fatalf("c-is-clone-not-sort-cpu violated: sort %s reverse=%t -> %s reverse=%t",
+			sortBefore, revBefore, mm.shaper.sort, mm.shaper.reverse)
+	}
+	if len(got) != n+1 || got[n].Op != act.OpClone || got[n].Confirmed {
+		t.Fatalf("c-is-clone-not-sort-cpu violated: got=%+v", got)
+	}
+
+	tm = press(tm, "s")
+	tm = press(tm, "n")
+	mm = tm.(Model)
+	if mm.shaper.sort != sortName {
+		t.Fatalf("s-then-n-sorts-name violated: sort=%s", mm.shaper.sort)
+	}
+	n = len(got)
+	tm = press(tm, "s")
+	tm = press(tm, "c")
+	mm = tm.(Model)
+	if mm.shaper.sort != sortCPU {
+		t.Fatalf("s-then-c-sorts-cpu violated: sort=%s", mm.shaper.sort)
+	}
+	if len(got) != n {
+		t.Fatalf("s-then-c-sorts-cpu violated: s-c enqueued %v", got[n:])
+	}
+
+	mm = tm.(Model)
+	cur = mm.cursor
+	tm = press(tm, "j")
+	mm = tm.(Model)
+	if mm.cursor <= cur {
+		t.Fatalf("j-still-moves-down violated: cursor %d -> %d", cur, mm.cursor)
+	}
+
+	n = len(got)
+	tm = press(tm, "f")
+	if len(got) != n+1 || got[n].Op != act.OpFork {
+		t.Fatalf("f-enqueues-fork violated: got=%+v", got)
+	}
+	n = len(got)
+	mm = tm.(Model)
+	tm = press(tm, "v")
+	mm = tm.(Model)
+	if len(got) != n {
+		t.Fatalf("v-mark-does-not-enqueue violated: enqueue count %d -> %d", n, len(got))
+	}
+	if mm.cursor >= len(mm.lines) || mm.markKey != mm.lines[mm.cursor].key || mm.markKey == "" {
+		t.Fatalf("v-sets-markKey violated: markKey=%q cursor=%d", mm.markKey, mm.cursor)
+	}
+
+	view = ansi.Strip(tm.View())
+	if !strings.Contains(view, "k kill") || !strings.Contains(view, "s sort") {
+		t.Fatalf("footer-btop-actions violated: idle footer wants k kill and s sort\n%s", view)
+	}
+	if strings.Contains(view, "c r t a n") {
+		t.Fatalf("footer-btop-actions violated: idle footer still presents c r t a n as the sort cluster\n%s", view)
+	}
+}
+
+func press(tm tea.Model, k string) tea.Model {
+	var msg tea.KeyMsg
+	switch k {
+	case "enter":
+		msg = tea.KeyMsg{Type: tea.KeyEnter}
+	case "esc":
+		msg = tea.KeyMsg{Type: tea.KeyEscape}
+	case "up":
+		msg = tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		msg = tea.KeyMsg{Type: tea.KeyDown}
+	default:
+		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+	}
+	tm, _ = tm.Update(msg)
+	return tm
 }
 
 func firstName(ls []line) string {
@@ -345,7 +519,7 @@ func TestFormatters(t *testing.T) {
 func TestTallPaneOpensDetailByDefaultAndKeepsFrameHeight(t *testing.T) {
 	src := &atomic.Pointer[snapshot.Snapshot]{}
 	src.Store(fixtureSnapshot())
-	m := New(src, theme.Nightfable())
+	m := New(src, theme.Nightfable(), nil)
 	m.now = func() time.Time { return now }
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 160, Height: 56})
@@ -367,7 +541,7 @@ func TestTallPaneOpensDetailByDefaultAndKeepsFrameHeight(t *testing.T) {
 	if tm.(Model).detail {
 		t.Fatal("detail-toggle-survives-resize violated: resize reopened the pane")
 	}
-	short := New(src, theme.Nightfable())
+	short := New(src, theme.Nightfable(), nil)
 	var st tea.Model = short
 	st, _ = st.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	if st.(Model).detail {
