@@ -45,8 +45,9 @@ func (a *Adapter) Fork(ctx context.Context, t act.Target, cap act.Capsule, model
 	if m == "" {
 		m = t.Model
 	}
+	// --prompt-file is itself headless. Do not pass -p/--single: that flag
+	// consumes the next token as the prompt, so `-p --cwd` would prompt `--cwd`.
 	args := []string{
-		"-p",
 		"--cwd", wt,
 		"--session-id", session,
 	}
@@ -73,7 +74,6 @@ func (a *Adapter) Clone(ctx context.Context, t act.Target, cap act.Capsule) (act
 		return act.Spawned{}, err
 	}
 	args := []string{
-		"-p",
 		"--resume", t.SessionID,
 		"--fork-session",
 		"--session-id", session,

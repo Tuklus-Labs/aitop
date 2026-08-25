@@ -44,7 +44,10 @@ func TestGrokForkIsNotForkSession(t *testing.T) {
 	if hasToken(argv, "--fork-session") || hasToken(argv, "--resume") {
 		t.Fatalf("fork-argv-is-not-clone violated: %s", s)
 	}
-	if !hasToken(argv, "-p") || !hasToken(argv, "--prompt-file") || !hasToken(argv, "--session-id") {
+	if hasToken(argv, "-p") || hasToken(argv, "--single") {
+		t.Fatalf("fork-argv-bare-p-eats-next-flag violated: %s", s)
+	}
+	if !hasToken(argv, "--prompt-file") || !hasToken(argv, "--session-id") {
 		t.Fatalf("fork-argv-missing-new-session violated: %s", s)
 	}
 	if !hasToken(argv, "--cwd") || !hasToken(argv, "/tmp/wt") {
@@ -87,6 +90,9 @@ func TestGrokCloneUsesForkSession(t *testing.T) {
 	}
 	if !hasToken(argv, "--fork-session") {
 		t.Fatalf("clone-argv-uses-fork-session violated: %s", s)
+	}
+	if hasToken(argv, "-p") || hasToken(argv, "--single") {
+		t.Fatalf("clone-argv-bare-p-eats-next-flag violated: %s", s)
 	}
 	if !hasToken(argv, "--session-id") || !hasToken(argv, "11111111-2222-4333-8444-555555555555") {
 		t.Fatalf("clone-argv-new-session-id violated: %s", s)
