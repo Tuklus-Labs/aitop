@@ -36,7 +36,8 @@ func UnitDirs() []string {
 }
 
 // Collect scans procRoot for local backend comms and emits one overlay per
-// pid whose unit has a Description. unitDirs nil means UnitDirs().
+// pid whose unit has a Description. It also walks unitDirs for llama-server
+// and vLLM unit files with no pid (the dark roster). unitDirs nil means UnitDirs().
 func Collect(procRoot string, unitDirs []string) []types.Overlay {
 	if procRoot == "" {
 		procRoot = "/proc"
@@ -44,38 +45,116 @@ func Collect(procRoot string, unitDirs []string) []types.Overlay {
 	if unitDirs == nil {
 		unitDirs = UnitDirs()
 	}
-	ents, err := os.ReadDir(procRoot)
-	if err != nil {
-		return nil
-	}
 	var out []types.Overlay
-	for _, e := range ents {
-		if !e.IsDir() {
-			continue
+	ents, err := os.ReadDir(procRoot)
+	if err == nil {
+		for _, e := range ents {
+			if !e.IsDir() {
+				continue
+			}
+			pid, ok := parsePID(e.Name())
+			if !ok {
+				continue
+			}
+			comm, err := os.ReadFile(filepath.Join(procRoot, e.Name(), "comm"))
+			if err != nil || !localComms[strings.TrimSpace(string(comm))] {
+				continue
+			}
+			cg, err := os.ReadFile(filepath.Join(procRoot, e.Name(), "cgroup"))
+			if err != nil {
+				continue
+			}
+			unit := unitOf(string(cg))
+			if unit == "" {
+				continue
+			}
+			desc := Description(unit, unitDirs)
+			if desc == "" {
+				continue
+			}
+			out = append(out, types.Overlay{PID: pid, Runtime: types.RuntimeLocal, Title: desc, SessionName: unit})
 		}
-		pid, ok := parsePID(e.Name())
-		if !ok {
-			continue
-		}
-		comm, err := os.ReadFile(filepath.Join(procRoot, e.Name(), "comm"))
-		if err != nil || !localComms[strings.TrimSpace(string(comm))] {
-			continue
-		}
-		cg, err := os.ReadFile(filepath.Join(procRoot, e.Name(), "cgroup"))
+	}
+	out = append(out, darkFromUnits(unitDirs)...)
+	return out
+}
+
+func darkFromUnits(unitDirs []string) []types.Overlay {
+	seen := map[string]struct{}{}
+	var out []types.Overlay
+	for _, dir := range unitDirs {
+		ents, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		unit := unitOf(string(cg))
-		if unit == "" {
-			continue
+		for _, e := range ents {
+			name := e.Name()
+			if !strings.HasSuffix(name, ".service") {
+				continue
+			}
+			unit := strings.TrimSuffix(name, ".service")
+			if unit == "" {
+				continue
+			}
+			if _, ok := seen[unit]; ok {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				continue
+			}
+			desc, exec := parseUnitMeta(raw)
+			if !localExec(exec) {
+				continue
+			}
+			seen[unit] = struct{}{}
+			title := desc
+			if title == "" {
+				title = unit
+			}
+			out = append(out, types.Overlay{
+				Runtime:     types.RuntimeLocal,
+				SessionName: unit,
+				Status:      "off",
+				Dark:        true,
+				Title:       title,
+			})
 		}
-		desc := Description(unit, unitDirs)
-		if desc == "" {
-			continue
-		}
-		out = append(out, types.Overlay{PID: pid, Runtime: types.RuntimeLocal, Title: desc, SessionName: unit})
 	}
 	return out
+}
+
+func parseUnitMeta(raw []byte) (desc, exec string) {
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		switch key {
+		case "Description":
+			if desc == "" {
+				desc = val
+			}
+		case "ExecStart":
+			if exec == "" {
+				exec = val
+			}
+		}
+		if desc != "" && exec != "" {
+			break
+		}
+	}
+	return desc, exec
+}
+
+func localExec(exec string) bool {
+	return strings.Contains(exec, "llama-server") || strings.Contains(exec, "vllm")
 }
 
 // Description reads Description= from the first unit file found for unit.

@@ -5,9 +5,22 @@ import "aitop/internal/types"
 func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 	byPID := map[int32]types.Overlay{}
 	var orphans []types.Overlay
+	var dark []types.Overlay
+	seenDark := map[string]struct{}{}
 	for _, o := range overlays {
 		if o.PID != 0 {
 			byPID[o.PID] = merge(byPID[o.PID], o)
+			continue
+		}
+		// Local unit with no pid is a dark-roster candidate even without ParentSession.
+		if o.Runtime == types.RuntimeLocal && o.SessionName != "" {
+			if _, ok := seenDark[o.SessionName]; !ok {
+				seenDark[o.SessionName] = struct{}{}
+				dark = append(dark, o)
+			}
+			if o.ParentSession != "" {
+				orphans = append(orphans, o)
+			}
 			continue
 		}
 		if o.ParentSession != "" {
@@ -37,6 +50,23 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 			}
 		}
 		rows = append(rows, r)
+	}
+
+	occupied := map[string]struct{}{}
+	for _, r := range rows {
+		if r.Overlay.SessionName != "" {
+			occupied[r.Overlay.SessionName] = struct{}{}
+		}
+	}
+	for _, o := range dark {
+		if _, ok := occupied[o.SessionName]; ok {
+			continue
+		}
+		if o.Status == "" {
+			o.Status = "off"
+		}
+		o.Dark = true
+		rows = append(rows, types.Row{Overlay: sanitize(o), OverlayOK: true, OverlayOnly: true})
 	}
 	return rows
 }

@@ -116,6 +116,37 @@ func TestDeadPIDDropsDespiteOverlay(t *testing.T) {
 	}
 }
 
+func TestDarkLocalUnitIsRootOff(t *testing.T) {
+	rows := Join(nil, []types.Overlay{{
+		Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "off", Dark: true, Title: "Iris: Qwen3.8",
+	}})
+	if len(rows) != 1 || !rows[0].OverlayOnly || rows[0].Overlay.SessionName != "hermes-qwen38" || rows[0].Overlay.Status != "off" {
+		t.Fatalf("dark-local-unit-is-root-off violated: %+v", rows)
+	}
+}
+
+func TestLivePidJoinsDarkUnitNotDuplicate(t *testing.T) {
+	spine := []types.Process{{PID: 10, StartTime: 1, Comm: "llama-server", AgentRoot: true, Role: types.RoleSidecar, Runtime: types.RuntimeLocal}}
+	ov := []types.Overlay{
+		{Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "off", Dark: true},
+		{PID: 10, StartTime: 1, Runtime: types.RuntimeLocal, SessionName: "hermes-qwen38", Status: "idle"},
+	}
+	rows := Join(spine, ov)
+	if len(rows) != 1 {
+		t.Fatalf("live-pid-joins-dark-unit-not-duplicate violated: n=%d", len(rows))
+	}
+	if rows[0].Overlay.Dark || rows[0].Overlay.Status != "idle" || rows[0].Process.PID != 10 {
+		t.Fatalf("live-overlay-wins-dark-row violated: %+v", rows[0])
+	}
+}
+
+func TestGrokOverlayWithoutPidStillNotRoot(t *testing.T) {
+	rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeGrok, SessionID: "x", ParentSession: ""}})
+	if len(rows) != 0 {
+		t.Fatalf("grok-overlay-without-pid-is-not-root violated: n=%d", len(rows))
+	}
+}
+
 func TestProjectFromProjectsDir(t *testing.T) {
 	if g := ProjectName("/home/aegis/Projects/mira/.worktrees/faithful-emotion-vectors"); g != "mira/faithful-emotion-vectors" {
 		t.Fatalf("project-derivation worktree violated: got %q", g)

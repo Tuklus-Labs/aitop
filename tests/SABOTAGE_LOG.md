@@ -92,3 +92,11 @@ Paint/tick must not enqueue. Same-epoch plant against uncommitted `internal/ui/m
 | ID | Mutation | Prediction | Observed | Conclusion |
 |----|----------|------------|----------|------------|
 | PF-C1 | `Update(tickMsg)` calls `m.enqueue(Intent{Op: OpKill})` after absorb | TestTickDoesNotEnqueue RED; TestActionKeysEnqueueAndConfirm `tick-does-not-enqueue` / `confirmed-kill-enqueues` RED | RED: `tick-does-not-enqueue violated: enqueue count 0 -> 2 (Update(tickMsg) must not call enqueue)`; confirmed-kill-enqueues saw the tick's empty kill ahead of the real one | Load-bearing. The 100ms path is memory-only; a tick that enqueues is a fourth-clock leak into paint. |
+
+## Control epoch, dark roster (2026-08-24, Grok, working copy then this commit)
+
+Dark local units are roots. Same-epoch plant against uncommitted `internal/join/join.go`; restore by invert (edit), not `git checkout --`.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C8 | `continue` before the post-spine dark-root emit | TestDarkLocalUnitIsRootOff RED; TestLivePidJoinsDarkUnitNotDuplicate, TestGrokOverlayWithoutPidStillNotRoot, TestOverlayOnlyPIDDoesNotCreateRootRow stay GREEN | RED: `dark-local-unit-is-root-off violated: []`. Sisters stayed PASS (live pid already occupies the unit; grok-without-pid and ghost pid 99 never were roots) | Load-bearing. Overlay-only local units with a SessionName are roots at STAT=off. Grok/Claude/Codex overlays with no pid still do not create roots. |
