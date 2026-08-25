@@ -3,6 +3,8 @@ package grok
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"aitop/internal/act"
@@ -16,6 +18,7 @@ type Adapter struct {
 	Worktree func(cwd, id string) (string, error)
 	Killer   act.Killer
 	Grace    time.Duration
+	prefs    act.Prefs
 }
 
 func New() *Adapter {
@@ -41,10 +44,7 @@ func (a *Adapter) Fork(ctx context.Context, t act.Target, cap act.Capsule, model
 	if err != nil {
 		return act.Spawned{}, err
 	}
-	m := model
-	if m == "" {
-		m = t.Model
-	}
+	m := a.modelFor(t, model)
 	// --prompt-file is itself headless. Do not pass -p/--single: that flag
 	// consumes the next token as the prompt, so `-p --cwd` would prompt `--cwd`.
 	args := []string{
@@ -53,6 +53,9 @@ func (a *Adapter) Fork(ctx context.Context, t act.Target, cap act.Capsule, model
 	}
 	if m != "" {
 		args = append(args, "-m", m)
+	}
+	if n := a.budgetFor(t); n != "" {
+		args = append(args, "--max-turns", n)
 	}
 	args = append(args, "--always-approve", "--prompt-file", act.PromptFile(cap))
 	if err := a.run("grok", args...); err != nil {
@@ -102,12 +105,23 @@ func (a *Adapter) Restart(context.Context, act.Target) error {
 	return fmt.Errorf("%w: grok restart", act.ErrUnsupported)
 }
 
-func (a *Adapter) Promote(context.Context, act.Target, string) error {
-	return fmt.Errorf("%w: grok promote", act.ErrUnsupported)
+func (a *Adapter) Promote(_ context.Context, t act.Target, spec string) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" || act.SessionKey(t) == "" {
+		return fmt.Errorf("%w: grok promote", act.ErrUnsupported)
+	}
+	a.prefs.SetModel(t, spec)
+	return nil
 }
 
-func (a *Adapter) Budget(context.Context, act.Target, string) error {
-	return fmt.Errorf("%w: grok budget", act.ErrUnsupported)
+func (a *Adapter) Budget(_ context.Context, t act.Target, spec string) error {
+	spec = strings.TrimSpace(spec)
+	n, err := strconv.Atoi(spec)
+	if err != nil || n < 1 || act.SessionKey(t) == "" {
+		return fmt.Errorf("%w: grok budget wants integer max-turns", act.ErrUnsupported)
+	}
+	a.prefs.SetBudget(t, strconv.Itoa(n))
+	return nil
 }
 
 func (a *Adapter) Merge(context.Context, act.Target, act.Target, act.Target) error {
@@ -127,4 +141,16 @@ func (a *Adapter) run(name string, args ...string) error {
 		return fmt.Errorf("grok: Run not configured")
 	}
 	return a.Run(name, args...)
+}
+
+func (a *Adapter) modelFor(t act.Target, model string) string {
+	fb := model
+	if fb == "" {
+		fb = t.Model
+	}
+	return a.prefs.Model(t, fb)
+}
+
+func (a *Adapter) budgetFor(t act.Target) string {
+	return a.prefs.Budget(t)
 }

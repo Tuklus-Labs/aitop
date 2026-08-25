@@ -17,6 +17,7 @@ type Adapter struct {
 	Worktree func(cwd, id string) (string, error)
 	Killer   act.Killer
 	Grace    time.Duration
+	prefs    act.Prefs
 }
 
 func New() *Adapter {
@@ -42,10 +43,7 @@ func (a *Adapter) Fork(ctx context.Context, t act.Target, cap act.Capsule, model
 	if err != nil {
 		return act.Spawned{}, err
 	}
-	m := model
-	if m == "" {
-		m = t.Model
-	}
+	m := a.modelFor(t, model)
 	args := []string{
 		"-p",
 		"--worktree", act.WorktreeName(id),
@@ -53,6 +51,9 @@ func (a *Adapter) Fork(ctx context.Context, t act.Target, cap act.Capsule, model
 	}
 	if m != "" {
 		args = append(args, "--model", m)
+	}
+	if e := a.budgetFor(t); e != "" {
+		args = append(args, "--effort", e)
 	}
 	args = append(args, "--permission-mode", permissionMode(t), act.CapsulePrompt(cap))
 	if err := a.run("claude", args...); err != nil {
@@ -80,6 +81,9 @@ func (a *Adapter) Clone(ctx context.Context, t act.Target, cap act.Capsule) (act
 		"--worktree", act.WorktreeName(id),
 		"--session-id", session,
 	}
+	if e := a.budgetFor(t); e != "" {
+		args = append(args, "--effort", e)
+	}
 	if err := a.run("claude", args...); err != nil {
 		return act.Spawned{}, err
 	}
@@ -102,12 +106,22 @@ func (a *Adapter) Restart(context.Context, act.Target) error {
 	return fmt.Errorf("%w: claude restart", act.ErrUnsupported)
 }
 
-func (a *Adapter) Promote(context.Context, act.Target, string) error {
-	return fmt.Errorf("%w: claude promote", act.ErrUnsupported)
+func (a *Adapter) Promote(_ context.Context, t act.Target, spec string) error {
+	spec = strings.TrimSpace(spec)
+	if spec == "" || act.SessionKey(t) == "" {
+		return fmt.Errorf("%w: claude promote", act.ErrUnsupported)
+	}
+	a.prefs.SetModel(t, spec)
+	return nil
 }
 
-func (a *Adapter) Budget(context.Context, act.Target, string) error {
-	return fmt.Errorf("%w: claude budget", act.ErrUnsupported)
+func (a *Adapter) Budget(_ context.Context, t act.Target, spec string) error {
+	spec = strings.TrimSpace(spec)
+	if !claudeEffort(spec) || act.SessionKey(t) == "" {
+		return fmt.Errorf("%w: claude budget wants low|medium|high|max", act.ErrUnsupported)
+	}
+	a.prefs.SetBudget(t, spec)
+	return nil
 }
 
 func (a *Adapter) Merge(context.Context, act.Target, act.Target, act.Target) error {
@@ -127,6 +141,26 @@ func (a *Adapter) run(name string, args ...string) error {
 		return fmt.Errorf("claude: Run not configured")
 	}
 	return a.Run(name, args...)
+}
+
+func (a *Adapter) modelFor(t act.Target, model string) string {
+	fb := model
+	if fb == "" {
+		fb = t.Model
+	}
+	return a.prefs.Model(t, fb)
+}
+
+func (a *Adapter) budgetFor(t act.Target) string {
+	return a.prefs.Budget(t)
+}
+
+func claudeEffort(spec string) bool {
+	switch spec {
+	case "low", "medium", "high", "max":
+		return true
+	}
+	return false
 }
 
 func permissionMode(t act.Target) string {

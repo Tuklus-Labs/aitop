@@ -3,6 +3,7 @@ package act
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"aitop/internal/types"
 )
@@ -52,4 +53,75 @@ type Adapter interface {
 	Merge(ctx context.Context, parent, winner, loser Target) error
 	Transcript(ctx context.Context, t Target) (path string, err error)
 	Fanout(ctx context.Context, t Target, n int) error
+}
+
+// SessionKey is the promote/budget map key: session id, else the UI row Key.
+func SessionKey(t Target) string {
+	if t.SessionID != "" {
+		return t.SessionID
+	}
+	return t.Key
+}
+
+// Prefs is the in-memory promote/budget overlay. Next Fork (and Claude Clone
+// for effort) reads it. Not persisted; keyed by SessionKey.
+type Prefs struct {
+	mu     sync.Mutex
+	model  map[string]string
+	budget map[string]string
+}
+
+func (p *Prefs) SetModel(t Target, spec string) {
+	if p == nil {
+		return
+	}
+	k := SessionKey(t)
+	if k == "" || spec == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.model == nil {
+		p.model = map[string]string{}
+	}
+	p.model[k] = spec
+}
+
+func (p *Prefs) Model(t Target, fallback string) string {
+	if p == nil {
+		return fallback
+	}
+	k := SessionKey(t)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if m := p.model[k]; m != "" {
+		return m
+	}
+	return fallback
+}
+
+func (p *Prefs) SetBudget(t Target, spec string) {
+	if p == nil {
+		return
+	}
+	k := SessionKey(t)
+	if k == "" || spec == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.budget == nil {
+		p.budget = map[string]string{}
+	}
+	p.budget[k] = spec
+}
+
+func (p *Prefs) Budget(t Target) string {
+	if p == nil {
+		return ""
+	}
+	k := SessionKey(t)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.budget[k]
 }

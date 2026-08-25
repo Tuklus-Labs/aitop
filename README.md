@@ -7,7 +7,7 @@ ink.
 ```
 go build -o aitop ./cmd/aitop
 ./aitop                          # the TUI
-./aitop --json --once            # one JSON dump (includes aitop-canary)
+./aitop --json --once            # one JSON dump (includes aitop-canary; control fields when set)
 ./aitop --screenshot 150x42      # one ANSI frame to stdout, truecolor
 ./aitop --theme ~/.config/btop/themes/nightfable.theme
 ```
@@ -26,7 +26,7 @@ go build -o aitop ./cmd/aitop
 │  └─◌ explore                grok-4.6       —     —     — —              —    10s busy  Scout Grok overlay join
 │  • Sol            ~         gpt-5.6-sol  0.0  339M   87k ■■■■■■ 11%    —   1d2h idle
 │ ▸▪ parlor ×10                            0.0  1.2G     —                —  4d15h idle  parlor residents
-╰─┤ q quit ├─┤ ↑↓ move ├─┤ ⏎ expand ├─┤ i detail ├─┤ / filter ├─┤ c r t a n sort ├─┤ R reverse ├─╯
+╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├─╯
 ```
 
 - **NAME** is proven or it is `comm`. `Grok` comes from a grok-build seat in
@@ -76,20 +76,40 @@ go build -o aitop ./cmd/aitop
 
 ## Keys
 
+btop grammar. `f m c r k p b` and Enter are actions. `k` is kill, not move.
+Sort lives under `s` then a letter.
+
 | key | action |
 |-----|--------|
-| `↑` `↓` `j` `k` `g` `G` `ctrl+u` `ctrl+d` | move |
-| `⏎` `l` `→` | expand/collapse a row; `⏎` on a leaf opens detail |
+| `↑` `↓` `j` `g` `G` `ctrl+u` `ctrl+d` | move (arrows and `g`/`G`; `j` stays down; no vim `k`) |
+| `⏎` `l` `→` | expand/collapse; `⏎` on a leaf opens the transcript pager |
 | `h` `←` | collapse, or jump to parent |
 | `i` | detail pane (session id, cwd, branch, effort, tokens, subagent history) |
 | `/` | filter (name, project, model, title, status); `esc` clears |
-| `c` `r` `t` `a` `n` `$` | sort by cpu, rss, tokens, age, name, cost; same key again reverses |
+| `s` then `c` `r` `t` `a` `n` `$` | sort by cpu, rss, tokens, age, name, cost; same letter again reverses |
 | `R` | reverse |
+| `f` | fork: new session, capsule as first prompt, always a worktree. Locals: one packing-gated fanout clone (`f` is fanout-1; no N prompt) |
+| `c` | clone: verbatim history (`--fork-session` / `codex fork`). Locals: packing-gated `systemd-run --user` clone |
+| `m` | message. Codex: `codex queue --thread --message`. Grok and Claude: unsupported |
+| `r` | restart (confirm) |
+| `k` | kill (confirm `y`). SIGINT, then SIGTERM after 5s if still alive. Never SIGKILL. Locals with a unit: `systemctl --user stop` |
+| `p` | promote: model id as typed. Takes effect on the next fork (`-m` / `--model`). Hermes templates: clone first |
+| `b` | budget. Claude: `--effort` `low\|medium\|high\|max`. Grok: `--max-turns N`. Codex: `-c model_reasoning_effort`. Hermes templates: clone first |
+| `v` | mark a row for split view |
 | `d` | show finished subagents in the tree |
 | `q` | quit |
 
 Sorting by CPU uses a ~2s smoothed value so rows do not trade places at 100ms;
 the numbers shown are live.
+
+**Local fanout.** `c` clones one llama-server / vLLM instance. `f` does the same
+once (fanout-1). Each clone picks a new port in 8180-8399 and a new
+`--slot-save-path`; the template argv and `-m` stay. Spawn is
+`systemd-run --user --unit=aitop-fanout-<id> --property=Restart=no`. House
+templates matching `hermes-*` are read-only: `b` and `p` refuse with "clone it
+first" and never rewrite `~/.config/systemd/user/hermes-*.service`. A packing
+gate refuses GPU-heavy spawn when free VRAM is too small or used/total would
+cross the vram-watchdog 0.85 line; the whole batch stops and exec count stays 0.
 
 ## Theme
 
@@ -133,10 +153,11 @@ the API", which is the only cost a transcript can support.
 ## Architecture
 
 Dual-index. `/proc` is the occupancy spine; session files are an overlay
-cache. Three clocks, none of which share IO:
+cache. Three occupancy clocks, none of which share IO, plus a fourth Actor
+clock that never sits on the paint path:
 
 1. **Paint** (bubbletea, 100ms): reads the latest snapshot pointer, handles
-   keys, draws. Never opens a file.
+   keys, draws. Never opens a file. Action keys enqueue; they do not `exec`.
 2. **Proc sampler** (goroutine, 100ms): `ReadDir("/proc")`, `stat` for every
    pid, `cmdline` for candidate comms, `exe`/`cwd`/`cgroup` only for
    agent-shaped comms. Classify, roll up, join, publish.
@@ -145,8 +166,15 @@ cache. Three clocks, none of which share IO:
    + the transcript tail (256 KiB, widening to 4 MiB when the tail is all tool
    output, cached by size+mtime) + an incremental lifetime-usage pass; Codex
    rollout JSONL via live fds; systemd unit descriptions for locals; heartbeat
-   files. Prices are applied here, never in the joiner. Publishes an overlay
-   list the sampler joins against.
+   files; fork sidecars. Prices are applied here, never in the joiner. Publishes
+   an overlay list the sampler joins against.
+4. **Actor** (async): bounded intent queue. Adapters exec off-tick. `--json`
+   and `--screenshot` do not start it.
+
+`--json` dumps the occupancy snapshot. Zero-value control fields are absent,
+same as cost: `fork_of`, `kind`, `worktree`, `capsule_id`, `tok_per_sec`,
+`dark`, `slot_index` appear only when set. `fork_of:""` is never emitted.
+Empty machine still carries `aitop-canary`.
 
 `internal/join.Join` is a pure left join on `(pid, starttime)`. Overlays with
 no live process never create rows; processes with no overlay keep theirs with
@@ -169,5 +197,6 @@ watched fail on a planted mutation (`tests/SABOTAGE_LOG.md`), the risk model
 is `tests/RISK_MODEL.md`, and the empty machine still emits `aitop-canary`.
 `hack/ansi2png.py` turns `--screenshot` output into a PNG for eyeballing.
 
-Design: `docs/superpowers/specs/2026-08-21-aitop-design.md`. Polish plan:
-`docs/superpowers/plans/2026-08-21-aitop-excellent.md`.
+Design: `docs/superpowers/specs/2026-08-21-aitop-design.md`. Occupancy polish:
+`docs/superpowers/plans/2026-08-21-aitop-excellent.md`. Control plane:
+`docs/superpowers/specs/2026-08-24-aitop-control-design.md`.

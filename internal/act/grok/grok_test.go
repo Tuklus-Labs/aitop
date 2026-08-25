@@ -149,6 +149,59 @@ func TestGrokMessageIsUnsupported(t *testing.T) {
 	}
 }
 
+func TestGrokPromoteAppliesOnNextFork(t *testing.T) {
+	var argv []string
+	g := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "old-model"}
+	if err := g.Promote(context.Background(), t0, "grok-4.5"); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if _, err := g.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), ""); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "-m") || !hasToken(argv, "grok-4.5") {
+		t.Fatalf("promote-applies-on-next-fork violated: %s", s)
+	}
+	if hasToken(argv, "old-model") {
+		t.Fatalf("promote-overrides-overlay-model violated: %s", s)
+	}
+}
+
+func TestGrokBudgetAppliesOnNextFork(t *testing.T) {
+	var argv []string
+	g := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "grok-4.6"}
+	if err := g.Budget(context.Background(), t0, "3"); err != nil {
+		t.Fatalf("budget: %v", err)
+	}
+	if _, err := g.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), "grok-4.6"); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "--max-turns") || !hasToken(argv, "3") {
+		t.Fatalf("grok-budget-is-max-turns-on-next-fork violated: %s", s)
+	}
+}
+
+func TestGrokBudgetNonIntegerIsUnsupported(t *testing.T) {
+	runs := 0
+	g := Adapter{Run: func(string, ...string) error { runs++; return nil }}
+	err := g.Budget(context.Background(), act.Target{SessionID: "parent-session"}, "high")
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("grok-budget-non-integer-unsupported violated: %v", err)
+	}
+	if runs != 0 {
+		t.Fatalf("grok-budget-non-integer-does-not-exec violated: Run count=%d want 0", runs)
+	}
+}
+
 func fmtWorktree(msg string) error {
 	return &worktreeError{msg: msg}
 }

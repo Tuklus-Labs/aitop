@@ -33,6 +33,70 @@ func TestEmptyDumpHasCanary(t *testing.T) {
 	}
 }
 
+func TestDumpOmitsZeroControlFields(t *testing.T) {
+	b, err := json.Marshal(flatten(types.Row{
+		Process:   types.Process{PID: 1, Comm: "grok", AgentRoot: true},
+		OverlayOK: true,
+		Overlay:   types.Overlay{SessionID: "s"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"fork_of", "kind", "worktree", "capsule_id", "tok_per_sec", "dark", "slot_index"} {
+		if _, ok := m[k]; ok {
+			t.Fatalf("zero-control-fields-absent violated: %s present in %s", k, b)
+		}
+	}
+	if got, ok := m["fork_of"]; ok && got == "" {
+		t.Fatalf("fork-of-empty-string-must-not-serialize violated: %s", b)
+	}
+}
+
+func TestDumpIncludesControlFieldsWhenSet(t *testing.T) {
+	tok := 12.5
+	slot := 0
+	b, err := json.Marshal(flatten(types.Row{
+		Process:   types.Process{PID: 1, Comm: "llama-server", AgentRoot: true},
+		OverlayOK: true,
+		Overlay: types.Overlay{
+			SessionID: "C",
+			ForkOf:    "P",
+			Kind:      "fork",
+			Worktree:  "/tmp/wt",
+			CapsuleID: "01ABC",
+			TokPerSec: &tok,
+			SlotIndex: &slot,
+			Dark:      true,
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["fork_of"] != "P" || m["kind"] != "fork" || m["worktree"] != "/tmp/wt" || m["capsule_id"] != "01ABC" {
+		t.Fatalf("json-control-fields-when-set violated: %s", b)
+	}
+	if m["dark"] != true {
+		t.Fatalf("json-dark-when-set violated: %s", b)
+	}
+	if m["tok_per_sec"] != 12.5 {
+		t.Fatalf("json-tok-per-sec-when-set violated: %s", b)
+	}
+	if _, ok := m["slot_index"]; !ok {
+		t.Fatalf("json-slot-index-zero-is-present violated: %s", b)
+	}
+	if m["slot_index"] != float64(0) {
+		t.Fatalf("json-slot-index-zero-is-present violated: %s", b)
+	}
+}
+
 func TestDumpOmitsUnknownCost(t *testing.T) {
 	rows := []types.Row{{
 		Process:   types.Process{PID: 1, Comm: "grok", AgentRoot: true},

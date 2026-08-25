@@ -394,6 +394,55 @@ func TestActionKeysEnqueueAndConfirm(t *testing.T) {
 	}
 }
 
+func TestPromptEnqueuesMessagePromoteBudget(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(fixtureSnapshot())
+	var got []act.Intent
+	m := New(src, theme.Nightfable(), func(in act.Intent) error {
+		got = append(got, in)
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 140, Height: 32})
+	tm, _ = tm.Update(tickMsg(now))
+
+	tm = press(tm, "m")
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "msg") {
+		t.Fatalf("message-prompt-chrome violated:\n%s", view)
+	}
+	n := len(got)
+	tm = press(tm, "hello")
+	tm = press(tm, "enter")
+	if len(got) != n+1 || got[n].Op != act.OpMessage || got[n].Args != "hello" {
+		t.Fatalf("message-prompt-enqueues-args violated: got=%+v", got[n:])
+	}
+
+	n = len(got)
+	tm = press(tm, "p")
+	tm = press(tm, "grok-4.5")
+	tm = press(tm, "enter")
+	if len(got) != n+1 || got[n].Op != act.OpPromote || got[n].Args != "grok-4.5" {
+		t.Fatalf("promote-prompt-enqueues-typed-model violated: got=%+v", got[n:])
+	}
+
+	n = len(got)
+	tm = press(tm, "b")
+	tm = press(tm, "3")
+	tm = press(tm, "enter")
+	if len(got) != n+1 || got[n].Op != act.OpBudget || got[n].Args != "3" {
+		t.Fatalf("budget-prompt-enqueues-args violated: got=%+v", got[n:])
+	}
+
+	n = len(got)
+	tm = press(tm, "m")
+	tm = press(tm, "esc")
+	if len(got) != n {
+		t.Fatalf("prompt-esc-cancels-without-enqueue violated: got=%+v", got[n:])
+	}
+}
+
 func press(tm tea.Model, k string) tea.Model {
 	var msg tea.KeyMsg
 	switch k {

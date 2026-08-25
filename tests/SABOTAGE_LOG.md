@@ -154,3 +154,12 @@ Same-epoch plant against uncommitted `internal/act/merge.go`; restore by invert 
 | ID | Mutation | Prediction | Observed | Conclusion |
 |----|----------|------------|----------|------------|
 | PF-C12 | On merge error, `run("git", "-C", cwd, "merge", "--abort")` | TestMergeConflictDoesNotAbort RED; TestMergeCleanNoFF GREEN (abort is on the error path only) | RED: `merge-conflict-does-not-abort violated: git -C /repo merge --abort` | Load-bearing. Conflict is loud and leaves the worktrees; aitop never `--abort`. |
+
+## Control epoch, agent message/promote/budget + canary (2026-08-24, Grok, working copy then this commit)
+
+Same-epoch plants against uncommitted `internal/act/codex/codex.go` and `internal/ui/view.go`; restore by invert (edit), not `git checkout --`. Each plant was a single production edit.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-C13 | Codex `Message` returns nil without calling Run (no-op success, no `queue` in argv) | TestCodexMessageQueues RED; TestCodexPromoteAppliesOnNextFork, TestCodexForkIsExecNotFork, TestCodexCloneIsFork, TestCodexBudgetAppliesOnNextFork GREEN | RED: `codex-message-queues violated: ` (empty argv). Sisters PASS | Load-bearing. Codex `m` is `codex queue --thread --message`. A silent success with no queue is the missing-method no-op the spec forbids. |
+| PF-C14 | Too-small view drops `aitop-canary` (`fmt.Sprintf("aitop  80x24 required (now %dx%d)\\n", ...)` without the token) | TestEmptyViewContainsCanary RED on `too-small-still-carries-canary`; TestEmptyDumpHasCanary GREEN (JSON path, not view); TestEveryLineIsExactlyTerminalWidth GREEN | RED: `too-small-still-carries-canary violated: "aitop  80x24 required (now 40x5)\n"`. Dump and geometry sisters PASS | Load-bearing. Empty and too-small frames still emit `aitop-canary`. The dump canary is a different path and stayed GREEN, which is the right sister. |

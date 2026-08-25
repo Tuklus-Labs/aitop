@@ -80,6 +80,89 @@ func TestCodexCloneIsFork(t *testing.T) {
 	}
 }
 
+func TestCodexMessageQueues(t *testing.T) {
+	var argv []string
+	c := Adapter{
+		Run: func(name string, args ...string) error {
+			argv = append([]string{name}, args...)
+			return nil
+		},
+	}
+	err := c.Message(context.Background(), act.Target{SessionID: "thread-1"}, "hello from aitop")
+	if err != nil {
+		t.Fatalf("codex-message: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if len(argv) < 2 || argv[0] != "codex" || argv[1] != "queue" {
+		t.Fatalf("codex-message-queues violated: %s", s)
+	}
+	if !hasToken(argv, "--thread") || !hasToken(argv, "thread-1") {
+		t.Fatalf("codex-message-thread violated: %s", s)
+	}
+	if !hasToken(argv, "--message") || !hasToken(argv, "hello from aitop") {
+		t.Fatalf("codex-message-text violated: %s", s)
+	}
+}
+
+func TestCodexPromoteAppliesOnNextFork(t *testing.T) {
+	var argv []string
+	c := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "gpt-5.6-sol"}
+	if err := c.Promote(context.Background(), t0, "gpt-5.6-luna"); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if _, err := c.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), ""); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "-m") || !hasToken(argv, "gpt-5.6-luna") {
+		t.Fatalf("promote-applies-on-next-fork violated: %s", s)
+	}
+}
+
+func TestCodexBudgetAppliesOnNextFork(t *testing.T) {
+	var argv []string
+	c := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "gpt-5.6-sol"}
+	if err := c.Budget(context.Background(), t0, "xhigh"); err != nil {
+		t.Fatalf("budget: %v", err)
+	}
+	if _, err := c.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), "gpt-5.6-sol"); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "-c") {
+		t.Fatalf("codex-budget-is-dotted-c-on-next-fork violated: %s", s)
+	}
+	found := false
+	for _, a := range argv {
+		if strings.Contains(a, "model_reasoning_effort") && strings.Contains(a, "xhigh") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("codex-budget-model-reasoning-effort violated: %s", s)
+	}
+}
+
+func TestCodexBudgetUnknownIsUnsupported(t *testing.T) {
+	runs := 0
+	c := Adapter{Run: func(string, ...string) error { runs++; return nil }}
+	err := c.Budget(context.Background(), act.Target{SessionID: "parent-session"}, "max")
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("codex-budget-unknown-unsupported violated: %v", err)
+	}
+	if runs != 0 {
+		t.Fatalf("codex-budget-unknown-does-not-exec violated: Run count=%d want 0", runs)
+	}
+}
+
 func TestCodexForkCwdNotGitIsLoud(t *testing.T) {
 	runs := 0
 	c := Adapter{

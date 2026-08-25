@@ -99,6 +99,75 @@ func TestClaudeCloneUsesForkSession(t *testing.T) {
 	}
 }
 
+func TestClaudeMessageIsUnsupported(t *testing.T) {
+	c := Adapter{}
+	err := c.Message(context.Background(), act.Target{}, "hi")
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("claude-message-unsupported violated: %v", err)
+	}
+}
+
+func TestClaudePromoteAppliesOnNextFork(t *testing.T) {
+	var argv []string
+	c := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "claude-fable-5"}
+	if err := c.Promote(context.Background(), t0, "claude-opus-5"); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if _, err := c.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), ""); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "--model") || !hasToken(argv, "claude-opus-5") {
+		t.Fatalf("promote-applies-on-next-fork violated: %s", s)
+	}
+	if hasToken(argv, "claude-fable-5") {
+		t.Fatalf("promote-overrides-overlay-model violated: %s", s)
+	}
+}
+
+func TestClaudeBudgetAppliesOnForkAndClone(t *testing.T) {
+	var argv []string
+	c := Adapter{
+		Run:      func(name string, args ...string) error { argv = append([]string{name}, args...); return nil },
+		Worktree: func(string, string) (string, error) { return "/tmp/wt", nil },
+	}
+	t0 := act.Target{CWD: "/repo", SessionID: "parent-session", Model: "claude-fable-5"}
+	if err := c.Budget(context.Background(), t0, "high"); err != nil {
+		t.Fatalf("budget: %v", err)
+	}
+	if _, err := c.Fork(context.Background(), t0, testCap("fork", "11111111-2222-4333-8444-555555555555"), "claude-fable-5"); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	s := strings.Join(argv, " ")
+	if !hasToken(argv, "--effort") || !hasToken(argv, "high") {
+		t.Fatalf("claude-budget-is-effort-on-next-fork violated: %s", s)
+	}
+	argv = nil
+	if _, err := c.Clone(context.Background(), t0, testCap("clone", "11111111-2222-4333-8444-555555555555")); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	s = strings.Join(argv, " ")
+	if !hasToken(argv, "--effort") || !hasToken(argv, "high") {
+		t.Fatalf("claude-budget-is-effort-on-next-clone violated: %s", s)
+	}
+}
+
+func TestClaudeBudgetUnknownIsUnsupported(t *testing.T) {
+	runs := 0
+	c := Adapter{Run: func(string, ...string) error { runs++; return nil }}
+	err := c.Budget(context.Background(), act.Target{SessionID: "parent-session"}, "xhigh")
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("claude-budget-unknown-unsupported violated: %v", err)
+	}
+	if runs != 0 {
+		t.Fatalf("claude-budget-unknown-does-not-exec violated: Run count=%d want 0", runs)
+	}
+}
+
 func TestClaudeForkCwdNotGitIsLoud(t *testing.T) {
 	runs := 0
 	c := Adapter{

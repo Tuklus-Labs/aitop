@@ -72,6 +72,13 @@ type dumpRow struct {
 	Effort      string    `json:"effort,omitempty"`
 	Entrypoint  string    `json:"entrypoint,omitempty"`
 	Tag         string    `json:"tag,omitempty"`
+	ForkOf      string    `json:"fork_of,omitempty"`
+	Kind        string    `json:"kind,omitempty"`
+	Worktree    string    `json:"worktree,omitempty"`
+	CapsuleID   string    `json:"capsule_id,omitempty"`
+	TokPerSec   *float64  `json:"tok_per_sec,omitempty"`
+	Dark        bool      `json:"dark,omitempty"`
+	SlotIndex   *int      `json:"slot_index,omitempty"`
 	OverlayOK   bool      `json:"overlay_ok"`
 	OverlayOnly bool      `json:"overlay_only,omitempty"`
 	Children    []dumpRow `json:"children,omitempty"`
@@ -264,6 +271,13 @@ func flattenWith(r types.Row, host proc.HostSample, now time.Time) dumpRow {
 		out.Branch = o.Branch
 		out.Effort = o.Effort
 		out.Entrypoint = o.Entrypoint
+		out.ForkOf = o.ForkOf
+		out.Kind = o.Kind
+		out.Worktree = o.Worktree
+		out.CapsuleID = o.CapsuleID
+		out.TokPerSec = o.TokPerSec
+		out.Dark = o.Dark
+		out.SlotIndex = o.SlotIndex
 	}
 	for _, c := range r.Children {
 		out.Children = append(out.Children, flattenWith(c, host, now))
