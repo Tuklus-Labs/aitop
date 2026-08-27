@@ -321,6 +321,64 @@ The landed `TestEventMetricsDoesNotInventNumericPolicy` and its sabotage conclus
 - `graph.TestEventFingerprintIncludesEverySemanticFieldAndPayload` adds a unified ten-row literal fingerprint table built by an independent Python standard-library encoder. Each row uses one shared closed envelope fixture and one exact legal payload. The expected digest is a literal, not computed through production helpers.
 - The seven previously uncovered tags each receive a physical production plant and a matching single-row assertion weakening. Existing Node, Heartbeat, and Gap coverage remains in the unified table so all ten tags have one audit surface.
 
+#### Task 4 normalized state evidence: eight-axis risk model
+
+**Invariants**
+
+- `GF-T4-VOCAB`: `State.Valid` accepts exactly the thirteen frozen states. Terminal is exactly completed, failed, and vanished. Protected is exactly active, thinking, tool, shell, waiting, approval, blocked, error, and failed. Empty and future states belong to neither exact set.
+- `GF-T4-NORMALIZE`: Generic busy proves only active. Passive runnable or CPU-active evidence proves active; every other passive process sample remains unknown.
+- `GF-T4-VALIDITY`: Negative validity fails. Thinking, tool, shell, and waiting default to five seconds. A zero request for unknown, idle, active, and error remains zero. A positive request is legal for every nonterminal state except approval and blocked, and caps at fifteen seconds. Approval, blocked, and terminal states reject positive validity.
+
+**State transitions**
+
+- `GF-T4-EVIDENCE`: Passive evidence is limited to unknown, active, and vanished and cannot carry a relationship, sequence, or semantic validity. Every present source and observation time is paired. Relationship IDs, sequences, and valid-until timestamps obey their event and semantic constraints.
+- `GF-T4-PREFERENCE`: Eligibility removes semantic expiry before comparison. Completed and failed outrank vanished, which outranks nonterminal evidence. Authority then orders hook above native above passive. Positive sequence orders only an identical complete `SourceRef`; observation time follows. A same-lane exact replay keeps current, while an exact cross-lane time tie takes candidate.
+
+**Boundaries**
+
+- `GF-T4-TIME-BOUND`: Validity tests cover negative one nanosecond, zero, the five-second default, fifteen seconds, and one nanosecond beyond the cap. Evidence and preference tests cover valid-until before, equal to, and after both observation time and `now`, including eligible `D-1ns` and expired `D` decisions.
+- `GF-T4-SEQUENCE-BOUND`: Nil sequence is distinct from present zero. Positive sequence comparison is exercised at one, adjacent values, and only within a complete identical source lane.
+
+**Malformed inputs**
+
+- `GF-T4-MALFORMED`: Unknown state strings, partial or invalid sources, unpaired source/time, present-zero sequence, invalid or missing required relationships, forbidden passive fields, and forbidden semantic validity fail without panic or collector-controlled bytes in diagnostics.
+
+**Concurrency**
+
+- `GF-T4-PURE`: State normalization, validation, and preference are pure value decisions. They do not mutate either `StateEvidence` input or dereference a caller-owned sequence pointer for writing; the focused race gate repeats preference over shared read-only evidence.
+
+**Persistence and replay**
+
+- `GF-T4-REPLAY`: Same-source positive sequence can defeat receiver-time order, but incomplete, different-incarnation, different-runtime, different-authority, and cross-lane sources never compare sequence numerically. Exact same-lane replay remains stable.
+
+**Integration contracts**
+
+- `GF-T4-INTEGRATION`: Event state validation delegates vocabulary closure to `State.Valid` but keeps raw duration semantics: every valid state accepts positive `ValidFor`, and only a negative duration is rejected at the raw event layer. Semantic `ValidUntil` is not collector health; zero-validity evidence remains eligible past six seconds because callers prefilter source health. Task 4 contains no heartbeat field or six-second source-health policy, which remains private Task 6 work.
+
+**Regression traps, all nine bug-shape prefixes**
+
+- boundary: populated by negative, zero, five-second, fifteen-second, cap-plus-one, exact-expiry, present-zero sequence, and valid-until ordering rows.
+- concurrency: populated by immutable inputs, caller-owned sequence pointers, deterministic same-lane replay, and candidate-wins cross-lane ties under a private later fold ordinal.
+- contract: populated by exact state, terminal, protected, generic, passive, source, relationship, sequence, and preference vocabularies.
+- encoding: populated by complete `SourceRef` equality, time instant comparison, opaque bounded relationship IDs, and diagnostics that do not echo rejected bytes.
+- framework: populated by Go zero-value structs and pointer presence, including nil versus present-zero sequence.
+- io: N/A - Task 4 performs no filesystem, network, IPC, device, or writer operation.
+- persistence: populated by source-local sequence ordering, stable exact replay, semantic expiry fallback, and exclusion of cross-incarnation numeric ordering.
+- resource: N/A - Task 4 allocates no retained map, queue, goroutine, timer, handle, or external resource.
+- state: populated by closed vocabulary switches, terminal rank, authority rank, passive downgrade prevention, expiry, and exact tie behavior.
+
+#### Task 4 exact test mapping, written before test edits
+
+| Exact test | Primary risk rows |
+|------------|-------------------|
+| `TestStateClosedVocabulary` | `GF-T4-VOCAB`, `GF-T4-MALFORMED`, `GF-T4-INTEGRATION` |
+| `TestStateTerminalAndProtectedSets` | `GF-T4-VOCAB`, `GF-T4-PREFERENCE` |
+| `TestNormalizeGenericBusyIsOnlyActive` | `GF-T4-NORMALIZE` |
+| `TestNormalizePassiveRestrictions` | `GF-T4-NORMALIZE`, `GF-T4-EVIDENCE` |
+| `TestNormalizeValidityRules` | `GF-T4-VALIDITY`, `GF-T4-TIME-BOUND` |
+| `TestValidateStateEvidence` | `GF-T4-EVIDENCE`, `GF-T4-TIME-BOUND`, `GF-T4-SEQUENCE-BOUND`, `GF-T4-MALFORMED` |
+| `TestPreferStateExactOrdering` | `GF-T4-PREFERENCE`, `GF-T4-SEQUENCE-BOUND`, `GF-T4-PURE`, `GF-T4-REPLAY` |
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.
@@ -343,9 +401,10 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-PORTABLE-1` | `graph.TestDeliveryObserveRejectsOverflowAtomically`; Linux/386 compile-only gate `GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1` |
 | `GF-EDGE-2` | `graph.TestEdgeKeysAreDeterministicAndCollisionSafe`, `graph.TestDeliveryObserveAccumulatesMixedOutcomes` |
 | `GF-EDGE-1` | `graph.TestReconcileUnverifiedLaunchRemainsInvisible`, `graph.TestReconcileRankingCycleIsHeldPartial` |
-| `GF-STATE-1` | `graph.TestPreferStateFreshAuthorityOrder`, `graph.TestReconcileHookExpiryFallsBackToNative` |
-| `GF-STATE-2` | `graph.TestPreferStateTerminalCannotRewind`, `graph.TestReconcileRejectsOldIncarnationEvent` |
+| `GF-STATE-1` | `graph.TestPreferStateExactOrdering` |
+| `GF-STATE-2` | `graph.TestStateClosedVocabulary`, `graph.TestStateTerminalAndProtectedSets`, `graph.TestNormalizeGenericBusyIsOnlyActive`, `graph.TestNormalizePassiveRestrictions`, `graph.TestNormalizeValidityRules`, `graph.TestValidateStateEvidence` |
 | `GF-STATE-3` | `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently` |
+| `GF-STATE-HEALTH-1` | `graph.TestReconcileHookExpiryFallsBackToNative`, `graph.TestReconcileRejectsOldIncarnationEvent` |
 | `GF-GHOST-1` | `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`, `graph.TestReconcileGhostPinAfterDeadline` |
 | `GF-BOUND-1` | `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestProcessIdentityRejectsPartialIdentity` |
 | `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowPublishesGap` |

@@ -302,7 +302,7 @@ func (e Event) validateKindData() error {
 		if !ok {
 			return kindDataError(e.Kind, e.Data, "StateObserved")
 		}
-		if !validState(data.State) {
+		if !data.State.Valid() {
 			return fmt.Errorf("state-value rule violated: field=Data.State bytes=%d class=unsupported", len(data.State))
 		}
 		if data.ValidFor < 0 {
@@ -1022,15 +1022,6 @@ func validAuthority(authority Authority) bool {
 func validRole(role types.Role) bool {
 	switch role {
 	case types.RolePrimary, types.RoleSubagent, types.RoleSidecar, types.RoleDesktop, types.RoleWorkflow, types.RoleMonitor:
-		return true
-	default:
-		return false
-	}
-}
-
-func validState(state State) bool {
-	switch state {
-	case StateUnknown, StateIdle, StateActive, StateThinking, StateTool, StateShell, StateWaiting, StateApproval, StateBlocked, StateError, StateCompleted, StateFailed, StateVanished:
 		return true
 	default:
 		return false

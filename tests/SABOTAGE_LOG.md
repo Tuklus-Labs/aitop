@@ -678,3 +678,41 @@ Each uncovered tag was removed alone from production, the exact fingerprint test
 | `SessionBindObserved` | Removed only its `Data.Type` field. Predicted the SessionBind literal vector would fail. | RED only at the SessionBind vector, mutant digest `63ec6af6e4b21d809a7afb49fb693709362671ee386459fdb77061dac44392f2`. | Removed only the SessionBind row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
 
 Quality-amend sabotage result: seven production plants RED, seven single-row weakenings falsely GREEN, and every tag and vector restored. The final table retains all ten payload types so Node, Heartbeat, and Gap share the same audit surface as the seven repaired gaps.
+
+## Task 4 normalized state evidence
+
+Each production plant below was applied physically to `internal/graph/state.go` or `internal/graph/event.go`, run against the single named test, and kept in place while the decisive assertion was weakened. Every production plant first produced behavioral RED, every weakening then produced false GREEN, and both edits were restored before the next pair. The sole initial survivor is called out rather than counted as a kill.
+
+| ID / test | Production plant and RED observation | Assertion weakening and false-GREEN observation | Conclusion |
+|---|---|---|---|
+| T4-1 / `TestStateClosedVocabulary` | Accepted `busy` from `State.Valid`; RED on the four-byte rejected state. | Removed only the `busy` rejection row; PASS. | Exact vocabulary rejection is load-bearing. |
+| T4-2 / `TestStateTerminalAndProtectedSets` | Added vanished to `Protected`; RED on vanished got=true, want=false. | Disabled only the protected-set comparison while retaining terminal checks; PASS. | Protected and terminal sets need independent assertions. |
+| T4-3 / `TestNormalizeGenericBusyIsOnlyActive` | Mapped generic busy to thinking; RED got=thinking, want=active. | Retained recognition but removed the value comparison; PASS. | Recognition alone cannot freeze the normalized state. |
+| T4-4 / `TestNormalizePassiveRestrictions` | Mapped runnable `R` to thinking; RED on the exhaustive byte row 82. | Excluded only the runnable row from its value comparison; PASS. | The byte-domain test prevents passive inference from inventing cognition. |
+| T4-5 / `TestNormalizeValidityRules` | Gave approval a five-second zero-request validity; RED got=5s, want=0. | Removed approval only from the persistent zero-validity table; PASS. | Approval carries no semantic TTL. |
+| T4-6 / `TestValidateStateEvidence` | Removed the 15-second evidence-duration guard; RED on `ttl-above-cap`. | Removed only that malformed row; PASS. | Normalization limits do not substitute for ingress validation. |
+| T4-7 / `TestPreferStateExactOrdering` | Reversed terminal-rank comparison; RED on terminal/nonterminal, failed/vanished, and vanished/nonterminal order. | Disabled only the exact-result comparison while retaining immutability checks; PASS. | Terminal precedence is load-bearing. |
+| T4-X1 / exact expiry | Changed `now.Before(ValidUntil)` to inclusive `!now.After`; RED on candidate-only eligibility, both-expired zero, and the ancient fallback case whose competitor expires at D. | Excluded only the three D-boundary rows; PASS. | Equality at D is expired, while D-1ns remains eligible. |
+| T4-X2 / no source-health cutoff | Injected a six-second `ObservedAt` cutoff for zero-TTL evidence; RED only on `ancient-zero-ttl-remains-eligible`. | Excluded only that row; PASS. | Semantic state code must not import Task 6 receiver health. |
+| T4-X3 / cross-lane tie | Returned current on every exact cross-lane time tie; RED on ordinary and equal-instant/different-location tie rows. | Excluded only rows containing `tie-takes`; PASS. | Candidate wins the private-ordinal fold tie. |
+| T4-X4 / incomplete lane | Treated any equal `SourceRef` as a complete lane; RED on identical partial and identical unsupported-runtime sources because misleading sequence defeated time. | Excluded only the two `identical-` malformed-lane rows; PASS. | Numeric sequence order requires a fully valid source lane. |
+| T4-X5 / unsigned maximum | Narrowed sequence comparison to `int64`. The original MaxUint64 versus MaxUint64-1 row SURVIVED because signed order remains aligned. Added MaxUint64 versus 1; rerun RED with current sequence 1 incorrectly winning. | Excluded only `same-lane-max-sequence-crosses-signed-boundary`; PASS. | The strengthened boundary row kills signed-narrowing mutants; the initial survivor remains recorded. |
+| T4-X6 / pointer immutability | Wrote zero through the losing candidate sequence pointer before comparison. Exact result stayed correct; RED came solely from before/after evidence showing candidate sequence 1 changed to 0. | Disabled only the input-immutability assertion; PASS. | Deep-copied fixtures prove `PreferState` never writes caller-owned pointees. |
+| T4-Q1 / invalid exact-set members | Made both `Terminal` and `Protected` return true for future state values; RED reported `future` as a member of both sets. | Removed only the empty/future negative rows; PASS. | Testing valid members alone does not make either set closed. |
+| T4-Q2 / raw positive validity | Added raw-event overvalidation rejecting positive `ValidFor` on terminal states; RED on completed, failed, and vanished while approval/blocked remained accepted with relationships. | Removed only the three terminal rows from the raw positive-validity table; PASS. | Raw event validation rejects negative duration only; semantic TTL restrictions belong to `StateEvidence`. |
+
+All 15 production/weakening pairs were restored. A focused post-restore run passed before mutation-tool escalation.
+
+### Task 4 pinned mutation-tool escalation
+
+The exact pinned tool was installed and invoked:
+
+```text
+GOBIN="$temporary_directory" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+go version -m "$temporary_directory/go-mutesting"
+"$temporary_directory/go-mutesting" --exec-timeout=15 internal/graph/state.go
+```
+
+Executable validation reported Go 1.26.6 and the pinned module checksum `h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=`. The mutation command exited 2 before source mutation. Its pinned `golang.org/x/tools` version `v0.0.0-20191018212557-ed542cd5b28a` panicked during package loading at `go/types.(*StdSizes).Sizeof` with a nil receiver while checking `internal/coverage/rtcov`.
+
+Killed mutants: not reported. Survived mutants: not reported by the tool. Timed-out mutants: not reported. No tool mutation score exists. The 15 physical production pairs above are the executable fallback report; one initially surviving signed-narrowing plant was converted into a kill by strengthening the boundary test before restoration.

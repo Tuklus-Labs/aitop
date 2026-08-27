@@ -192,3 +192,41 @@ Final audited files after the quality-gate amendment and last Task 3A gofmt: `in
 | `internal/graph/id_test.go:475` | `pid-start-pair invariant` | yes: 6 formatted state fields | yes: `pid-start-pair invariant violated: rule=reuse-distinction name` | yes | PASS |
 
 Task 3A loudness result after quality amendment: 127 PASS, zero failures, zero exemptions, zero stale rows.
+
+## Task 4 state evidence loudness audit
+
+Every assertion in `internal/graph/state_test.go` was checked after the final test additions. Each message uses a present-tense named rule, includes the decisive state, and has a unique greppable rule phrase.
+
+| Line | Rule phrase | Debug state included | Unique | Present tense | Result |
+|---:|---|---|---|---|---|
+| 21 | `state closed-vocabulary acceptance rule` | state | yes | yes | PASS |
+| 30 | `raw-event state-vocabulary delegation rule` | state, error | yes | yes | PASS |
+| 35 | `state closed-vocabulary rejection rule` | byte length, validity | yes | yes | PASS |
+| 41 | `raw-event invalid-state rejection rule` | byte length, error presence | yes | yes | PASS |
+| 53 | `raw-event positive terminal-validity acceptance rule` | state, duration, error | yes | yes | PASS |
+| 72 | `terminal-state exact-set rule` | state, got, want | yes | yes | PASS |
+| 75 | `protected-state exact-set rule` | state, got, want | yes | yes | PASS |
+| 80 | `state exact-set invalid-member rejection rule` | byte length, terminal, protected | yes | yes | PASS |
+| 87 | `generic-busy normalization rule` | status, result, recognition, expected | yes | yes | PASS |
+| 91 | `generic-status closed-normalization rule` | status bytes, result, recognition | yes | yes | PASS |
+| 104 | `passive-byte exhaustive normalization rule` | byte, CPU flag, got, want | yes | yes | PASS |
+| 107 | `passive-cpu exhaustive normalization rule` | byte, CPU flag, got, want | yes | yes | PASS |
+| 115 | `passive-field restriction rule` | relationship presence, error presence | yes | yes | PASS |
+| 120 | `passive-vocabulary restriction rule` | state, error presence | yes | yes | PASS |
+| 128 | `default semantic-validity rule` | state, duration, expected, error | yes | yes | PASS |
+| 134 | `zero semantic-validity preservation rule` | state, duration, expected, error | yes | yes | PASS |
+| 140 | `persistent-state zero-validity rule` | state, duration, expected, error | yes | yes | PASS |
+| 144 | `transient positive-validity preservation rule` | state, duration, expected, error | yes | yes | PASS |
+| 149 | `ordinary-state positive-validity acceptance rule` | state, duration, expected, error | yes | yes | PASS |
+| 155 | `semantic-validity inclusive-cap rule` | requested, result, error | yes | yes | PASS |
+| 159 | `semantic-validity cap rule` | result, expected, error | yes | yes | PASS |
+| 162 | `positive semantic-validity preservation rule` | result, expected, error | yes | yes | PASS |
+| 173 | `semantic-validity rejection rule` | state, requested, error presence | yes | yes | PASS |
+| 207 | `state-evidence legal-shape rule` | row, state, authority, error | yes | yes | PASS |
+| 283 | `state-evidence rejection rule` | case, state, error presence | yes | yes | PASS |
+| 287 | `state-evidence safe-diagnostic rule` | case, error bytes, leak flag | yes | yes | PASS |
+| 371 | `state-preference exact-order rule` | case and fully formatted got/want including sequence values | yes | yes | PASS |
+| 374 | `state-preference input-immutability rule` | case and full before/after evidence pairs | yes | yes | PASS |
+| 394 | `state-preference concurrent-read purity rule` | worker and fully formatted got/want | yes | yes | PASS |
+
+Task 4 loudness result: 29 PASS, zero failures, zero exemptions.
