@@ -133,3 +133,89 @@ Paint stays a 100ms memory-only clock. This package is the fourth clock. There i
 | Local hermes-* `b`/`p` still refuse and do not exec (PF-C15, unchanged) | `local.TestBudgetOnHermesTemplateRefuses`, `TestPromoteOnHermesTemplateRefuses` |
 
 Occupancy rows above are unchanged.
+
+## Graph Foundation
+
+Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
+
+### Invariants
+
+- `GF-ID-1`: Canonical IDs are namespaced, bounded, and reject partial process identity.
+- `GF-VALUE-1`: Unknown numeric telemetry is absent, never zero-filled.
+- `GF-SNAP-1`: Published snapshots are deeply immutable.
+- `GF-EDGE-1`: Unverified relationships are never visible.
+
+### State transitions
+
+- `GF-STATE-1`: Hook > native > passive only while fresh.
+- `GF-STATE-2`: Terminal state cannot rewind from stale or old-incarnation input.
+- `GF-STATE-3`: Approval and blocked relationships resolve independently.
+- `GF-GHOST-1`: Success/vanished and failed ghosts use distinct monotonic deadlines.
+
+### Boundaries
+
+- `GF-BOUND-1`: IDs reject empty/control/over-192-byte components.
+- `GF-BOUND-2`: Limits are 4096 nodes, 16384 edges, 8192 events, and 2048 critical events.
+- `GF-BOUND-3`: Transitions cap at 256 per node.
+
+### Malformed inputs
+
+- `GF-EVENT-1`: Kind/data mismatch, invalid revisions, collisions, and content fields fail loud.
+- `GF-JSON-1`: Schema 2 required arrays are present and non-null.
+
+### Concurrency
+
+- `GF-CONC-1`: Publication is race-free; no mutable maps or slices escape.
+- `GF-CONC-2`: Shutdown waits for named tasks without sleeps.
+
+### Persistence and replay
+
+- `GF-REPLAY-1`: Immutable native replay dedupes across collector restart.
+- `GF-REPLAY-2`: Mutable revisions update once without counter inflation.
+- `GF-REPLAY-3`: Schema 1 is fixture-only; schema 2 is the sole production output.
+
+### Integration contracts
+
+- `GF-COLLECT-1`: Collector failure does not stop siblings or occupancy.
+- `GF-LIFE-1`: Engine, Poller, Actor, Registry, and Store share a cancelable owner.
+- `GF-ONE-1`: JSON and screenshot never start the actor.
+
+### Regression traps
+
+- boundary: `boundary: exact-limit off-by-one`. A 192-byte UTF-8 canonical ID component must pass and a 193-byte component must fail; queue partitions must remain exactly 6144 normal plus 2048 critical, with caps of 4096 nodes, 16384 edges, 8192 total events, and 256 transitions per node. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; `GF-BOUND-2` by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-BOUND-3` by `graph.TestReconcileTransitionsCapAt256PerNode`.
+- concurrency: `concurrency: cancellation/read interleaving exposes shared state or leaks a task`. Readers interleaving with publication must not observe mutable maps or slices, and shutdown must wait for every named task without sleeping. `GF-CONC-1` is caught by `graph.TestStorePublishesSnapshotsAtomically` and `graph.TestStoreConcurrentReadersSeeImmutableSnapshots`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`.
+- contract: `contract: a producer violates the consumer's visibility or isolation contract`. Unverified edges must stay hidden, schema-2 arrays must be present and non-null, and one failed collector must not stop siblings or alter occupancy. `GF-EDGE-1` is caught by `graph.TestReconcileUnverifiedLaunchRemainsInvisible`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays`; `GF-COLLECT-1` by `graph.TestRegistryCollectorFailureDoesNotStopSiblings` and `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged`.
+- encoding: `encoding: malformed identity bytes or empty-array encoding changes meaning`. Invalid UTF-8 and control runes must be rejected at canonical ID construction, while omitted or null schema-2 arrays must be rejected. `GF-ID-1` is caught by `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays` and `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`.
+- framework: N/A - the graph foundation uses no external framework-owned lifecycle or serializer; the command path is standard Go.
+- io: `io: capture or writer failure emits a successful-looking document`. A failed one-shot path must emit no successful schema-2 document. `GF-JSON-1` is caught by `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument`.
+- persistence: `persistence: restart replay or repeated mutable revision inflates state`. Immutable native events replayed after collector restart must dedupe, and a repeated mutable revision must be a no-op. `GF-REPLAY-1` is caught by `graph.TestReconcileImmutableReplayAcrossCollectorRestart`; `GF-REPLAY-2` by `graph.TestReconcileMutableSameRevisionIsNoop` and `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation`.
+- resource: `resource: saturation or cancellation leaks bounded capacity or goroutines`. Queue/store limits must remain exact, and cancellation must reclaim every Store, Registry, Engine, Poller, and Actor task. `GF-BOUND-2` is caught by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`; `GF-LIFE-1` by `graph.TestStoreStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, and `act.TestActorStopsOnContextCancellation`.
+- state: `state: stale evidence, unrelated relationship resolution, or the wrong ghost deadline rewinds lifecycle`. Fresh authority must outrank stale authority, terminal state must not rewind, approval and blocked relationships must resolve independently, and success/vanished versus failed ghosts must use distinct deadlines. `GF-STATE-1` is caught by `graph.TestPreferStateFreshAuthorityOrder` and `graph.TestReconcileHookExpiryFallsBackToNative`; `GF-STATE-2` by `graph.TestPreferStateTerminalCannotRewind` and `graph.TestReconcileRejectsOldIncarnationEvent`; `GF-STATE-3` by `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently`; `GF-GHOST-1` by `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`.
+
+### Coverage Matrix
+
+The names below are the explicit tests planned by Tasks 1 through 11.
+
+| Risk row | Planned test function name(s) |
+|----------|-------------------------------|
+| `GF-ID-1` | `graph.TestCanonicalNodeIDs`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`, `graph.TestProcessIdentityRejectsPartialIdentity`, `graph.TestProcessIdentityDistinguishesPIDReuse` |
+| `GF-VALUE-1` | `graph.TestUnknownNumericMetricsRemainAbsent` |
+| `GF-SNAP-1` | `graph.TestCloneSnapshotDeeplyIsolatesInputAndOutput`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
+| `GF-EDGE-1` | `graph.TestReconcileUnverifiedLaunchRemainsInvisible`, `graph.TestReconcileRankingCycleIsHeldPartial` |
+| `GF-STATE-1` | `graph.TestPreferStateFreshAuthorityOrder`, `graph.TestReconcileHookExpiryFallsBackToNative` |
+| `GF-STATE-2` | `graph.TestPreferStateTerminalCannotRewind`, `graph.TestReconcileRejectsOldIncarnationEvent` |
+| `GF-STATE-3` | `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently` |
+| `GF-GHOST-1` | `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`, `graph.TestReconcileGhostPinAfterDeadline` |
+| `GF-BOUND-1` | `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestProcessIdentityRejectsPartialIdentity` |
+| `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowPublishesGap` |
+| `GF-BOUND-3` | `graph.TestReconcileTransitionsCapAt256PerNode` |
+| `GF-EVENT-1` | `graph.TestEventRejectsKindDataMismatch`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud`, `graph.TestPrivacyRejectsContentFields` |
+| `GF-JSON-1` | `snapshot.TestSchema2RequiresNonNullArrays`, `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`, `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument` |
+| `GF-CONC-1` | `graph.TestStorePublishesSnapshotsAtomically`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
+| `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep` |
+| `GF-REPLAY-1` | `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
+| `GF-REPLAY-2` | `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
+| `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
+| `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged` |
+| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreStopsOnContextCancellation` |
+| `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor` |
