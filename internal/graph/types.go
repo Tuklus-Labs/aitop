@@ -11,6 +11,16 @@ import (
 	"aitop/internal/types"
 )
 
+const maxJSONSafeInteger = 1<<53 - 1
+
+const (
+	SourceAITopReceiver      SourceID = "aitop:receiver"
+	SourceAITopStoreNormal   SourceID = "aitop:store:normal"
+	SourceAITopStoreCritical SourceID = "aitop:store:critical"
+	SourceAITopStoreState    SourceID = "aitop:store:state"
+	SourceAITopGapLedger     SourceID = "aitop:reconciler:gaps"
+)
+
 type State string
 
 const (
@@ -204,11 +214,12 @@ type Edge struct {
 	Trace        *TraceID
 	MessageKind  MessageKind
 	Delivery     *DeliveryCounts
+	Partial      bool
 }
 
 type Gap struct {
 	Source     SourceID
-	Capability Capability
+	Capability *Capability
 	Kind       GapKind
 	At         time.Time
 	Count      uint64
@@ -252,18 +263,23 @@ func (d *DeliveryCounts) Observe(v Delivery) error {
 		return fmt.Errorf("delivery counts receiver is nil")
 	}
 
+	var count *uint64
 	switch v {
 	case DeliveryUnknown:
-		d.Unknown++
+		count = &d.Unknown
 	case DeliveryEmitted:
-		d.Emitted++
+		count = &d.Emitted
 	case DeliveryReceived:
-		d.Received++
+		count = &d.Received
 	case DeliveryFailed:
-		d.Failed++
+		count = &d.Failed
 	default:
 		return fmt.Errorf("delivery %q is invalid", v)
 	}
+	if *count >= maxJSONSafeInteger {
+		return fmt.Errorf("delivery %q count reached JSON-safe integer ceiling %d", v, uint64(maxJSONSafeInteger))
+	}
+	*count = *count + 1
 	d.Latest = v
 	return nil
 }
@@ -282,7 +298,11 @@ func CloneSnapshot(in *Snapshot) *Snapshot {
 	for i := range in.Edges {
 		out.Edges[i] = cloneEdge(in.Edges[i])
 	}
-	out.Gaps = append([]Gap{}, in.Gaps...)
+	out.Gaps = make([]Gap, len(in.Gaps))
+	for i := range in.Gaps {
+		out.Gaps[i] = in.Gaps[i]
+		out.Gaps[i].Capability = clonePointer(in.Gaps[i].Capability)
+	}
 	return &out
 }
 
@@ -333,8 +353,16 @@ func SortSnapshot(in *Snapshot) *Snapshot {
 		if out.Gaps[i].Source != out.Gaps[j].Source {
 			return out.Gaps[i].Source < out.Gaps[j].Source
 		}
-		if out.Gaps[i].Capability != out.Gaps[j].Capability {
-			return out.Gaps[i].Capability < out.Gaps[j].Capability
+		left := out.Gaps[i].Capability
+		right := out.Gaps[j].Capability
+		if left == nil && right != nil {
+			return true
+		}
+		if left != nil && right == nil {
+			return false
+		}
+		if left != nil && right != nil && *left != *right {
+			return *left < *right
 		}
 		return out.Gaps[i].Kind < out.Gaps[j].Kind
 	})

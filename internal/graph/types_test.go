@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ type graphField struct {
 	typ  reflect.Type
 }
 
-func TestNodeAndEdgeValueShapesStayFrozen(t *testing.T) { // contract: GF-VALUE-2
+func TestCorrectedGraphValueShapesStayFrozen(t *testing.T) { // contract: GF-VALUE-2, GF-GAP-1
 	timeType := reflect.TypeOf(time.Time{})
 	sourceRefType := reflect.TypeOf(SourceRef{})
 	metricsType := reflect.TypeOf(Metrics{})
@@ -42,22 +43,55 @@ func TestNodeAndEdgeValueShapesStayFrozen(t *testing.T) { // contract: GF-VALUE-
 			{"Key", reflect.TypeOf(EdgeKey(""))}, {"Source", reflect.TypeOf(NodeID(""))}, {"Target", reflect.TypeOf(NodeID(""))}, {"Type", reflect.TypeOf(EdgeType(""))},
 			{"Provenance", reflect.TypeOf(Provenance(""))}, {"Relationship", reflect.TypeOf(RelationshipID(""))}, {"CreatedAt", timeType}, {"LastActivity", timeType},
 			{"EventCount", reflect.TypeOf(uint64(0))}, {"Lifecycle", reflect.TypeOf(EdgeLifecycle(""))}, {"Trace", reflect.TypeOf((*TraceID)(nil))},
-			{"MessageKind", reflect.TypeOf(MessageKind(""))}, {"Delivery", reflect.TypeOf((*DeliveryCounts)(nil))},
+			{"MessageKind", reflect.TypeOf(MessageKind(""))}, {"Delivery", reflect.TypeOf((*DeliveryCounts)(nil))}, {"Partial", reflect.TypeOf(false)},
 		}},
-		{Gap{}, []graphField{{"Source", reflect.TypeOf(SourceID(""))}, {"Capability", reflect.TypeOf(Capability(""))}, {"Kind", reflect.TypeOf(GapKind(""))}, {"At", timeType}, {"Count", reflect.TypeOf(uint64(0))}}},
+		{Gap{}, []graphField{{"Source", reflect.TypeOf(SourceID(""))}, {"Capability", reflect.TypeOf((*Capability)(nil))}, {"Kind", reflect.TypeOf(GapKind(""))}, {"At", timeType}, {"Count", reflect.TypeOf(uint64(0))}}},
 		{Snapshot{}, []graphField{{"At", timeType}, {"Nodes", reflect.TypeOf([]Node{})}, {"Edges", reflect.TypeOf([]Edge{})}, {"Gaps", reflect.TypeOf([]Gap{})}, {"TopologyRevision", reflect.TypeOf(uint64(0))}, {"VisibilityRevision", reflect.TypeOf(uint64(0))}, {"StateRevision", reflect.TypeOf(uint64(0))}, {"MetricsRevision", reflect.TypeOf(uint64(0))}}},
 	}
 
 	for _, tc := range cases {
 		typ := reflect.TypeOf(tc.value)
 		if typ.NumField() != len(tc.want) {
-			t.Fatalf("frozen-graph-value-shape invariant violated: struct=%s fields=%d want=%d", typ.Name(), typ.NumField(), len(tc.want))
+			t.Fatalf("frozen-graph-value-shape field-count invariant violated: struct=%s fields=%d want=%d", typ.Name(), typ.NumField(), len(tc.want))
 		}
 		for i, want := range tc.want {
 			got := typ.Field(i)
 			if got.Name != want.name || got.Type != want.typ {
-				t.Fatalf("frozen-graph-value-shape invariant violated: struct=%s index=%d field=%s type=%v wantField=%s wantType=%v", typ.Name(), i, got.Name, got.Type, want.name, want.typ)
+				t.Fatalf("frozen-graph-value-shape field-slot invariant violated: struct=%s index=%d field=%s type=%v wantField=%s wantType=%v", typ.Name(), i, got.Name, got.Type, want.name, want.typ)
 			}
+		}
+	}
+}
+
+func TestCanonicalInternalSourceIDs(t *testing.T) { // contract: GF-VALUE-2
+	cases := []struct {
+		name string
+		got  SourceID
+		want SourceID
+	}{
+		{"receiver", SourceAITopReceiver, "aitop:receiver"},
+		{"store-normal", SourceAITopStoreNormal, "aitop:store:normal"},
+		{"store-critical", SourceAITopStoreCritical, "aitop:store:critical"},
+		{"store-state", SourceAITopStoreState, "aitop:store:state"},
+		{"gap-ledger", SourceAITopGapLedger, "aitop:reconciler:gaps"},
+	}
+
+	for _, tc := range cases {
+		if tc.got != tc.want {
+			t.Fatalf("canonical-internal-source-ID contract violated: source=%s got=%q want=%q", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+func TestActiveGapValueDoesNotInventGlobalPartial(t *testing.T) { // contract: GF-GAP-1, GF-VALUE-2
+	typ := reflect.TypeOf(Snapshot{})
+	if field, found := typ.FieldByName("Partial"); found {
+		t.Fatalf("active-gap sole-partial-truth contract violated: Snapshot has forbidden field=%s type=%v", field.Name, field.Type)
+	}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if strings.Contains(strings.ToLower(field.Name), "drop") {
+			t.Fatalf("active-gap no-drop-counter contract violated: Snapshot field=%s type=%v", field.Name, field.Type)
 		}
 	}
 }
@@ -80,11 +114,11 @@ func TestNodeAndEdgeConstantsMatchClosedVocabularies(t *testing.T) { // contract
 	}
 	for _, tc := range cases {
 		if !reflect.DeepEqual(tc.got, tc.want) {
-			t.Fatalf("closed-graph-vocabulary invariant violated: vocabulary=%s got=%v want=%v", tc.name, tc.got, tc.want)
+			t.Fatalf("closed-graph-vocabulary ordered-values invariant violated: vocabulary=%s got=%v want=%v", tc.name, tc.got, tc.want)
 		}
 	}
 	if got := []Authority{AuthorityPassive, AuthorityNative, AuthorityHook}; !reflect.DeepEqual(got, []Authority{1, 2, 3}) {
-		t.Fatalf("closed-graph-vocabulary invariant violated: vocabulary=authority got=%v want=[1 2 3]", got)
+		t.Fatalf("closed-graph-vocabulary authority-values invariant violated: got=%v want=[1 2 3]", got)
 	}
 }
 
@@ -106,37 +140,91 @@ func TestDeliveryObserveAccumulatesMixedOutcomes(t *testing.T) { // invariant: G
 	var got DeliveryCounts
 	for _, delivery := range []Delivery{DeliveryEmitted, DeliveryFailed, DeliveryUnknown, DeliveryReceived, DeliveryEmitted} {
 		if err := got.Observe(delivery); err != nil {
-			t.Fatalf("mixed-delivery-counts-accumulate invariant violated: delivery=%q counts=%+v error=%v", delivery, got, err)
+			t.Fatalf("mixed-delivery-counts observation-error invariant violated: delivery=%q counts=%+v error=%v", delivery, got, err)
 		}
 	}
 	want := DeliveryCounts{Unknown: 1, Emitted: 2, Received: 1, Failed: 1, Latest: DeliveryEmitted}
 	if got != want {
-		t.Fatalf("mixed-delivery-counts-accumulate invariant violated: got=%+v want=%+v", got, want)
+		t.Fatalf("mixed-delivery-counts aggregate-result invariant violated: got=%+v want=%+v", got, want)
 	}
 }
 
 func TestDeliveryObserveRejectsInvalidAtomically(t *testing.T) { // state: GF-VALUE-2
 	got := DeliveryCounts{Unknown: 1, Emitted: 2, Received: 3, Failed: 4, Latest: DeliveryReceived}
 	want := got
-	if err := got.Observe(Delivery("received|failed")); err == nil {
-		t.Fatalf("invalid-delivery-is-atomic invariant violated: counts=%+v invalid delivery returned nil error", got)
+	invalid := Delivery("received|failed")
+	if err := got.Observe(invalid); err == nil {
+		t.Fatalf("invalid-delivery error-contract invariant violated: delivery=%q counts=%+v returned nil error", invalid, got)
 	}
 	if got != want {
-		t.Fatalf("invalid-delivery-is-atomic invariant violated: got=%+v want=%+v", got, want)
+		t.Fatalf("invalid-delivery atomicity invariant violated: delivery=%q got=%+v want=%+v", invalid, got, want)
+	}
+}
+
+func TestDeliveryObserveRejectsOverflowAtomically(t *testing.T) { // boundary: GF-SAFEINT-1
+	const wantMax uint64 = 9007199254740991
+	t.Run("independent-oracle", func(t *testing.T) {
+		if got := uint64(maxJSONSafeInteger); got != wantMax {
+			t.Fatalf("delivery safe-integer oracle contract violated: productionMax=%d independentWant=%d", got, wantMax)
+		}
+	})
+
+	cases := []struct {
+		name     string
+		delivery Delivery
+	}{
+		{"unknown", DeliveryUnknown},
+		{"emitted", DeliveryEmitted},
+		{"received", DeliveryReceived},
+		{"failed", DeliveryFailed},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			belowCeiling := deliveryCountsWithBucket(tc.delivery, wantMax-1)
+			belowCeiling.Latest = DeliveryReceived
+			if err := belowCeiling.Observe(tc.delivery); err != nil {
+				t.Fatalf("delivery inclusive-ceiling acceptance contract violated: delivery=%q before=%d ceiling=%d error=%v", tc.delivery, wantMax-1, wantMax, err)
+			}
+			if got := selectedDeliveryCount(belowCeiling, tc.delivery); got != wantMax || belowCeiling.Latest != tc.delivery {
+				t.Fatalf("delivery inclusive-ceiling result contract violated: delivery=%q count=%d latest=%q wantCount=%d wantLatest=%q", tc.delivery, got, belowCeiling.Latest, wantMax, tc.delivery)
+			}
+
+			for _, rejection := range []struct {
+				name  string
+				count uint64
+			}{
+				{"at-ceiling", wantMax},
+				{"one-over-ceiling", wantMax + 1},
+				{"max-uint64", math.MaxUint64},
+			} {
+				t.Run(rejection.name, func(t *testing.T) {
+					got := deliveryCountsWithBucket(tc.delivery, rejection.count)
+					got.Latest = DeliveryReceived
+					before := got
+					if err := got.Observe(tc.delivery); err == nil {
+						t.Fatalf("delivery over-ceiling rejection contract violated: delivery=%q case=%s count=%d independentMax=%d returned nil error", tc.delivery, rejection.name, rejection.count, wantMax)
+					}
+					if got != before {
+						t.Fatalf("delivery over-ceiling atomicity contract violated: delivery=%q case=%s count=%d before=%+v after=%+v independentMax=%d", tc.delivery, rejection.name, rejection.count, before, got, wantMax)
+					}
+				})
+			}
+		})
 	}
 }
 
 func TestEdgeKeysAreDeterministicAndCollisionSafe(t *testing.T) { // encoding: GF-EDGE-2
 	first := RelationshipEdgeKey(EdgeSpawn, NodeID("a:b"), NodeID("c"), RelationshipID("d"))
 	if again := RelationshipEdgeKey(EdgeSpawn, NodeID("a:b"), NodeID("c"), RelationshipID("d")); again != first {
-		t.Fatalf("deterministic-edge-key invariant violated: first=%q again=%q", first, again)
+		t.Fatalf("relationship deterministic-edge-key invariant violated: first=%q again=%q", first, again)
 	}
 	if !strings.HasPrefix(string(first), "spawn:") || len(strings.TrimPrefix(string(first), "spawn:")) != 64 {
-		t.Fatalf("readable-sha256-edge-key invariant violated: key=%q wantPrefix=%q wantDigestHexBytes=64", first, "spawn:")
+		t.Fatalf("relationship readable-sha256-edge-key invariant violated: key=%q wantPrefix=%q wantDigestHexBytes=64", first, "spawn:")
 	}
 	messageBaseline := MessageEdgeKey(NodeID("a:b"), NodeID("c"), MessageDirect)
 	if again := MessageEdgeKey(NodeID("a:b"), NodeID("c"), MessageDirect); again != messageBaseline {
-		t.Fatalf("deterministic-edge-key invariant violated: first=%q again=%q", messageBaseline, again)
+		t.Fatalf("message deterministic-edge-key invariant violated: first=%q again=%q", messageBaseline, again)
 	}
 
 	independent := []struct {
@@ -175,7 +263,7 @@ func TestEdgeKeysAreDeterministicAndCollisionSafe(t *testing.T) { // encoding: G
 		seen[key] = struct{}{}
 	}
 	if !strings.HasPrefix(string(messageBaseline), "message:") || len(strings.TrimPrefix(string(messageBaseline), "message:")) != 64 {
-		t.Fatalf("readable-sha256-edge-key invariant violated: key=%q wantPrefix=%q wantDigestHexBytes=64", messageBaseline, "message:")
+		t.Fatalf("message readable-sha256-edge-key invariant violated: key=%q wantPrefix=%q wantDigestHexBytes=64", messageBaseline, "message:")
 	}
 }
 
@@ -218,15 +306,79 @@ func TestCloneSnapshotDeeplyIsolatesInputAndOutput(t *testing.T) { // invariant:
 	})
 }
 
+func TestGapCloneDeepCopiesOptionalCapability(t *testing.T) { // invariant: GF-SNAP-1, GF-GAP-1
+	nilClone := CloneSnapshot(&Snapshot{Gaps: []Gap{{Source: "source:nil", Kind: GapCollector}}})
+	if len(nilClone.Gaps) != 1 || nilClone.Gaps[0].Capability != nil {
+		t.Fatalf("optional-gap-capability nil-preservation invariant violated: gaps=%+v", nilClone.Gaps)
+	}
+
+	capability := CapabilityMetrics
+	input := &Snapshot{Gaps: []Gap{{Source: "source:present", Capability: &capability, Kind: GapSequence}}}
+	clone := CloneSnapshot(input)
+	if len(clone.Gaps) != 1 || clone.Gaps[0].Capability == nil {
+		t.Fatalf("optional-gap-capability presence invariant violated: input=%+v clone=%+v", input.Gaps, clone.Gaps)
+	}
+
+	*input.Gaps[0].Capability = CapabilityState
+	if got := *clone.Gaps[0].Capability; got != CapabilityMetrics {
+		t.Fatalf("optional-gap-capability input-mutation isolation invariant violated: inputCapability=%q cloneCapability=%q wantClone=%q", *input.Gaps[0].Capability, got, CapabilityMetrics)
+	}
+	*clone.Gaps[0].Capability = CapabilityTerminal
+	if got := *input.Gaps[0].Capability; got != CapabilityState {
+		t.Fatalf("optional-gap-capability output-mutation isolation invariant violated: inputCapability=%q cloneCapability=%q wantInput=%q", got, *clone.Gaps[0].Capability, CapabilityState)
+	}
+}
+
+func TestGapSortOrdersNilCapabilityFirst(t *testing.T) { // encoding: GF-SNAP-1, GF-GAP-1
+	in := &Snapshot{Nodes: []Node{}, Edges: []Edge{}, Gaps: []Gap{
+		{Source: "source:b", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityState), Kind: GapSequence},
+		{Source: "source:a", Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+		{Source: "source:a", Kind: GapCollector},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
+		{Source: "source:b", Kind: GapCollector},
+	}}
+	wantInput := CloneSnapshot(in)
+	want := []Gap{
+		{Source: "source:a", Kind: GapCollector},
+		{Source: "source:a", Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityState), Kind: GapSequence},
+		{Source: "source:b", Kind: GapCollector},
+		{Source: "source:b", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+	}
+
+	got := SortSnapshot(in)
+	if !reflect.DeepEqual(got.Gaps, want) {
+		t.Fatalf("canonical gap ordering invariant violated: got=%+v want=%+v", got.Gaps, want)
+	}
+	mutated := false
+	for i := range got.Gaps {
+		if got.Gaps[i].Capability != nil {
+			*got.Gaps[i].Capability = CapabilityTerminal
+			mutated = true
+			break
+		}
+	}
+	if !mutated {
+		t.Fatalf("sorted-gap ownership test setup invariant violated: sortedGaps=%+v contain no present capability", got.Gaps)
+	}
+	if !reflect.DeepEqual(in, wantInput) {
+		t.Fatalf("sorted-gap result-ownership invariant violated: inputGaps=%+v inputCapabilities=%v wantInputCapabilities=%v mutatedResultCapabilities=%v", in.Gaps, gapCapabilityValues(in.Gaps), gapCapabilityValues(wantInput.Gaps), gapCapabilityValues(got.Gaps))
+	}
+}
+
 func TestSnapshotSortOrdersCloneWithoutMutatingInput(t *testing.T) { // invariant: GF-SNAP-1
 	in := graphSnapshotFixture()
 	in.Nodes = append(in.Nodes, Node{ID: "node:a"}, Node{ID: "node:b"})
 	in.Edges = append(in.Edges, Edge{Key: "edge:a"}, Edge{Key: "edge:m"})
 	in.Gaps = []Gap{
-		{Source: "source:b", Capability: CapabilityIdentity, Kind: GapCollector},
-		{Source: "source:a", Capability: CapabilityState, Kind: GapSequence},
-		{Source: "source:a", Capability: CapabilityIdentity, Kind: GapSchema},
-		{Source: "source:a", Capability: CapabilityIdentity, Kind: GapCollector},
+		{Source: "source:b", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityState), Kind: GapSequence},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
 	}
 	wantInput := CloneSnapshot(in)
 
@@ -241,10 +393,10 @@ func TestSnapshotSortOrdersCloneWithoutMutatingInput(t *testing.T) { // invarian
 		t.Fatalf("snapshot-edge-order invariant violated: got=%v want=%v", edgeKeys(got.Edges), want)
 	}
 	wantGaps := []Gap{
-		{Source: "source:a", Capability: CapabilityIdentity, Kind: GapCollector},
-		{Source: "source:a", Capability: CapabilityIdentity, Kind: GapSchema},
-		{Source: "source:a", Capability: CapabilityState, Kind: GapSequence},
-		{Source: "source:b", Capability: CapabilityIdentity, Kind: GapCollector},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityIdentity), Kind: GapSchema},
+		{Source: "source:a", Capability: capabilityPointer(CapabilityState), Kind: GapSequence},
+		{Source: "source:b", Capability: capabilityPointer(CapabilityIdentity), Kind: GapCollector},
 	}
 	if !reflect.DeepEqual(got.Gaps, wantGaps) {
 		t.Fatalf("snapshot-gap-lexicographic-order invariant violated: got=%+v want=%+v", got.Gaps, wantGaps)
@@ -283,7 +435,7 @@ func graphSnapshotFixture() *Snapshot {
 			CreatedAt: base, LastActivity: started, EventCount: 9, Lifecycle: LifecycleActive, Trace: &trace, MessageKind: MessageDirect,
 			Delivery: &DeliveryCounts{Unknown: 1, Emitted: 2, Received: 3, Failed: 4, Latest: DeliveryReceived},
 		}},
-		Gaps:               []Gap{{Source: "source:z", Capability: CapabilityMetrics, Kind: GapSequence, At: base, Count: 5}},
+		Gaps:               []Gap{{Source: "source:z", Capability: capabilityPointer(CapabilityMetrics), Kind: GapSequence, At: base, Count: 5}},
 		TopologyRevision:   1,
 		VisibilityRevision: 2,
 		StateRevision:      3,
@@ -313,7 +465,54 @@ func mutateGraphSnapshot(snapshot *Snapshot) {
 	snapshot.Edges[0].Delivery.Received++
 	snapshot.Edges[0].Delivery.Latest = DeliveryFailed
 	snapshot.Gaps[0].Source = "mutated-source"
+	*snapshot.Gaps[0].Capability = CapabilityState
 	snapshot.Gaps[0].Count++
+}
+
+func capabilityPointer(value Capability) *Capability {
+	return &value
+}
+
+func gapCapabilityValues(gaps []Gap) []string {
+	values := make([]string, len(gaps))
+	for i := range gaps {
+		if gaps[i].Capability == nil {
+			values[i] = "<nil>"
+			continue
+		}
+		values[i] = string(*gaps[i].Capability)
+	}
+	return values
+}
+
+func deliveryCountsWithBucket(delivery Delivery, value uint64) DeliveryCounts {
+	counts := DeliveryCounts{Unknown: 11, Emitted: 12, Received: 13, Failed: 14}
+	switch delivery {
+	case DeliveryUnknown:
+		counts.Unknown = value
+	case DeliveryEmitted:
+		counts.Emitted = value
+	case DeliveryReceived:
+		counts.Received = value
+	case DeliveryFailed:
+		counts.Failed = value
+	}
+	return counts
+}
+
+func selectedDeliveryCount(counts DeliveryCounts, delivery Delivery) uint64 {
+	switch delivery {
+	case DeliveryUnknown:
+		return counts.Unknown
+	case DeliveryEmitted:
+		return counts.Emitted
+	case DeliveryReceived:
+		return counts.Received
+	case DeliveryFailed:
+		return counts.Failed
+	default:
+		return 0
+	}
 }
 
 func nodeIDs(nodes []Node) []NodeID {

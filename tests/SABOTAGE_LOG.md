@@ -246,3 +246,171 @@ Every assertion in `internal/graph/event_test.go` was reviewed against the four-
 ### Mutation-tool escalation
 
 `go-mutesting` was installed and invoked as `go-mutesting --exec-timeout=15 internal/graph/event.go`. It generated no mutant report: its pinned 2019 `golang.org/x/tools/go/packages` crashed during package loading under Go 1.26 with `go/types.(*StdSizes).Sizeof` on a nil receiver. Mutation score is therefore unavailable. The 22 physical production mutations above are the executable fallback report; all were killed before assertion weakening and restored afterward.
+
+## Graph corrected gap and value contracts, Task 2A (2026-08-27, base `ff8bc149`)
+
+The risk model and Coverage Matrix were updated before test code. The exact focused command was:
+
+```bash
+go test ./internal/graph -run '^(TestCorrectedGraphValueShapesStayFrozen|TestGapCloneDeepCopiesOptionalCapability|TestGapSortOrdersNilCapabilityFirst|TestDeliveryObserveRejectsOverflowAtomically|TestCanonicalInternalSourceIDs|TestActiveGapValueDoesNotInventGlobalPartial)$' -count=1
+```
+
+The first run was RED at build because all five `SourceAITop*` constants and `maxJSONSafeInteger` were undefined. After adding only the API and compile skeleton, the same command was behaviorally RED: all four delivery buckets advanced to `9007199254740992` with nil error, the cloned capability changed from metrics to state through caller mutation, and present capabilities sorted before nil. Those failures preceded the production behavior fixes.
+
+Each production mutation below was physically applied with `apply_patch`, predicted before execution, run with the exact single-test command shown, then paired with the named physical assertion weakening while the production defect remained. Every pair was restored by inverse `apply_patch`, gofmt'd, and its named test rerun GREEN before the next mutation.
+
+| Test | Production mutation, prediction, and command | Production observation | Assertion weakening, prediction, and command | False-GREEN observation | Restoration and conclusion |
+|---|---|---|---|---|---|
+| `TestCorrectedGraphValueShapesStayFrozen` | Removed `Edge.Partial`. Predicted the exact Edge field table would turn RED. Ran `go test ./internal/graph -run '^TestCorrectedGraphValueShapesStayFrozen$' -count=1`. | RED: `frozen-graph-value-shape invariant violated: struct=Edge fields=13 want=14`. | Removed only the Edge case from the exact field table. Predicted the malformed Edge would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the Edge case and `Edge.Partial`; the exact command PASSed. The Edge field-list assertion is load-bearing. |
+| `TestGapCloneDeepCopiesOptionalCapability` | Removed the per-gap `clonePointer` assignment so `Gap.Capability` remained shallow. Predicted caller mutation would leak into the clone. Ran `go test ./internal/graph -run '^TestGapCloneDeepCopiesOptionalCapability$' -count=1`. | RED: `optional-gap-capability input-mutation isolation invariant violated: inputCapability="state" cloneCapability="state" wantClone="metrics"`. | Replaced the post-mutation bidirectional assertions with a pre-mutation value-only comparison. Predicted the aliased pointer would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the mutation assertions and deep clone assignment; the exact command PASSed. Post-mutation observation is necessary to prove pointee isolation. |
+| `TestGapSortOrdersNilCapabilityFirst` | Reversed both nil/present comparator branches so present capabilities sorted first. Predicted exact gap order would turn RED. Ran `go test ./internal/graph -run '^TestGapSortOrdersNilCapabilityFirst$' -count=1`. | RED: the first `source:a` entries were present identity capabilities while the expected first entries were nil collector then nil schema. | Replaced the exact `reflect.DeepEqual` order assertion with a gap-count comparison. Predicted equal cardinality would hide the wrong order. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the exact order assertion and nil-first comparator; the exact command PASSed. Count equality does not prove canonical ordering. |
+| `TestDeliveryObserveRejectsOverflowAtomically` | Incremented the selected bucket before checking `> maxJSONSafeInteger`, preserving the returned error but mutating the receiver. Predicted every bucket subtest would turn RED on atomicity. Ran `go test ./internal/graph -run '^TestDeliveryObserveRejectsOverflowAtomically$' -count=1`. | RED for unknown, emitted, received, and failed: each selected count changed from `9007199254740991` to `9007199254740992` while `Latest` remained received. | Removed only the whole-receiver before/after comparison and retained the error plus inclusive-ceiling checks. Predicted the mutated receiver would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the complete receiver assertion and pre-increment ceiling guard; the exact command PASSed. A nonnil error alone does not prove atomic rejection. |
+| `TestCanonicalInternalSourceIDs` | Set `SourceAITopStoreCritical` to `aitop:store:normal`. Predicted the critical exact-string row would turn RED. Ran `go test ./internal/graph -run '^TestCanonicalInternalSourceIDs$' -count=1`. | RED: `source=store-critical got="aitop:store:normal" want="aitop:store:critical"`. | Replaced exact string equality with nonempty-only checks. Predicted the merged IDs would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored exact comparisons and the critical source string; the exact command PASSed. Nonempty IDs do not preserve diagnostic lane identity. |
+| `TestActiveGapValueDoesNotInventGlobalPartial` | Added `Snapshot.Partial bool`. Predicted the forbidden-field reflection assertion would turn RED. Ran `go test ./internal/graph -run '^TestActiveGapValueDoesNotInventGlobalPartial$' -count=1`. | RED: `active-gap sole-partial-truth contract violated: Snapshot has forbidden field=Partial type=bool`. | Removed only the `FieldByName("Partial")` assertion while retaining the drop-field sweep. Predicted the forbidden global field would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the explicit prohibition and removed `Snapshot.Partial`; the exact command PASSed. The drop-field sweep cannot substitute for the separate global-partial assertion. |
+
+### Task 2A pinned mutation-tool escalation
+
+The exact task-local commands were run from the repository root:
+
+```bash
+aitop_task2a_mutation_dir="$(mktemp -d)"
+GOBIN="$aitop_task2a_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task2a_mutation_tool="$aitop_task2a_mutation_dir/go-mutesting"
+test -x "$aitop_task2a_mutation_tool"
+go version
+go version -m "$aitop_task2a_mutation_tool"
+"$aitop_task2a_mutation_tool" --exec-timeout=15 internal/graph/types.go
+```
+
+Installation and executable validation succeeded. The mutation command exited 2. The command harness returned the following complete combined stdout/stderr stream:
+
+```text
+go version go1.26.6-X:nodwarf5 linux/amd64
+/tmp/tmp.slZsQ4Cwku/go-mutesting: go1.26.6-X:nodwarf5
+	path	github.com/zimmski/go-mutesting/cmd/go-mutesting
+	mod	github.com/zimmski/go-mutesting	v0.0.0-20210610104036-6d9217011a00	h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+	dep	github.com/davecgh/go-spew	v1.1.0	h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
+	dep	github.com/jessevdk/go-flags	v1.4.0	h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
+	dep	github.com/pmezard/go-difflib	v1.0.0	h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+	dep	github.com/stretchr/testify	v1.4.0	h1:2E4SX/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
+	dep	github.com/zimmski/go-tool	v0.0.0-20150119110811-2dfdc9ac8439	h1:yHqsjUkj0HWbKPw/6ZqC0/eMklaRpqubA199vaRLzzE=
+	dep	github.com/zimmski/osutil	v0.0.0-20190128123334-0d0b3ca231ac	h1:uiFRlKzyIzHeLOthe0ethUkSGW7POlqxU3Tc21R8QpQ=
+	dep	golang.org/x/tools	v0.0.0-20191018212557-ed542cd5b28a	h1:UuQ+70Pi/ZdWHuP4v457pkXeOynTdgd/4enxeIO/98k=
+	dep	gopkg.in/yaml.v2	v2.2.2	h1:ZCJp+EgiOT7lHqUV2J862kp8Qj64Jo6az82+3Td9dZw=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	DefaultGODEBUG=asynctimerchan=1,containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,gotypesalias=0,httpcookiemaxnum=0,httplaxcontentlength=1,httpmuxgo121=1,httpservecontentkeepheaders=1,multipathtcp=0,netedns0=0,panicnil=1,randseednop=0,rsa1024min=0,tls10server=1,tls3des=1,tlsmlkem=0,tlsrsakex=1,tlssecpmlkem=0,tlssha1=1,tlsunsafeekm=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509keypairleaf=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0
+	build	CGO_ENABLED=1
+	build	CGO_CFLAGS=
+	build	CGO_CPPFLAGS=
+	build	CGO_CXXFLAGS=
+	build	CGO_LDFLAGS=
+	build	GOARCH=amd64
+	build	GOEXPERIMENT=nodwarf5
+	build	GOOS=linux
+	build	GOAMD64=v1
+The following panic happened checking types near:
+	/usr/lib/go/src/internal/godebugs/table.go:28:5
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5cbef2]
+
+goroutine 283 [running]:
+go/types.(*Checker).handleBailout(0x2944bf5f8200, 0x2944bf707c88)
+	/usr/lib/go/src/go/types/check.go:473 +0x91
+panic({0x76b6c0?, 0xa62f40?})
+	/usr/lib/go/src/runtime/panic.go:860 +0x13a
+go/types.(*Checker).objDecl.func1()
+	/usr/lib/go/src/go/types/decl.go:55 +0x5c
+panic({0x76b6c0?, 0xa62f40?})
+	/usr/lib/go/src/runtime/panic.go:860 +0x13a
+go/types.(*StdSizes).Sizeof(0x0, {0x7f1ae0, 0xa673c0})
+	/usr/lib/go/src/go/types/sizes.go:229 +0x312
+go/types.(*Config).sizeof(...)
+	/usr/lib/go/src/go/types/sizes.go:334
+go/types.representableConst.func1(...)
+	/usr/lib/go/src/go/types/const.go:77
+go/types.representableConst({0x7f32e0, 0x802178}, 0x2944bf5f8200, 0xa673c0, 0x2944bf4b0820)
+	/usr/lib/go/src/go/types/const.go:93 +0x1e9
+go/types.(*Checker).representation(0x2944bf5f8200, 0x2944bf2b59c0, 0xa673c0)
+	/usr/lib/go/src/go/types/const.go:257 +0x5f
+go/types.(*Checker).implicitTypeAndValue(0x2944bf5f8200, 0x2944bf2b59c0, {0x7f1ae0?, 0xa673c0?})
+	/usr/lib/go/src/go/types/expr.go:404 +0x3ed
+go/types.(*Checker).assignment(0x2944bf5f8200, 0x2944bf2b59c0, {0x7f1ae0, 0xa673c0}, {0x7cfd86, 0xe})
+	/usr/lib/go/src/go/types/assignments.go:70 +0x445
+go/types.(*Checker).compositeLit(0x2944bf5f8200, 0x2944bf2b59c0, 0x2944bf344380, {0x7f1b30?, 0x2944bf71a380?})
+	/usr/lib/go/src/go/types/literals.go:189 +0x1325
+go/types.(*Checker).exprInternal(0x2944bf5f8200, 0x0, 0x2944bf2b59c0, {0x7f2770, 0x2944bf344380}, {0x7f1b30?, 0x2944bf71a380?})
+	/usr/lib/go/src/go/types/expr.go:1076 +0x20f
+go/types.(*Checker).rawExpr(0x2944bf5f8200, 0x0, 0x2944bf2b59c0, {0x7f2770?, 0x2944bf344380?}, {0x7f1b30?, 0x2944bf71a380?}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).exprWithHint(0x2944bf5f8200, 0x2944bf2b59c0, {0x7f2770, 0x2944bf344380}, {0x7f1b30, 0x2944bf71a380})
+	/usr/lib/go/src/go/types/expr.go:1326 +0x65
+go/types.(*Checker).indexedElts(0x2944bf5f8200, {0x2944bf2cc008, 0x37, 0x2944bf4b1230?}, {0x7f1b30, 0x2944bf71a380}, 0xffffffffffffffff)
+	/usr/lib/go/src/go/types/literals.go:362 +0x12a
+go/types.(*Checker).compositeLit(0x2944bf5f8200, 0x2944bf2b5880, 0x2944bf345a40, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/literals.go:246 +0x42a
+go/types.(*Checker).exprInternal(0x2944bf5f8200, 0x0, 0x2944bf2b5880, {0x7f2770, 0x2944bf345a40}, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/expr.go:1076 +0x20f
+go/types.(*Checker).rawExpr(0x2944bf5f8200, 0x0, 0x2944bf2b5880, {0x7f2770?, 0x2944bf345a40?}, {0x0?, 0x0?}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).expr(0x2944bf5f8200, 0x0?, 0x2944bf2b5880, {0x7f2770?, 0x2944bf345a40?})
+	/usr/lib/go/src/go/types/expr.go:1276 +0x30
+go/types.(*Checker).varDecl(0x2944bf5f8200, 0x2944bf31c4e0, {0x2944bf402168, 0x1, 0x1}, {0x0, 0x0}, {0x7f2770, 0x2944bf345a40})
+	/usr/lib/go/src/go/types/decl.go:482 +0x178
+go/types.(*Checker).objDecl(0x2944bf5f8200, {0x7f9d10, 0x2944bf31c4e0})
+	/usr/lib/go/src/go/types/decl.go:156 +0xa7d
+go/types.(*Checker).packageObjects(0x2944bf5f8200)
+	/usr/lib/go/src/go/types/resolver.go:690 +0x412
+go/types.(*Checker).checkFiles(0x2944bf5f8200, {0x2944bf402018?, 0x58761b?, 0x7b8d60?})
+	/usr/lib/go/src/go/types/check.go:534 +0x385
+go/types.(*Checker).Files(0x2944bf098240?, {0x2944bf402018?, 0x2944bf31c2a0?, 0x8?})
+	/usr/lib/go/src/go/types/check.go:491 +0x75
+golang.org/x/tools/go/packages.(*loader).loadPackage(0x2944bf098240, 0x2944bf65a0e0)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:835 +0x6ba
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1()
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:685 +0x1a7
+sync.(*Once).doSlow(0x0?, 0x0?)
+	/usr/lib/go/src/sync/once.go:78 +0xac
+sync.(*Once).Do(...)
+	/usr/lib/go/src/sync/once.go:69
+golang.org/x/tools/go/packages.(*loader).loadRecursive(0x0?, 0x0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:673 +0x3b
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1.1(0x0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:680 +0x26
+created by golang.org/x/tools/go/packages.(*loader).loadRecursive.func1 in goroutine 169
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:679 +0x8c
+```
+
+Killed mutants: not reported. Survived mutants: not reported. Timed-out mutants: not reported. No mutation score exists because the pinned tool crashed during package loading in the exact allowed Go 1.26 `go/types.(*StdSizes).Sizeof` nil-receiver failure. The six physical production mutants above are therefore the required executable fallback report. `git diff -- internal/graph/types.go` showed only the intended Task 2A implementation after the crash, `git diff --check` passed, and the six-test focused command passed, proving the tool left no production mutation behind.
+
+### Task 2A quality-review correction (2026-08-27, rejected commit `d4ad194`)
+
+The review-fix risk rows and gates were written before Go edits. The required pre-fix portability command was then run exactly:
+
+```bash
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1
+```
+
+It was RED at the production diagnostic and five test diagnostics because the frozen untyped constant crossed variadic interface boundaries as a native `int`:
+
+```text
+internal/graph/types.go:280:82: cannot use maxJSONSafeInteger (untyped int constant 9007199254740991) as int value in argument to fmt.Errorf (overflows)
+internal/graph/types_test.go:180:177: cannot use maxJSONSafeInteger (untyped int constant 9007199254740991) as int value in argument to t.Fatalf (overflows)
+internal/graph/types_test.go:183:140: cannot use maxJSONSafeInteger (untyped int constant 9007199254740991) as int value in argument to t.Fatalf (overflows)
+internal/graph/types_test.go:189:129: cannot use maxJSONSafeInteger - 1 (untyped int constant 9007199254740990) as int value in argument to t.Fatalf (overflows)
+internal/graph/types_test.go:189:151: cannot use maxJSONSafeInteger (untyped int constant 9007199254740991) as int value in argument to t.Fatalf (overflows)
+internal/graph/types_test.go:192:167: cannot use maxJSONSafeInteger (untyped int constant 9007199254740991) as int value in argument to t.Fatalf (overflows)
+```
+
+Tests were changed first to use an independent typed `wantMax`, cover already-corrupt counters, and mutate sorted output. The first ownership run was discarded as a wrong-reason RED because `CloneSnapshot` normalized nil node and edge slices in the saved input. The fixture was corrected to explicit empty slices before the production alias mutation below. After test diagnostics used the typed oracle, the 386 gate isolated the production `fmt.Errorf` site as its only RED. The production fix preserved `const maxJSONSafeInteger = 1<<53 - 1` and converted it to `uint64` only at the variadic boundary.
+
+Each review-specific pair was physically applied with `apply_patch`, run, weakened while the defect remained, and restored by inverse `apply_patch` before the next pair.
+
+| Review risk | Production mutation, prediction, and command | Production observation | Assertion or gate weakening, prediction, and command | False-GREEN observation | Restoration and conclusion |
+|---|---|---|---|---|---|
+| Independent safe-limit oracle | Changed the production constant to `1<<54 - 1`. Predicted the dedicated independent oracle would turn RED. Ran `go test ./internal/graph -run '^TestDeliveryObserveRejectsOverflowAtomically/independent-oracle$' -count=1`. | RED: `delivery safe-integer oracle contract violated: productionMax=18014398509481983 independentWant=9007199254740991`. | Removed only the oracle equality inside that subtest. Predicted the isolated oracle subtest would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. The wider delivery table deliberately remains an independent second defense against this drift. | Restored the equality and exact untyped `1<<53 - 1` constant; the oracle subtest PASSed. The typed literal is a load-bearing independent authority. |
+| Already-corrupt over-ceiling counters | Changed the production guard from `>=` to `==`. Predicted max+1 and `math.MaxUint64` rows would accept and turn RED for all four buckets. Ran `go test ./internal/graph -run '^TestDeliveryObserveRejectsOverflowAtomically$' -count=1`. | RED in 8 subtests: unknown, emitted, received, and failed each returned nil for `9007199254740992` and `18446744073709551615`. At-ceiling rejection and max-1 acceptance remained correct. | Removed only the max+1 and MaxUint64 table rows, plus the mechanically unused `math` import. Predicted the at-ceiling-only test would go falsely GREEN with the equality guard. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored both over-ceiling rows, the import, and the `>=` guard; the full delivery test PASSed. At-ceiling coverage alone does not fail closed on corrupt retained state. |
+| `SortSnapshot` result ownership | Reassigned every cloned output capability pointer from the corresponding input before sorting. Predicted the order assertion would pass but post-sort mutation would alter the input. Ran `go test ./internal/graph -run '^TestGapSortOrdersNilCapabilityFirst$' -count=1`. | RED: `sorted-gap result-ownership invariant violated`; mutating the first present sorted capability changed the corresponding input capability from identity to terminal while canonical order remained correct. | Removed only the saved-input declaration and the post-sort mutation/setup/input-equality block, leaving the exact order assertion. Predicted order-only coverage would go falsely GREEN. Ran the same exact command. | PASS: `ok aitop/internal/graph`. | Restored the ownership block and removed the pointer reassignment; the exact test PASSed. Correct ordering does not imply independent result ownership. |
+| 32-bit variadic portability | Removed only `uint64(...)` around the production constant in `fmt.Errorf`. Predicted the exact Linux/386 compile-only gate would turn RED. Ran `GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1`. | RED: `types.go:280:82: cannot use maxJSONSafeInteger ... as int value in argument to fmt.Errorf (overflows)`; package build failed before tests. | Weakened only the gate to the native-architecture command `go test ./internal/graph -run '^$' -count=1`. Predicted the same defective source would compile falsely GREEN on amd64. | PASS: `ok aitop/internal/graph [no tests to run]`. | Restored the `uint64` boundary conversion; the exact Linux/386 gate PASSed. Native compilation cannot substitute for the cross-architecture contract. |
+
+All four review-specific production and weakening plants were restored before final loudness and verification work. The earlier six Task 2A pairs and pinned mutation-tool failure remain historical evidence and were not rewritten.
