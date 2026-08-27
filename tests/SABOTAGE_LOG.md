@@ -163,3 +163,22 @@ Same-epoch plants against uncommitted `internal/act/codex/codex.go` and `interna
 |----|----------|------------|----------|------------|
 | PF-C13 | Codex `Message` returns nil without calling Run (no-op success, no `queue` in argv) | TestCodexMessageQueues RED; TestCodexPromoteAppliesOnNextFork, TestCodexForkIsExecNotFork, TestCodexCloneIsFork, TestCodexBudgetAppliesOnNextFork GREEN | RED: `codex-message-queues violated: ` (empty argv). Sisters PASS | Load-bearing. Codex `m` is `codex queue --thread --message`. A silent success with no queue is the missing-method no-op the spec forbids. |
 | PF-C14 | Too-small view drops `aitop-canary` (`fmt.Sprintf("aitop  80x24 required (now %dx%d)\\n", ...)` without the token) | TestEmptyViewContainsCanary RED on `too-small-still-carries-canary`; TestEmptyDumpHasCanary GREEN (JSON path, not view); TestEveryLineIsExactlyTerminalWidth GREEN | RED: `too-small-still-carries-canary violated: "aitop  80x24 required (now 40x5)\n"`. Dump and geometry sisters PASS | Load-bearing. Empty and too-small frames still emit `aitop-canary`. The dump canary is a different path and stayed GREEN, which is the right sister. |
+
+## Graph canonical identities epoch (2026-08-26, tree `89beac6`)
+
+Same-epoch plants against `internal/graph/id.go` and `id_test.go`; each mutation was restored by its inverse edit before the next run.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| GF-ID-1a | Disable the `StartTicks == 0` rejection (`if false && ...`) | `TestProcessIdentityRejectsPartialIdentity` RED for every zero-start constructor. | RED: `pid-start-pair partial-identity invariant violated` for local `local:pid:7:0`, passive `proc:7:0`, and runtime `claude:proc:7:0`, all with `error=<nil>`. | Load-bearing. The PID/start pair is incomplete when ticks are zero; every process-shaped canonical ID rejects it. |
+| GF-BOUND-1a | Accept a final 193-byte ID by changing the guard to `len(id) > maxCanonicalIDBytes+1`. | `TestCanonicalNodeIDAccepts192BytesRejects193` RED. | RED: `canonical-graph-id 193-byte-rejection invariant violated: inputBytes=178 ... resultBytes=193 error=<nil>`. | Load-bearing. The boundary is inclusive at 192 bytes and exclusive at 193 bytes. |
+| GF-ID-1b | Weaken `TestCanonicalNodeIDs` by removing `got != want`, then corrupt `CodexThreadID` to encode the fixed component `wrong`. | The representative exact-format test becomes false green; the wider canonical suite remains RED through malformed-input sisters. | `go test -run '^TestCanonicalNodeIDs$'` PASSed with `codex:thread:wrong`; the required wider run RED on empty, colon, and tab Codex inputs with `error=<nil>`. | The exact-output assertion is necessary and restored; rejection tests independently guard validation, not the canonical output value. |
+
+## Graph canonical UTF-8 byte-boundary review (2026-08-26, tree `5b49827`)
+
+Same-epoch plants against `internal/graph/id.go` and the multibyte branch of `TestCanonicalNodeIDAccepts192BytesRejects193`; each mutation was restored by its inverse edit before the final suite.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| GF-BOUND-1b | Replace `len(id)` with `utf8.RuneCountInString(id)` in the final canonical-ID guard. | The valid 193-byte, 104-rune multibyte ID is accepted and the new rejection assertion turns RED. | RED: `canonical-graph-id invariant violated: rule=multibyte-193-byte-rejection inputBytes=178 ... resultBytes=193 error=<nil>`. | Load-bearing. The 192-byte ceiling is over encoded bytes, never Unicode runes. |
+| GF-BOUND-1c | With the rune-count mutation still planted, weaken the new multibyte-193 rejection assertion to `if false`. | The focused test goes falsely green because no other branch distinguishes the 193-byte multibyte case. | `go test -run '^TestCanonicalNodeIDAccepts192BytesRejects193$'` PASSed with the invalid rune-count implementation. | The exact rejection assertion is necessary and restored; ASCII boundary coverage cannot substitute for multibyte byte coverage. |
