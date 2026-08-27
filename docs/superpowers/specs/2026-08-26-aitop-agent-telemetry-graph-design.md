@@ -183,7 +183,7 @@ transition in the short activity ring.
 
 An edge contains a stable edge key, source and target node IDs, type, provenance,
 creation time, last activity, rolling event count, lifecycle, optional trace ID,
-and delivery state when the edge is a message.
+partial-evidence state, and delivery state when the edge is a message.
 
 The first version supports:
 
@@ -196,9 +196,31 @@ Only `native`, `aitop-sidecar`, and `trace-handshake` provenance may render as
 verified edges. Process correlation remains diagnostic evidence and never
 becomes visible ancestry by itself.
 
+The type/provenance matrix is exact. Spawn and service accept only `native` or
+`aitop-sidecar`. Launch accepts only the private trace-handshake verifier; public
+`RelationshipObserved` reduction rejects every launch. `RelationshipObserved`
+also rejects `message`; `MessageObserved` is the only message owner.
+
+Internally every retained edge also owns its source and target incarnation IDs.
+Those fields are private reconciliation guards and never appear on the public
+snapshot Edge. An old or mismatched endpoint incarnation cannot create or mutate
+an edge; resume removes or ghosts prior-incarnation edges through normal endpoint
+lifecycle before new relationships appear.
+
+Relationship edges retain contributions keyed by full SourceRef and provenance;
+each contribution stores capability, creation/activity times, and safe event
+count. Message edges retain contributions by fixed internal dedup digest with
+SourceRef, delivery, receive time, and expiry. Exactly one contribution map is
+nonempty. Public timestamps, counts, provenance, delivery, and partial state are
+derived from contributions. Every matching active source gap with nil or exact
+capability keeps the edge partial; resolving one source cannot clear another.
+Contribution admission consumes history and retained-byte budget.
+
 Spawn, launch, and service edge keys are
 `(type, source, target, native-relationship-id)`. Message edges aggregate by
 `(source, target, message-kind)` for the 60-second live window.
+Message edges are always active and disappear at window expiry. Spawn, launch,
+and service edges may be active or ghost.
 
 Individual message delivery evidence is one of:
 
@@ -225,17 +247,63 @@ and closed typed metadata.
 Immutable native-log event IDs are deterministic hashes of runtime, stable
 record ID, and record location. Their deduplication namespace is stable across
 collector restarts. Mutable snapshots such as `summary.json` are observations,
-not append-only events: their key is `(runtime, path, subject, field)` and their
-revision is the runtime timestamp when present, otherwise a hash of the closed
-structural field set. Re-reading the same revision is a no-op; a newer revision
-updates state without incrementing message counts or duplicating history.
+not append-only events. With a nonzero runtime timestamp, the revision key is
+`(stable-source, observation-key, ordered, timestamp)` and the structural digest
+is its collision witness. Without a timestamp, the key is
+`(stable-source, observation-key, structural, digest)` and strict receiver order
+decides replacement. Re-reading the same revision is a no-op; a newer revision
+updates only changed fields without incrementing message counts or duplicating
+history. Ordered and structural regimes do not silently replace each other after
+an ordered cursor exists.
 
-Protocol events use random 128-bit IDs and deduplicate by
-`(source-incarnation, event-id)`. Any key collision with different allowed-field
-bytes is a parser or schema error and marks the source partial.
+Runtime-emitted socket and hook protocol events use random 128-bit IDs and
+deduplicate by `(source-incarnation, event-id)`. Internal Registry terminal-gap
+protocol events are the explicit deterministic exception, using the frozen
+registry-terminal-gap domain hash. No other internal protocol exception is
+implied. The event fingerprint uses the same equivalence
+as its dedupe key. Receiver arrival time never participates. Stable modes also
+exclude collector incarnation; observation mode also excludes event ID. Protocol
+mode retains source incarnation, event ID, and sequence. Separate canonical
+domains distinguish stable, protocol, ordered-observation, and
+structural-observation fingerprints. The literal domains are
+`aitop.graph.dedup.stable-source.v1`, `aitop.graph.dedup.protocol.v1`,
+`aitop.graph.dedup.observation.ordered.v1`,
+`aitop.graph.dedup.observation.structural.v1`,
+`aitop.graph.event-fingerprint.stable.v1`,
+`aitop.graph.event-fingerprint.protocol.v1`,
+`aitop.graph.event-fingerprint.observation.ordered.v1`,
+`aitop.graph.event-fingerprint.observation.structural.v1`, and
+`aitop.graph.coalesce-key.v1`. A matching key with different semantic
+allowed-field bytes is a parser or schema error and marks the source partial.
+
+Before asynchronous retention, the Store deep-copies every pointer-backed event
+field and accepts only the exact closed value payloads. Caller mutation after
+publication cannot change queued telemetry.
+
+Actor, target, and incarnation identifiers are valid UTF-8, control-free, and no
+more than 192 encoded bytes. Observation keys are valid UTF-8, control-free, and
+no more than 4096 bytes. Native relationship IDs remain opaque byte strings and
+are nonempty and no more than 64 bytes. Optional timestamps and sequences have
+one representation: present timestamps are nonzero and present sequence is
+positive. Nil alone represents absence. `GapObserved.Capability` is the exception
+to the public gap pointer shape: it remains scalar, empty means unknown, and the
+reducer converts empty to `Gap.Capability == nil`.
+
+Event validation rejects JSON-unsafe telemetry before Store admission. Integer
+counters stop at `9007199254740991`; rates and costs are finite and nonnegative;
+fill and cache fractions are finite in [0,1]; context used does not exceed window.
+A known zero context window remains representable when used is absent or zero.
+Cost-source vocabulary is empty, `table:builtin`, or `table:user`, with nonempty
+source requiring cost. Public graph roles exclude classifier sentinels. Validation
+errors name field, length, limit, and class without echoing rejected bytes.
+Every event-carried ProcessIdentity has positive int32 PID and start ticks from 1
+through the JSON-safe integer ceiling.
 
 No event field accepts prompt text, message text, tool output, transcript
 content, or a free-form description.
+
+Machine output preserves opaque relationship bytes as unpadded base64url. It
+never relies on JSON's invalid-UTF-8 replacement behavior.
 
 ### Snapshot
 
@@ -243,7 +311,21 @@ The graph store publishes an immutable snapshot containing nodes, edges,
 collapsed groups, selected scope, telemetry gaps, topology revision, and cached
 layout. The UI receives it beside the existing occupancy snapshot.
 
+Snapshot gaps are the sole graph-partial truth. A gap is an active cumulative
+episode keyed by source, optional affected capability, and kind. Nil capability
+means the missing or rejected work cannot be truthfully assigned to one claim
+family. Count accumulates while the episode remains open and `At` retains first
+detection time. Proven recovery resolves and removes the episode; zero-count or
+historical resolved entries are never published. Nodes and edges derived from an
+affected source carry partial evidence state. The snapshot has no second global
+partial boolean and no queue-drop counters.
+
 ## Machine output
+
+[`schema/aitop-v2-contract.md`](../../../schema/aitop-v2-contract.md) is the
+normative schema-2 semantic and wire contract. The checked-in JSON Schema is the
+Draft 2020-12 syntax artifact. This design does not duplicate its DTO and property
+tables.
 
 `--json --once` emits schema 2 and exits 0 for a successful empty capture:
 
@@ -254,6 +336,11 @@ layout. The UI receives it beside the existing occupancy snapshot.
   "host": {},
   "rows": [],
   "graph": {
+    "at": "2026-08-26T00:00:00Z",
+    "topology_revision": 0,
+    "visibility_revision": 0,
+    "state_revision": 0,
+    "metrics_revision": 0,
     "nodes": [],
     "edges": [],
     "gaps": []
@@ -267,10 +354,74 @@ inside rows, nodes, and edges are omitted. Capture or serialization failure exit
 nonzero and does not print a successful empty document. `--json` and
 `--screenshot` do not start the actor.
 
-Schema-2 node and edge fields mirror the graph model in this document. The
-implementation plan must check in the exact JSON schema before collector or UI
-work begins. All inherited canary assertions are deleted or replaced by schema,
-required-array, and exit-status assertions.
+The private command entry is
+`run(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int`.
+Production main owns the signal context and complete defaults. Parsed `runOptions`
+and selected-branch dependencies are explicit. JSON and screenshot return before
+Actor construction or interactive Run. Capture, prices, homes, inference, theme,
+rendering, and clocks enter through the frozen dependency closures, not globals.
+Interactive execution creates the injected Supervisor and Actor, registers
+through the shared `registerActor` helper, runs interaction on `sup.Context()`,
+and passes `taskRegistrarFunc(sup.Go)` plus exactly one writer for the interactive
+screen/stdout. The registrar's dynamic type implements only `Go`, not `Shutdown`
+or `runSupervisor`. The private `RunInteractive` callback has no full Supervisor,
+stderr, or diagnostic writer; it returns errors to `run`, which alone formats
+command diagnostics. Run retains the full Supervisor and shuts it down exactly
+once on every later branch. Nil Actor,
+registration error, interaction error, and Shutdown failures are nonzero outcomes.
+Interaction plus Shutdown errors are reported as separate closed diagnostic lines.
+Nil Supervisor has no Shutdown target. JSON and screenshot touch none of those
+three dependencies.
+`--once` aliases JSON, and combining both is legal. Screenshot with JSON or Once
+is usage error status 2 before capture, dependencies, output, Supervisor, or
+Actor. `runOptions.ScreenshotSet` is derived with `FlagSet.Visit`; therefore
+standalone `--screenshot=` and empty screenshot combined with JSON or Once are
+also early usage errors rather than absence or JSON fallback. No branch flags
+selects interactive mode.
+
+All command stderr for flags, selected dependencies, capture, JSON writing,
+post-render screenshot output, registration, interaction, and Shutdown passes
+through private `safeDiagnostic(scope, task, err)`. Scope, task, and class are
+closed constants.
+The valid pairs are `usage/flags`; `dependency` with `json`, `screenshot`, or
+`interactive`; `capture` with `json` or `screenshot`; `json/write`;
+`screenshot/write`; `register/actor`; `interactive/run`; and
+`shutdown/supervisor`. Their fallback class is the scope. An invalid pair is
+normalized to scope/task `internal/failure` without echo and has fallback class
+`failure`.
+
+Pair normalization occurs before error classification. Classification order is
+nil to no text, `errors.Is(context.Canceled)` to
+`canceled`, `errors.Is(context.DeadlineExceeded)` to `deadline`, and
+`errors.Is(io.ErrShortWrite)` to `io`, followed by the validated pair's fallback.
+Thus invalid-pair sentinels retain scope/task `internal/failure` while their class
+is still `canceled`, `deadline`, or `io`.
+There is no graph or Supervisor error-chain classification. An arbitrary
+`supervisor.Failure.Err` is checked only for those context/I/O sentinels and
+otherwise receives the shutdown fallback. A nonempty line has only the ASCII form
+`aitop scope=<scope> task=<task> class=<class>`, is at most 256 bytes, and never
+invokes or incorporates `err.Error()`, error types, raw bytes, paths, arguments,
+prompts, or commands. Each interaction and Shutdown failure gets its own bounded
+line. Flag parser diagnostics never print rejected values. Screenshot rendering
+itself cannot fail; its stdout writer can, and that failure is routed through
+`screenshot/write`. A stderr writer failure leaves the nonzero status unchanged
+and produces no recursive diagnostic.
+
+Capture, DTO, semantic, and marshal failures occur before output and write zero
+bytes. The writer appends one final newline and makes one sink call. A short count
+with nil error returns `io.ErrShortWrite`; with sink error, the result matches both
+short-write and sink errors. A full count with error returns only that sink error and
+may have written a complete document. Sink failure returns nonzero and never
+retries or falls back. The design does not claim sink error always prevents
+complete bytes.
+
+The normative semantic contract lands before collector implementation. Task 9's
+collector shadow may precede the syntax schema because it emits no schema-2
+machine output. Task 11 checks in `aitop-v2.schema.json` before machine-output
+release or graph UI consumption. Inherited canary assertions become schema,
+semantic, required-array, and exit-status assertions.
+The Draft validator remains test-only and absent from production command
+dependencies and non-test imports.
 
 ## Runtime event protocol
 
@@ -438,6 +589,47 @@ independent health. One failed collector cannot stop another collector or paint.
 The engine gains `Start(ctx)` and deterministic shutdown; no new uncancellable
 ticker or goroutine is allowed.
 
+Registry starts every collector exactly once and waits for all of them. A
+collector return while context remains active is terminal and opens one unresolved
+gap per declared capability, or one nil-capability gap when none are declared.
+Registry does not restart or auto-resolve it. Context cancellation is normal and
+opens no failure gap. A running collector may publish its own transient open and
+resolved gaps.
+
+Input schemas have bounded nonempty names and positive versions. Descriptor
+schemas are nonempty canonical sets. Capabilities may be empty; present values are
+closed, sorted, and duplicate-free, and empty means terminal return emits one
+nil-capability gap. Collector health states are
+pending, running, and stopped; snapshots sort, clone capability slices, and expose
+only bounded sanitized diagnostics. Pending/running diagnostics are empty.
+
+Registry uses an injected clock and one cryptographic nonzero protocol source
+incarnation per collector. Terminal gaps are exact actorless schema-1 protocol
+events at one injected time, sorted by capability, with deterministic IDs over
+full source, scalar capability emptiness/value, and time. No declared capability
+uses scalar empty `GapObserved.Capability`, which reduces to nil in the public
+gap. A new Registry gets new replay identity. Sink failure sanitizes health and
+stops later terminal-gap emission for that collector, and leaves siblings
+running. Registry never auto-resolves terminal
+gaps; only a still-running collector owns transient recovery.
+
+Native collectors pass the actor lanes from each successful poll to the shared
+`PublishNativePollHeartbeats` helper. Registry never invents that actor set. The
+helper validates the complete batch before emission, requires native authority,
+deduplicates identical full lanes, sorts deterministically, and emits one ordered
+`SourceObservation` heartbeat per unique actor/incarnation/source lane. The
+injected receiver time is both arrival and observation time. Domain-separated
+length-prefixed SHA-256 over the stable native-health lane supplies observation
+key and digest. That stable encoding includes Source ID, runtime, authority,
+actor, actor incarnation, and the fixed health mode/domain, but excludes collector
+Source.Incarnation. Event identity hashes the complete lane, including source
+incarnation, plus receiver time; observation replay excludes EventID. Thus equal
+poll evidence across collector restart keeps equal DedupKey and Fingerprint while
+the emitted full SourceRef still distinguishes Task 6 health epochs. Zero lanes
+emits nothing. Nil sink, invalid lane, or zero time fails before emission. Sink
+failure stops later emission and remains a collector diagnostic. Collector
+operational health remains separate.
+
 ### Reconciler
 
 The reconciler consumes native events, trace datagrams, link and fork sidecars,
@@ -446,22 +638,86 @@ source incarnation by sequence, holds sequenced events for a two-second reorder
 window, and joins process-backed nodes on PID plus start time. An event from an
 older node incarnation cannot mutate the current incarnation.
 
-State comparison is per field, not whole-record replacement. Explicit terminal
-`completed` or `failed` evidence wins within the same incarnation. A fresh hook
-state outranks a fresh native state; a fresh native state outranks `/proc`
-inference. Within one source incarnation, sequence wins. Across sources at the
-same authority, receiver arrival order wins after the reorder window.
+Nil sequence means unsequenced and a present sequence is positive. The first
+positive sequence in a source incarnation establishes its baseline without
+claiming earlier loss. A later skip becomes a detected gap exactly when receiver
+time reaches the two-second deadline. Work already queued at that instant is
+drained before the deadline decision. A final missing event with no later event
+is never claimed. Because the missing event kind is unknowable, sequence gaps
+carry no capability. A late event cannot rewind state, but complete retained
+range evidence may resolve the active gap.
+
+Only a node observation may establish a different current actor incarnation. It
+must provide at least one strictly newer comparable start timestamp or process
+start-tick proof and no older contradiction. Opaque incarnation strings and
+receiver arrival order are never treated as newer proof. Retired, unproven, and
+older incarnations cannot switch or mutate the node.
+
+State comparison is per field, not whole-record replacement. Source-health and
+semantic-validity eligibility are filtered first. Eligible evidence orders by
+explicit completed/failed, vanished, nonterminal, authority, positive sequence
+only when the complete `SourceRef` is identical, and `ObservedAt`. An exact time
+tie takes the candidate while a private receiver ordinal fixes fold order. Actor
+incarnation is filtered by the reducer and is never numerically ordered.
 
 Transient hook states carry `valid_for_ms`, capped at 15 seconds. `thinking`,
 `tool`, `shell`, and `waiting` default to five seconds when the runtime supplies
-no shorter validity. `approval` and `blocked` persist until a paired resolution,
-terminal event, or six-second source-heartbeat expiry. Pairing uses the required
-relationship ID defined by the protocol; resolving one relationship does not
-clear another. Native collectors expose equivalent relationship IDs from their
-runtime records and publish an internal health heartbeat after each successful
-collection, with the same six-second freshness rule. A stale higher-authority
-state falls back instead of masking fresh lower-authority evidence. The node
+no validity. Semantic validity and source health are independent. Private health
+epochs cover both hook sources and successful native collector polls and become
+stale exactly six seconds after their last heartbeat. Expiry removes that epoch's
+nonterminal evidence and open relationships before fallback. A late heartbeat
+starts a new epoch but cannot resurrect removed state; a new state record is
+required. Explicit terminal evidence is exempt from source-health expiry.
+
+Every heartbeat names one actor, actor incarnation, and complete source lane.
+After a successful native poll, its collector emits one heartbeat for each actor
+and incarnation successfully observed. A zero-result poll emits no heartbeat.
+There is no actorless or source-wide heartbeat, and collector operational health
+is tracked separately from actor evidence freshness.
+
+`approval` and `blocked` carry no semantic TTL and persist until a paired
+resolution, terminal event, or their source-health epoch expires. Pairing uses
+the required relationship ID; resolving one relationship does not clear another.
+Their winning-state fold uses the exact order above: source-health and semantic
+eligibility; completed/failed above vanished above nonterminal; authority;
+positive sequence only for an identical complete `SourceRef`; `ObservedAt`; and
+candidate on an exact cross-lane time tie. The private receiver ordinal supplies
+deterministic fold order. Incarnation is never numerically ordered. The node
 records the winning source and freshness.
+
+Serialized state source and since appear together. Valid-until implies that pair
+and is allowed only for nonterminal states other than approval/blocked with native
+or hook authority. Terminal state requires source/since. Passive, approval,
+blocked, completed, failed, and vanished never serialize valid-until. JSON Schema
+and strict semantic validation both enforce these conditions; semantic validation
+also requires valid-until later than since.
+
+Reducer mutation is transactional. Prepare computes validation, replay,
+incarnation, count, history, and deterministic retained/published logical charges
+as staged deltas over single-writer canonical maps and immutable record values.
+Prepare stages exact record, ledger, revision, epoch, and projection replacements.
+Commit is infallible and applies the prepared replacements once. It never mutates
+then rolls back, hides rejected semantic truth, or copies a full candidate graph.
+Expected admission failure commits only reserved gap/partial diagnostics, so later
+replay may apply. Unknown invariant failure commits nothing.
+
+Store submits the full sorted normal, critical, collision, and catchall diagnostic
+set to one batch prepare. That prepare validates every item, safe count and
+revision headroom, gap/history bounds, retained/published charge, and the complete
+candidate immutable generation before returning a transaction. Failure in a later
+item leaves canonical maps, ledgers, revisions, collection epochs, and the
+previous generation byte-identical. After infallible commit, Store pointer-stores
+the prevalidated generation and only then clears pending counts. Generation
+construction for a committed projection cannot fail; debug and charge consistency
+checks occur during prepare, before commit.
+
+Public revisions may reach the JSON-safe ceiling. A further required category
+change returns fatal revision-exhausted with zero ChangeSet, mutation, or gap.
+Adding a gap would itself require visibility revision and recurse. Store aborts,
+keeps the last snapshot, and accounts accepted/unapplied work separately from
+context cancellation.
+Package graph exports `ErrRevisionExhausted` and `ErrEventTooLarge`; wrapped
+outcomes preserve `errors.Is` identity.
 
 ### Normalized state
 
@@ -493,18 +749,122 @@ the session node `completed`.
 
 The store owns active nodes, verified edges, a short in-memory state-transition
 ring, rolling message counts, ghost lifetimes, and selection pins. It does not
-write a database or copy transcript content. Limits are 4096 active nodes,
-16384 edges, 256 state transitions per node, and 8192 queued events. The queue
-reserves 2048 slots for identity, topology, terminal, and gap events; the other
-6144 hold coalescible state, metric, message, and animation work. Reaching a
-limit marks a global telemetry gap. It never silently evicts an active node.
+write a database or copy transcript content. Limits are 4096 retained nodes,
+16384 retained edges, 256 state transitions per node, and 8192 queued events.
+The queue reserves 2048 slots for identity, topology, terminal, and gap events;
+the other 6144 hold normal metrics, nonterminal state, heartbeat, and message work.
+Reaching an admission limit opens an active telemetry gap. It never silently
+evicts an active node.
 
-Overload shedding coalesces superseded metric and transient-state updates by
-node first, then drops animation-only duplicates. Critical events use their
-reserved partition. If that partition also fills, the newest critical datagram
-is dropped, an atomic dropped-critical counter marks the graph partial, and
-native records or link sidecars replay what is replayable. The receiver never
-blocks a sender and never claims unconditional retention under unbounded input.
+Retained capacity is owned where the maps live: 4096 nodes including ghosts,
+16384 edges including messages and ghosts, 4096 active gaps, and 65536 replay
+history units. A reserved catch-all gap makes gap-ledger exhaustion visible.
+Capacity never silently evicts an active object or replay witness. A new unique
+admission fails closed and opens a resource or saturation episode; existing-key
+updates remain legal. Rotation of the declared 256-transition ring is expected
+retention behavior and does not itself create a gap.
+
+Deterministic logical limits supplement count ceilings: 24 MiB retained, 24 MiB
+published, and 8 MiB queued by default. Retained and published budgets reserve
+64 KiB for diagnostics. Reconciler reserves exactly these three gap identities:
+`(SourceAITopGapLedger,nil,GapResource)`,
+`(SourceAITopStoreNormal,nil,GapSaturation)`, and
+`(SourceAITopStoreCritical,nil,GapSaturation)`.
+StoreState is ordinary and falls back to gap-ledger when ordinary capacity is
+full. Source collisions normally retain original source/capability/collision and
+fall back to gap-ledger when they cannot fit. Existing-key growth may reject;
+equal or smaller updates remain legal. Policy uses a checked-in conservative
+charge schedule, not process heap sampling. Internal dedup/coalescing maps keep
+fixed 32-byte digests while public string APIs remain available.
+
+Reconciler alone mutates canonical Go maps; their values point to immutable
+records, and maps are never shared with Snapshot. Commit replaces affected value
+pointers. Snapshot generations build sorted value slices: unchanged container
+epochs reuse prior slices, changed collections shallow-copy/sort top-level slices,
+and nested immutable backing may be shared. Store returns borrowed read-only
+snapshots by contract; Go cannot prevent caller mutation, but later publication
+never mutates an earlier generation. Long-lived or mutable callers deep-clone.
+Production retains current and at most previous generation. The representative
+subprocess stays below 64 MiB heap; adversarial input fails before OOM.
+
+This phase has no safe replay watermark. Stable-mode dedup witnesses and retired
+incarnation proofs therefore remain for the entire Reconciler lifetime, including
+after their former visible owner expires. Live message contributions retain only
+their 60-second window. Relationship contributions remain through edge lifecycle
+and then release while their stable replay witnesses remain. Pending reorder and missing-range records release after
+drain or proven resolution, while applied replay witnesses remain. Active gaps
+remove on resolution. Observation and source-contribution state may compact only
+after actor-incarnation retirement is durably represented by its retained proof;
+the corresponding stable dedup witnesses still remain. History exhaustion fails
+closed rather than guessing a watermark or pruning replay truth.
+
+Ingress coalescing is intentionally narrow. Nodes, messages, topology, terminal,
+gap, immutable, sidecar, and sequenced protocol events never coalesce. Only
+unsequenced mutable-observation or occupancy metrics, nonterminal state, and
+same-source heartbeat events enter candidate lanes. Replacement requires the same
+full source lane, strict newer ordered timestamp or receiver arrival, no mixed
+observation regime, and complete preservation of older metric fields. Duplicate
+key plus equal semantic fingerprint keeps the older event; the same key with a
+different fingerprint is a collision.
+
+Critical work is node, relationship, exit, gap, launch intent, session bind, and
+terminal state. Metrics, nonterminal state, heartbeat, and message work is normal.
+After 32 critical items, one ready normal item runs. Dirty changes publish within
+100ms. Normal and critical overflow have distinct cumulative active gaps with
+first-drop timestamps. Pending drop evidence is merged under the same final mutex
+as atomic snapshot publication, never by recursively enqueueing a gap. The full
+sorted pending diagnostic set prepares as one all-or-nothing Reconciler
+transaction and candidate generation. Store commits once, pointer-stores that
+generation, then clears the committed counts. A later-item failure cannot publish
+an earlier diagnostic. Operational Store statistics may expose capacities,
+depths, accepted, rejected, applied,
+coalesced, duplicate, collision, dropped, errored, canceled, and publication
+totals, plus coalescing/pending-diagnostic counts, queued/pending/in-flight bytes,
+and separate aborted queued/diagnostic accounting. They are not a second
+snapshot-partial surface. The receiver never blocks a sender and never
+claims unconditional retention under unbounded input.
+
+Pending diagnostics are queue-charged and bounded to ordinary `MaxGaps-3`
+identities even before Run. A new diagnostic that cannot fit increments one
+queue-reserved gap-ledger catchall without allocating an identity. Existing counts
+saturate safely. Existing coalescing work wakes Run; diagnostics create no wakeup
+channel.
+
+Store has open, running, stopping, and stopped states, one Run, never-closed
+channels, and a deterministic injected clock with one-shot timers. Cancellation
+stops acceptance, discards queued semantics with accounting, commits pending
+diagnostics as one prevalidated batch, and publishes its candidate snapshot when
+that prepare succeeds. Fatal
+revision exhaustion during cancellation follows invariant abort and returns the
+error. Expected admission diagnostics do not stop Run. Unknown invariant abort
+preserves last Reconciler state and generation, discards pending diagnostics and
+queued semantics, and accounts them separately as aborted. Duplicate and
+collision outcomes have separate dispositions and counters.
+
+An individually oversized or charge-overflow event is rejected with
+event-too-large and no gap. Aggregate shortage drops otherwise admissible work and records
+normal/critical saturation. Coalescing growth that cannot fit keeps the older
+event and drops the newer. Invariant abort accounts remaining accepted work as
+aborted, distinct from context-canceled queued work, and preserves the last
+snapshot.
+
+### Runtime ownership
+
+Supervisor has open, stopping, and stopped states. It reserves unique task names
+under mutex before launch. Shutdown is one cancel-then-wait transition; concurrent
+callers share completion and receive sorted immutable failures. Go rejects after
+cancellation or stopping. Only errors caused by the Supervisor-owned cancellation
+are suppressed. Managed tasks never call Shutdown.
+Failure values contain one bounded unique task name and nonnil typed error;
+returned slices sort by name and clone. They are internal, never machine output.
+
+Actor exposes blocking `Run(ctx) error`, registered as
+`supervisor.Go("actor", actor.Run)`. Private `registerActor(taskRegistrar,
+*act.Actor)` rejects nil inputs, performs that exact call, returns its error, and
+never calls Run directly. Run owns one loop and one worker WaitGroup.
+`Enqueue` accepts only while Run is running. Cancellation prevents Enqueue,
+drains queued actions, and waits for in-flight work and
+confirmed kill. Adapters receive the Run context. A second Run rejects.
 
 ### Layout
 
@@ -523,8 +883,11 @@ may change visibility by unfolding a quiet branch, but it does not reorder ranks
 or move unrelated components. The affected component interpolates into its new
 layout. Message-edge appearance changes edge routing only.
 
-If bad provenance would create a cycle in the ranking graph, the new edge is
-held as partial diagnostic data and does not alter layout.
+If bad provenance would create a ranking cycle, no edge or held pseudo-edge is
+retained and no node, rank, or topology revision changes. Reconciliation consumes
+only the active `(event source, spawn capability, collision)` gap episode,
+incrementing its count without changing first detection time. The resulting
+change marks gap and visibility only.
 
 ### Paint
 
@@ -732,6 +1095,10 @@ Queue saturation, detected sequence gaps, schema mismatch, and malformed
 datagrams are counted and exposed in metadata inspection. Unsequenced one-shot
 loss cannot be detected and is not claimed. The affected source capability
 remains partial until a native collector or replayable link sidecar reconciles it.
+When the affected capability cannot be known, especially for a missing sequence,
+the active gap leaves capability absent rather than inventing `all` or
+`transport`. Repeated detections accumulate within the same episode without
+changing first-detection time. Proven recovery removes the episode.
 
 At terminal transition, a node immediately becomes a full-opacity ghost. A
 successful or vanished ghost holds for four minutes, fades during minute five,
@@ -761,6 +1128,10 @@ evidence but does not restore expired ghost timers.
 - The Unix socket accepts only the current UID and bounded schema versions.
 - Unrecognized fields are ignored only when the version contract allows it.
 - Unsupported or incomplete relationships stay loud and absent, not guessed.
+- Every flag, dependency, capture, JSON, screenshot-output, registration,
+  interaction, and Shutdown diagnostic uses only the closed bounded
+  `aitop scope/task/class` form. Raw errors, types, paths, arguments, prompts,
+  commands, and Supervisor failure text never reach stderr or machine output.
 
 Privacy tests inspect encoded datagrams, link sidecars, immutable snapshots,
 JSON output, log capture, and in-memory history rings. Testing only a decoded Go
@@ -788,8 +1159,27 @@ service satellites in focus, per-outcome message delivery counts, stable ID
 collisions, immutable native replay after collector restart, and mutable
 observation revisions.
 
+Foundation tests also cover mode-compatible dedupe/fingerprint composition,
+ordered versus structural observation regimes, exact optional-value rejection,
+deep clone ownership, safe pairwise coalescing, bounded replay and gap admission,
+stable replay after visible owner expiry, the exact two-second sequence boundary,
+source-health epochs that do not resurrect stale state, per-actor native
+heartbeats with zero-result silence, strictly proven incarnation switches,
+private edge endpoint-incarnation guards, gap-only cycle diagnostics, sliding
+message contributions, deterministic byte admission, copy-on-write projection,
+Store lifecycle/outcomes, Supervisor concurrent shutdown, Actor draining, schema
+semantic validation, atomic all-diagnostic batch publication, rooted test-only
+schema dependency closure, closed diagnostic precedence, and bounded redaction
+for every command stderr branch. All timing and concurrency tests use manual
+clocks and barriers, not sleeps.
+
 Negative tests require an unverified relationship to remain separate. Privacy
 tests feed content-bearing fields and require rejection or omission.
+
+Before each test group, its written risk rows and Coverage Matrix names exist.
+Every new test receives one physical production mutation and one physical
+weakened-assertion mutation. Correct preexisting behavior may earn proof through
+sabotage, but a defect-exposing group records its own pre-fix RED before repair.
 
 ### Layout and rendering
 
