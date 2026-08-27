@@ -141,6 +141,9 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 ### Invariants
 
 - `GF-ID-1`: Canonical IDs are namespaced, bounded, and reject partial process identity.
+- `GF-EVENT-VALID-1`: Every one of the ten closed event kinds accepts its exact legal payload shape and frozen vocabulary.
+- `GF-EVENT-3`: Event IDs, deduplication keys, and fingerprints are deterministic, domain-separated, and include every identity-bearing or allowed data field required by their contract.
+- `GF-COALESCE-1`: Only supersedable node, metrics, state, and heartbeat evidence coalesces; node-based keys preserve actor incarnation and state relationship identity without splitting by collector source.
 - `GF-VALUE-1`: Unknown numeric telemetry is absent, never zero-filled.
 - `GF-VALUE-2`: Graph value structs and enum vocabularies stay frozen; invalid delivery evidence cannot partially mutate counts.
 - `GF-SNAP-1`: Published snapshots are deeply immutable.
@@ -157,12 +160,15 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 ### Boundaries
 
 - `GF-BOUND-1`: IDs reject empty/control components and final encodings over 192 bytes.
+- `GF-EVENT-BOUND-1`: Event source IDs accept valid UTF-8 without controls through 192 encoded bytes, and node display fields accept the same through 128 encoded bytes.
+- `GF-EVENT-BOUND-2`: Event-layer metrics validation preserves structural presence and does not invent numeric range or NaN policy.
 - `GF-BOUND-2`: Limits are 4096 nodes, 16384 edges, 8192 events, and 2048 critical events.
 - `GF-BOUND-3`: Transitions cap at 256 per node.
 
 ### Malformed inputs
 
-- `GF-EVENT-1`: Kind/data mismatch, invalid revisions, collisions, and content fields fail loud.
+- `GF-EVENT-1`: Kind/data mismatch, invalid revisions, and fingerprint collisions fail loud.
+- `GF-EVENT-2`: Invalid event envelopes, closed payload enums, required relationships, and partial process identities fail validation.
 - `GF-JSON-1`: Schema 2 required arrays are present and non-null.
 
 ### Concurrency
@@ -178,21 +184,22 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 
 ### Integration contracts
 
+- `GF-PRIVACY-1`: The frozen event API exposes exactly ten payload shapes, seals `EventData` against external implementations, and has no content-bearing or generic metadata escape hatch.
 - `GF-COLLECT-1`: Collector failure does not stop siblings or occupancy.
 - `GF-LIFE-1`: Engine, Poller, Actor, Registry, and Store share a cancelable owner.
 - `GF-ONE-1`: JSON and screenshot never start the actor.
 
 ### Regression traps
 
-- boundary: `boundary: exact-limit off-by-one` and `boundary: empty collection treated as missing collection`. A complete 192-byte UTF-8 canonical ID must pass and a 193-byte encoded ID must fail; queue partitions must remain exactly 6144 normal plus 2048 critical, with caps of 4096 nodes, 16384 edges, 8192 total events, and 256 transitions per node. Nil and empty snapshot inputs must both clone to non-nil empty arrays. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; `GF-BOUND-2` by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-BOUND-3` by `graph.TestReconcileTransitionsCapAt256PerNode`; `GF-SNAP-1` by `graph.TestSnapshotCloneNormalizesNilAndEmptySlices`.
+- boundary: `boundary: exact-limit off-by-one`, `boundary: zero treated as falsy in numeric context`, and `boundary: empty collection treated as missing collection`. Complete 192-byte canonical and event-source IDs must pass and 193-byte encodings must fail; node display strings stop at 128 bytes; event-layer metrics preserve present negative and NaN values without adding policy; queue partitions remain exactly 6144 normal plus 2048 critical, with caps of 4096 nodes, 16384 edges, 8192 total events, and 256 transitions per node. Nil and empty snapshot inputs must both clone to non-nil empty arrays. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; `GF-EVENT-BOUND-1` by `graph.TestEventRejectsInvalidEnvelope` and `graph.TestEventRejectsInvalidPayloadFields`; `GF-EVENT-BOUND-2` by `graph.TestEventMetricsDoesNotInventNumericPolicy`; `GF-VALUE-1` by `graph.TestUnknownNumericMetricsRemainAbsent`; `GF-BOUND-2` by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-BOUND-3` by `graph.TestReconcileTransitionsCapAt256PerNode`; `GF-SNAP-1` by `graph.TestSnapshotCloneNormalizesNilAndEmptySlices`.
 - concurrency: `concurrency: cancellation/read interleaving exposes shared state or leaks a task`. Readers interleaving with publication must not observe mutable maps or slices, and shutdown must wait for every named task without sleeping. `GF-CONC-1` is caught by `graph.TestStorePublishesSnapshotsAtomically` and `graph.TestStoreConcurrentReadersSeeImmutableSnapshots`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`.
-- contract: `contract: a producer violates the consumer's visibility or isolation contract`. Frozen graph structs and vocabularies must not drift, unverified edges must stay hidden, schema-2 arrays must be present and non-null, and one failed collector must not stop siblings or alter occupancy. `GF-VALUE-2` is caught by `graph.TestNodeAndEdgeValueShapesStayFrozen` and `graph.TestNodeAndEdgeConstantsMatchClosedVocabularies`; `GF-EDGE-1` by `graph.TestReconcileUnverifiedLaunchRemainsInvisible`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays`; `GF-COLLECT-1` by `graph.TestRegistryCollectorFailureDoesNotStopSiblings` and `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged`.
-- encoding: `encoding: malformed identity bytes, delimiter-ambiguous keys, or empty-array encoding changes meaning`. Invalid UTF-8 and control runes must be rejected at canonical ID construction, length-prefixed edge-key inputs must remain distinct even when components contain delimiter-like text, and omitted or null schema-2 arrays must be rejected. `GF-ID-1` is caught by `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`; `GF-EDGE-2` by `graph.TestEdgeKeysAreDeterministicAndCollisionSafe`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays` and `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`.
+- contract: `contract: a producer violates the consumer's visibility or isolation contract` and `contract: field rename breaks silent consumers`. Frozen graph and event structs and vocabularies must not drift, the event interface must admit only the ten payloads, unverified edges must stay hidden, schema-2 arrays must be present and non-null, and one failed collector must not stop siblings or alter occupancy. `GF-VALUE-2` is caught by `graph.TestNodeAndEdgeValueShapesStayFrozen` and `graph.TestNodeAndEdgeConstantsMatchClosedVocabularies`; `GF-EVENT-VALID-1` by `graph.TestEventPayloadVariantsValidate`; `GF-PRIVACY-1` by `graph.TestPrivacyRejectsContentFields`; `GF-EDGE-1` by `graph.TestReconcileUnverifiedLaunchRemainsInvisible`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays`; `GF-COLLECT-1` by `graph.TestRegistryCollectorFailureDoesNotStopSiblings` and `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged`.
+- encoding: `encoding: malformed identity bytes, delimiter-ambiguous keys, or pointer-presence loss changes meaning`. Invalid UTF-8 and control runes in canonical and event-source IDs must be rejected, length/presence-prefixed hash inputs must remain distinct, every allowed event field must participate in the fingerprint, and omitted or null schema-2 arrays must be rejected. `GF-ID-1` is caught by `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`; `GF-EVENT-BOUND-1` by `graph.TestEventRejectsInvalidEnvelope`; `GF-EDGE-2` by `graph.TestEdgeKeysAreDeterministicAndCollisionSafe`; `GF-EVENT-3` by `graph.TestEventImmutableIDStableAndDomainSeparated`, `graph.TestFingerprintIncludesEveryEventFieldAndPayload`, and `graph.TestFingerprintDistinguishesNilFromPresentZero`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays` and `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`.
 - framework: N/A - the graph foundation uses no external framework-owned lifecycle or serializer; the command path is standard Go.
 - io: `io: capture or writer failure emits a successful-looking document`. A failed one-shot path must emit no successful schema-2 document. `GF-JSON-1` is caught by `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument`.
-- persistence: `persistence: restart replay or repeated mutable revision inflates state`. Immutable native events replayed after collector restart must dedupe, and a repeated mutable revision must be a no-op. `GF-REPLAY-1` is caught by `graph.TestReconcileImmutableReplayAcrossCollectorRestart`; `GF-REPLAY-2` by `graph.TestReconcileMutableSameRevisionIsNoop` and `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation`.
+- persistence: `persistence: restart replay or repeated mutable revision inflates state`. Immutable, occupancy, and sidecar replay must ignore collector incarnation, protocol replay must retain it, and an unchanged mutable structural revision must dedupe despite collection timestamps. `GF-REPLAY-1` is caught by `graph.TestEventNativeReplayDedupIgnoresSourceIncarnation`, `graph.TestEventProtocolDedupIncludesSourceIncarnation`, and `graph.TestReconcileImmutableReplayAcrossCollectorRestart`; `GF-REPLAY-2` by `graph.TestObservationDedupUsesStableStructuralRevision`, `graph.TestReconcileMutableSameRevisionIsNoop`, and `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation`.
 - resource: `resource: saturation or cancellation leaks bounded capacity or goroutines`. Queue/store limits must remain exact, and cancellation must reclaim every Store, Registry, Engine, Poller, and Actor task. `GF-BOUND-2` is caught by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`; `GF-LIFE-1` by `graph.TestStoreStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, and `act.TestActorStopsOnContextCancellation`.
-- state: `state: stale evidence, unrelated relationship resolution, the wrong ghost deadline, or an invalid enum mutates lifecycle`. Fresh authority must outrank stale authority, terminal state must not rewind, approval and blocked relationships must resolve independently, invalid delivery evidence must fail before mutation, and success/vanished versus failed ghosts must use distinct deadlines. `GF-VALUE-2` is caught by `graph.TestDeliveryObserveRejectsInvalidAtomically`; `GF-STATE-1` by `graph.TestPreferStateFreshAuthorityOrder` and `graph.TestReconcileHookExpiryFallsBackToNative`; `GF-STATE-2` by `graph.TestPreferStateTerminalCannotRewind` and `graph.TestReconcileRejectsOldIncarnationEvent`; `GF-STATE-3` by `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently`; `GF-GHOST-1` by `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`.
+- state: `state: switch default swallows new case`, stale evidence, unrelated relationship resolution, the wrong ghost deadline, or an invalid enum mutates lifecycle. Every event kind must match exactly one payload and only four explicitly supersedable kinds may coalesce. Fresh authority must outrank stale authority, terminal state must not rewind, approval and blocked relationships must resolve independently, invalid delivery evidence must fail before mutation, and success/vanished versus failed ghosts must use distinct deadlines. `GF-EVENT-1` is caught by `graph.TestEventRejectsKindDataMismatch`; `GF-COALESCE-1` by `graph.TestCoalesceOnlySupersedableEvents`; `GF-VALUE-2` by `graph.TestDeliveryObserveRejectsInvalidAtomically`; `GF-STATE-1` by `graph.TestPreferStateFreshAuthorityOrder` and `graph.TestReconcileHookExpiryFallsBackToNative`; `GF-STATE-2` by `graph.TestPreferStateTerminalCannotRewind` and `graph.TestReconcileRejectsOldIncarnationEvent`; `GF-STATE-3` by `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently`; `GF-GHOST-1` by `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`.
 
 ### Coverage Matrix
 
@@ -201,6 +208,13 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | Risk row | Planned test function name(s) |
 |----------|-------------------------------|
 | `GF-ID-1` | `graph.TestCanonicalNodeIDs`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`, `graph.TestProcessIdentityRejectsPartialIdentity`, `graph.TestProcessIdentityDistinguishesPIDReuse` |
+| `GF-EVENT-VALID-1` | `graph.TestEventPayloadVariantsValidate` |
+| `GF-EVENT-BOUND-1` | `graph.TestEventRejectsInvalidEnvelope`, `graph.TestEventRejectsInvalidPayloadFields` |
+| `GF-EVENT-BOUND-2` | `graph.TestEventMetricsDoesNotInventNumericPolicy` |
+| `GF-EVENT-2` | `graph.TestEventRejectsInvalidEnvelope`, `graph.TestEventRejectsInvalidPayloadFields` |
+| `GF-EVENT-3` | `graph.TestEventImmutableIDStableAndDomainSeparated`, `graph.TestFingerprintIncludesEveryEventFieldAndPayload`, `graph.TestFingerprintDistinguishesNilFromPresentZero` |
+| `GF-COALESCE-1` | `graph.TestCoalesceOnlySupersedableEvents` |
+| `GF-PRIVACY-1` | `graph.TestPrivacyRejectsContentFields` |
 | `GF-VALUE-1` | `graph.TestUnknownNumericMetricsRemainAbsent` |
 | `GF-VALUE-2` | `graph.TestNodeAndEdgeValueShapesStayFrozen`, `graph.TestNodeAndEdgeConstantsMatchClosedVocabularies`, `graph.TestDeliveryObserveRejectsInvalidAtomically` |
 | `GF-SNAP-1` | `graph.TestCloneSnapshotDeeplyIsolatesInputAndOutput`, `graph.TestSnapshotCloneNormalizesNilAndEmptySlices`, `graph.TestSnapshotSortOrdersCloneWithoutMutatingInput`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
@@ -213,12 +227,12 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-BOUND-1` | `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestProcessIdentityRejectsPartialIdentity` |
 | `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowPublishesGap` |
 | `GF-BOUND-3` | `graph.TestReconcileTransitionsCapAt256PerNode` |
-| `GF-EVENT-1` | `graph.TestEventRejectsKindDataMismatch`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud`, `graph.TestPrivacyRejectsContentFields` |
+| `GF-EVENT-1` | `graph.TestEventRejectsKindDataMismatch`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud` |
 | `GF-JSON-1` | `snapshot.TestSchema2RequiresNonNullArrays`, `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`, `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument` |
 | `GF-CONC-1` | `graph.TestStorePublishesSnapshotsAtomically`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
 | `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep` |
-| `GF-REPLAY-1` | `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
-| `GF-REPLAY-2` | `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
+| `GF-REPLAY-1` | `graph.TestEventNativeReplayDedupIgnoresSourceIncarnation`, `graph.TestEventProtocolDedupIncludesSourceIncarnation`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
+| `GF-REPLAY-2` | `graph.TestObservationDedupUsesStableStructuralRevision`, `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
 | `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
 | `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged` |
 | `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreStopsOnContextCancellation` |
