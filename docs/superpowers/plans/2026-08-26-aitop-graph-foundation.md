@@ -235,6 +235,42 @@ type Snapshot struct {
 ```
 
 ```go
+type SourceMode string
+
+const (
+	SourceImmutable   SourceMode = "immutable-log"
+	SourceObservation SourceMode = "mutable-observation"
+	SourceProtocol    SourceMode = "protocol"
+	SourceOccupancy   SourceMode = "occupancy"
+	SourceSidecar     SourceMode = "sidecar"
+)
+
+type EventSource struct {
+	Ref  SourceRef
+	Mode SourceMode
+}
+
+type ObservationRevision struct {
+	Key    ObservationKey
+	At     time.Time
+	Digest RevisionDigest
+}
+
+type EventKind string
+
+const (
+	EventNodeObserved         EventKind = "node_observed"
+	EventMetricsObserved      EventKind = "metrics_observed"
+	EventStateObserved        EventKind = "state_observed"
+	EventRelationshipObserved EventKind = "relationship_observed"
+	EventMessageObserved      EventKind = "message_observed"
+	EventExitObserved         EventKind = "exit_observed"
+	EventHeartbeatObserved    EventKind = "heartbeat_observed"
+	EventGapObserved          EventKind = "gap_observed"
+	EventLaunchIntent         EventKind = "launch_intent"
+	EventSessionBind          EventKind = "session_bind"
+)
+
 type Event struct {
 	Schema            uint16
 	Source            EventSource
@@ -297,7 +333,26 @@ type SessionBindObserved struct {
 	Runtime types.Runtime
 	Process ProcessIdentity
 }
+
+func ImmutableEventID(runtime types.Runtime, recordID, location string) EventID
+func (e Event) Validate() error
+func (e Event) DedupKey() (string, error)
+func (e Event) Fingerprint() (RevisionDigest, error)
+func (e Event) CoalesceKey() (string, bool)
+func CheckFingerprintCollision(key string, previous, current RevisionDigest) error
 ```
+
+Every event requires schema 1, a valid source ID/runtime/incarnation/authority,
+a nonzero event ID, and nonzero `ReceivedAt`. All kinds except `gap_observed`
+require actor and actor incarnation. Relationship and message events also require
+target and target incarnation. Gap events require empty actor and target and use
+the source plus typed `GapObserved` payload. Launch intent and session bind are
+actor-only until Phase 3 matches their nonzero trace ID.
+
+Immutable, occupancy, and sidecar events dedupe independently of collector
+incarnation. Protocol events include source incarnation in their dedupe key.
+Mutable observations require a nonempty observation key and nonzero structural
+digest; their timestamp may be zero when the source exposes no ordered revision.
 
 ```go
 type ReconcileConfig struct {
