@@ -359,7 +359,7 @@ Add rows for these named invariants:
 - GF-GHOST-1 success/vanished and failed ghosts use distinct monotonic deadlines.
 
 #### Boundaries
-- GF-BOUND-1 IDs reject empty/control/over-192-byte components.
+- GF-BOUND-1 IDs reject empty/control components and final encodings over 192 bytes.
 - GF-BOUND-2 store limits are 4096 nodes, 16384 edges, 8192 events, 2048 critical.
 - GF-BOUND-3 transition history caps at 256 per node.
 
@@ -411,9 +411,13 @@ git commit -m "test: model graph foundation risks"
 - Create: `internal/graph/id_test.go`
 - Modify: `tests/RISK_MODEL.md`
 
+Task 1 defines the ID scalar types plus node and incarnation constructors.
+`RelationshipEdgeKey` and `MessageEdgeKey` land in Task 2 after `EdgeType` and
+`MessageKind` exist.
+
 - [ ] **Step 1: Write failing table tests**
 
-Cover all canonical constructors, invalid empty/control components, 192-byte encoded limits, PID zero, start ticks zero, and distinct PID-reuse incarnations. Every `Fatalf` begins with `canonical-graph-id invariant violated:` or `pid-start-pair invariant violated:`.
+Cover all canonical constructors, invalid empty/control components, complete encoded IDs of exactly 192 and 193 bytes, PID zero, start ticks zero, and distinct PID-reuse incarnations. Every `Fatalf` begins with `canonical-graph-id invariant violated:` or `pid-start-pair invariant violated:`.
 
 ```go
 func TestCanonicalNodeIDs(t *testing.T) {
@@ -447,7 +451,7 @@ Expected: FAIL because package `internal/graph` or constructors do not exist.
 
 - [ ] **Step 3: Implement bounded canonical construction**
 
-Use one unexported `canonical(prefix string, parts ...string)` helper. Validate UTF-8, reject NUL and Unicode control runes, reject empty parts, normalize local unit `.service` suffix only, and validate final encoded length at 192 bytes. `ProcessIncarnation` must format runtime, PID, and Linux start ticks together.
+Use one unexported `canonical(prefix string, parts ...string)` helper. Validate UTF-8, reject NUL and Unicode control runes, reject empty parts, normalize local unit `.service` suffix only, and require the complete encoded result to be at most 192 bytes. `ProcessIncarnation` must format runtime, PID, and Linux start ticks together.
 
 - [ ] **Step 4: Run targeted and sister tests**
 

@@ -154,7 +154,7 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 
 ### Boundaries
 
-- `GF-BOUND-1`: IDs reject empty/control/over-192-byte components.
+- `GF-BOUND-1`: IDs reject empty/control components and final encodings over 192 bytes.
 - `GF-BOUND-2`: Limits are 4096 nodes, 16384 edges, 8192 events, and 2048 critical events.
 - `GF-BOUND-3`: Transitions cap at 256 per node.
 
@@ -182,7 +182,7 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 
 ### Regression traps
 
-- boundary: `boundary: exact-limit off-by-one`. A 192-byte UTF-8 canonical ID component must pass and a 193-byte component must fail; queue partitions must remain exactly 6144 normal plus 2048 critical, with caps of 4096 nodes, 16384 edges, 8192 total events, and 256 transitions per node. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; `GF-BOUND-2` by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-BOUND-3` by `graph.TestReconcileTransitionsCapAt256PerNode`.
+- boundary: `boundary: exact-limit off-by-one`. A complete 192-byte UTF-8 canonical ID must pass and a 193-byte encoded ID must fail; queue partitions must remain exactly 6144 normal plus 2048 critical, with caps of 4096 nodes, 16384 edges, 8192 total events, and 256 transitions per node. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; `GF-BOUND-2` by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-BOUND-3` by `graph.TestReconcileTransitionsCapAt256PerNode`.
 - concurrency: `concurrency: cancellation/read interleaving exposes shared state or leaks a task`. Readers interleaving with publication must not observe mutable maps or slices, and shutdown must wait for every named task without sleeping. `GF-CONC-1` is caught by `graph.TestStorePublishesSnapshotsAtomically` and `graph.TestStoreConcurrentReadersSeeImmutableSnapshots`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`.
 - contract: `contract: a producer violates the consumer's visibility or isolation contract`. Unverified edges must stay hidden, schema-2 arrays must be present and non-null, and one failed collector must not stop siblings or alter occupancy. `GF-EDGE-1` is caught by `graph.TestReconcileUnverifiedLaunchRemainsInvisible`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays`; `GF-COLLECT-1` by `graph.TestRegistryCollectorFailureDoesNotStopSiblings` and `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged`.
 - encoding: `encoding: malformed identity bytes or empty-array encoding changes meaning`. Invalid UTF-8 and control runes must be rejected at canonical ID construction, while omitted or null schema-2 arrays must be rejected. `GF-ID-1` is caught by `graph.TestCanonicalNodeIDsRejectInvalidUTF8AndControlRunes`; `GF-JSON-1` by `snapshot.TestSchema2RequiresNonNullArrays` and `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`.
