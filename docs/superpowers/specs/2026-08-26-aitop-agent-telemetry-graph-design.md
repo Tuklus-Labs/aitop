@@ -669,7 +669,7 @@ nonterminal evidence and open relationships before fallback. A late heartbeat
 starts a new epoch but cannot resurrect removed state; a new state record is
 required. Explicit terminal evidence is exempt from source-health expiry.
 
-Every heartbeat names one actor, actor incarnation, and complete source lane.
+Every heartbeat names one actor, actor incarnation, and complete EventSource lane.
 After a successful native poll, its collector emits one heartbeat for each actor
 and incarnation successfully observed. A zero-result poll emits no heartbeat.
 There is no actorless or source-wide heartbeat, and collector operational health
@@ -692,14 +692,105 @@ blocked, completed, failed, and vanished never serialize valid-until. JSON Schem
 and strict semantic validation both enforce these conditions; semantic validation
 also requires valid-until later than since.
 
+Node, metrics, state, and health observations retain per-lane contributions keyed
+by actor, actor incarnation, complete SourceRef, and EventSource.Mode. Equal
+SourceRef with different mode is a different contribution lane. Replay and incarnation checks precede
+update. Runtime and Role always contribute; nonempty display strings and nonnil
+Process or StartedAt contribute; absent optional fields preserve that lane's
+prior value, while a present zero pointee is known data. Metrics select five
+independent winner units: atomic Usage, TokenRate, atomic context tuple, CacheUse,
+and atomic cost pair. Present context members merge into the lane's prior tuple,
+absent members remain, and the complete result validates atomically before
+admission. The public context tuple comes from one winning lane. CostUSD presence
+replaces CostUSD plus the exact CostSource, including empty runtime source;
+absence preserves the pair.
+
+Each public field or group folds independently by authority, then the accepted
+event order within a complete EventSource lane, then ReceivedAt and a private accepted
+ordinal across equal-authority lanes. Map order is irrelevant. TelemetryAt is the
+maximum ReceivedAt of accepted nonduplicate current-node evidence and never moves
+backward. An exact stable replay changes no contribution or TelemetryAt. A proven
+incarnation switch resets identity and state only; metrics and winning provenance
+remain frozen until current-incarnation metrics replace them. Retired-incarnation
+events cannot mutate them. Sequence and health behavior belongs to the next phase;
+ghosts do not participate here.
+
+Partial derives from active gaps, never from a global flag. The capability mapping
+is identity for node observation; metrics for metrics; state for state and
+heartbeat; terminal for exit; spawn for spawn/launch relationship, launch intent,
+and session bind; service for service relationship; and message for messages. A
+node source feeds a family only when it owns a currently published winning field
+or group in that family; a losing retained lane does not. Every retained live edge
+contribution feeds its edge family. A matching source gap with nil or exact
+capability marks Partial; resolution recomputes against all remaining gaps.
+
+Replay first compares Fingerprint whenever DedupKey is equal: equal fingerprints
+are duplicates and different fingerprints are collisions, including observations
+whose revision digest stayed equal while payload changed. Distinct ordered keys
+accept newer At and retain stale older keys only as fingerprint witnesses.
+Distinct structural digests accept only at strictly greater ReceivedAt; stale or
+equal arrival also retains only its witness. Structural-to-ordered accepts.
+Ordered-to-structural is an expected schema admission rejection. Every new replay
+key costs one fingerprint history unit even for a semantic no-op. Exact duplicates
+cost zero. History also counts one per cursor, retired proof, buffered event,
+missing-range record, node lane, metric lane, state lane, health epoch,
+relationship/approval contribution, and live message contribution. Current
+incarnations, nodes, edges, active gaps, and
+transitions use their own limits. Internal diagnostics have no witness; external
+gap events do. At the limit only exact duplicate or a fully staged zero/net-
+nonpositive history delta may proceed.
+
+Observation cursor identity is the concrete stable source key `(SourceID,
+Runtime, Authority)` plus ObservationKey. It excludes collector Incarnation;
+SourceMode is fixed to observation and is not stored in the key. A collector
+restart therefore shares the cursor while contribution lanes still retain their
+complete EventSource identity.
+
+Expected reducer rejection uses exported ErrAdmission and a safe AdmissionError
+with a closed AdmissionKind for collision, observation regime, incarnation proof,
+contribution conflict, count, history, retained bytes, published bytes, topology
+cycle, or endpoint identity. Valid returns true only for these constants. Error
+text contains only the fixed class. Unwrap returns ErrAdmission only for a nonnil
+valid kind. Store continues only after errors.Is, errors.As to a nonnil typed
+error, and Valid all succeed; nil or forged kinds are fatal invariants. A merged
+context conflict is contribution-conflict and uses the source metrics collision
+gap.
+
+Collision diagnostics use source/exact event capability/GapCollision;
+observation-regime uses source/exact capability/GapSchema; incarnation proof uses
+source/identity/collision; contribution conflict uses source/metrics/collision;
+endpoint identity uses source/event capability/collision; topology cycle uses
+source/spawn/collision. Count, history, and both byte failures use the fixed
+GapLedger nil-capability resource catchall. Apply-generated admission diagnostics
+use reducer now; external GapObserved uses ReceivedAt; Store batches preserve each
+input Gap.At. Repeated opens keep the episode's first At. An ordinary diagnostic
+that cannot fit falls back to that catchall. Rejection commits
+no rejected key, cursor, witness, lane, or semantic revision. A changed gap sets
+Gap and Visibility, a Partial-only change sets only Visibility, and a saturated
+unchanged diagnostic can return zero ChangeSet with its valid admission error.
+Visibility exhaustion while exposing a diagnostic instead returns revision
+exhaustion with no mutation.
+
+Revision categories are exact. Node/edge membership, node incarnation, and edge
+key/endpoints/type are topology. Existing-node identity/display/process/start,
+gaps, Partial, pin, ghost visibility, lifecycle, provenance, relationships,
+activity, and delivery are visibility. State, terminal timestamps, and transitions
+are state. Metrics and TelemetryAt are metrics. Snapshot At, witnesses, cursors,
+ordinals, charges, and proofs cause no public revision. Insertion or removal uses
+topology alone for the initial/removed record. Every changed category increments
+once per transaction. All four categories accept max-safe-minus-one to max-safe;
+the next required increment in any category rejects the entire transaction.
+
 Reducer mutation is transactional. Prepare computes validation, replay,
 incarnation, count, history, and deterministic retained/published logical charges
 as staged deltas over single-writer canonical maps and immutable record values.
 Prepare stages exact record, ledger, revision, epoch, and projection replacements.
 Commit is infallible and applies the prepared replacements once. It never mutates
 then rolls back, hides rejected semantic truth, or copies a full candidate graph.
-Expected admission failure commits only reserved gap/partial diagnostics, so later
-replay may apply. Unknown invariant failure commits nothing.
+Expected admission failure commits only its selected diagnostic gap and Partial
+changes, using the reserved catchall only when the ordinary source-scoped
+diagnostic cannot fit, so later replay may apply. Unknown invariant failure
+commits nothing.
 
 Store submits the full sorted normal, critical, collision, and catchall diagnostic
 set to one batch prepare. That prepare validates every item, safe count and
@@ -761,7 +852,9 @@ Retained capacity is owned where the maps live: 4096 nodes including ghosts,
 history units. A reserved catch-all gap makes gap-ledger exhaustion visible.
 Capacity never silently evicts an active object or replay witness. A new unique
 admission fails closed and opens a resource or saturation episode; existing-key
-updates remain legal. Rotation of the declared 256-transition ring is expected
+updates remain legal only when the fully staged retained-byte, published-byte,
+and history totals have zero or net-nonpositive growth. Positive growth may
+reject. Rotation of the declared 256-transition ring is expected
 retention behavior and does not itself create a gap.
 
 Deterministic logical limits supplement count ceilings: 24 MiB retained, 24 MiB
@@ -773,9 +866,39 @@ published, and 8 MiB queued by default. Retained and published budgets reserve
 StoreState is ordinary and falls back to gap-ledger when ordinary capacity is
 full. Source collisions normally retain original source/capability/collision and
 fall back to gap-ledger when they cannot fit. Existing-key growth may reject;
-equal or smaller updates remain legal. Policy uses a checked-in conservative
-charge schedule, not process heap sampling. Internal dedup/coalescing maps keep
+equal or smaller updates remain legal only when fully staged history growth is
+zero or net-nonpositive and the retained and published inequalities pass. Policy
+uses a checked-in conservative charge schedule, not process heap sampling. Internal dedup/coalescing maps keep
 fixed 32-byte digests while public string APIs remain available.
+
+Reconcile defaults are two-second reorder, six-second freshness, 256 transitions,
+60-second messages, five-minute successful or vanished ghosts, fifteen-minute
+failed ghosts, 4096 nodes, 16384 edges, 4096 gaps, 65536 history units, and 24 MiB
+for each graph byte limit. Every config value is positive and MaxGaps is at least
+three. Config is trusted operator policy, but maxima never drive preallocation.
+Checked multiply, alignment, and conversion plus count and both byte checks run
+before transition backing or any other capacity allocation.
+
+Charging uses streaming map accumulation, not a temporary entry slice. Fixed
+record sizes include their header. The retained empty root is one 64-byte header,
+four 16-byte collection epochs, and fifteen 64-byte maps, exactly 1088 bytes.
+Those maps own nodes, node lanes, metric lanes, state lanes, edges, fingerprints,
+cursors, current incarnations, retired proofs, sequences, approval relationships,
+the message-expiry index, gaps, transitions, and health epochs. Each edge owns
+exactly one relationship or message contribution map. The published empty
+Snapshot is one 64-byte header, five 16-byte fields, and three 32-byte slices,
+exactly 240 bytes. The implementation plan's literal composite equations are
+normative. Tests calculate independent literal oracles.
+Contribution keys charge EventSource.Mode as one 16-byte enum in addition to
+actor, actor incarnation, and complete SourceRef. Observation StableSourceKey has
+an 80-byte fixed base plus its dynamic SourceID; Runtime and Authority are fixed
+fields, while collector Incarnation and the fixed observation mode are absent.
+
+Each byte limit must be at least its empty baseline plus the 64 KiB reserve;
+equality is valid. Ordinary work satisfies candidate at or below limit-minus-
+reserve and total at or below limit. Reserved diagnostics may use the reserve but
+the final total still fits the limit. Mixed transactions enforce both inequalities.
+Charge saturation rejects. Linux/386 compilation is a required gate.
 
 Reconciler alone mutates canonical Go maps; their values point to immutable
 records, and maps are never shared with Snapshot. Commit replaces affected value
@@ -786,6 +909,21 @@ snapshots by contract; Go cannot prevent caller mutation, but later publication
 never mutates an earlier generation. Long-lived or mutable callers deep-clone.
 Production retains current and at most previous generation. The representative
 subprocess stays below 64 MiB heap; adversarial input fails before OOM.
+
+Reconciler alone owns exactly current and previous generation. Publication moves
+current to previous, installs the prevalidated candidate, and releases anything
+older. Published admission charges candidate current once, even when backing is
+also reachable from previous. Diagnostic preparation requires its previous
+argument to be pointer-identical to current; nil or stale is invariant failure.
+COW tests compare canonical record pointers and old Snapshot bytes. Public slice
+backing identity is asserted only when the entire collection epoch is unchanged.
+
+The heap assertion runs in a subprocess. After baseline GC/read it admits 512
+actors and 2048 valid relationships with present endpoints through staged reducer
+seams, retains current and previous borrowed Snapshots, runs final GC/read, and
+only then calls KeepAlive on the reconciler and both snapshots. Decreasing Alloc
+produces zero delta, never unsigned wrap. Direct map insertion, generation rebuild,
+dangling endpoints, and in-process heap deltas are invalid fixtures.
 
 This phase has no safe replay watermark. Stable-mode dedup witnesses and retired
 incarnation proofs therefore remain for the entire Reconciler lifetime, including
@@ -1180,6 +1318,15 @@ Before each test group, its written risk rows and Coverage Matrix names exist.
 Every new test receives one physical production mutation and one physical
 weakened-assertion mutation. Correct preexisting behavior may earn proof through
 sabotage, but a defect-exposing group records its own pre-fix RED before repair.
+
+Tasks 5, 6, and 7 each stage a task-local LOUDNESS audit of every assertion and
+assertion helper in the complete critical test files they modify, including
+success, charge, COW, heap, timing, lifecycle, and rejection paths. Task 12
+re-audits those results but never substitutes for the originating task's full
+sweep. Later changes to the Task 5 reducer rerun its exact pinned mutation tool.
+They may cite the Task 5 loader failure only when tool build metadata, Go version,
+and the `go/types.(*StdSizes).Sizeof` nil-receiver package-loading signature are
+identical; physical production and assertion plants remain mandatory.
 
 ### Layout and rendering
 

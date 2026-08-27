@@ -501,6 +501,30 @@ pointer, typed-nil, or unknown payloads without panicking.
 ```go
 var ErrRevisionExhausted = errors.New("graph revision exhausted")
 var ErrEventTooLarge = errors.New("event exceeds queued byte limit")
+var ErrAdmission = errors.New("graph admission rejected")
+
+type AdmissionKind string
+
+const (
+	AdmissionCollision          AdmissionKind = "collision"
+	AdmissionObservationRegime AdmissionKind = "observation-regime"
+	AdmissionIncarnationProof   AdmissionKind = "incarnation-proof"
+	AdmissionContributionConflict AdmissionKind = "contribution-conflict"
+	AdmissionCountLimit         AdmissionKind = "count-limit"
+	AdmissionHistoryLimit       AdmissionKind = "history-limit"
+	AdmissionRetainedBytes      AdmissionKind = "retained-bytes"
+	AdmissionPublishedBytes     AdmissionKind = "published-bytes"
+	AdmissionTopologyCycle      AdmissionKind = "topology-cycle"
+	AdmissionEndpointIdentity   AdmissionKind = "endpoint-identity"
+)
+
+type AdmissionError struct {
+	Kind AdmissionKind
+}
+
+func (k AdmissionKind) Valid() bool
+func (e *AdmissionError) Error() string
+func (e *AdmissionError) Unwrap() error
 
 type ReconcileConfig struct {
 	ReorderWindow      time.Duration
@@ -576,6 +600,27 @@ func (s *Store) Run(context.Context) error
 func (s *Store) Snapshot() *Snapshot
 func (s *Store) Stats() StoreStats
 ```
+
+`AdmissionKind.Valid` accepts only the declared constants. `AdmissionError.Error`
+returns only the fixed text `graph admission rejected: <kind>` for a declared
+kind and `graph admission rejected: unknown` for nil or unknown values. It never
+includes an event, source, actor, path, payload, or wrapped raw error. `Unwrap`
+returns `ErrAdmission` only when the receiver is nonnil and its kind is valid;
+otherwise it returns nil. Store continues only when `errors.Is(err,
+ErrAdmission)`, `errors.As` produces a nonnil `*AdmissionError`, and
+`Kind.Valid()` all succeed. A nil or forged unknown AdmissionError is an invariant
+failure and aborts. `AdmissionError` has no identifier or free-text field.
+
+`DefaultReconcileConfig` is exact: `ReorderWindow=2s`, `HookFreshness=6s`,
+`TransitionLimit=256`, `MessageWindow=60s`, `SuccessGhostTTL=5m`,
+`FailureGhostTTL=15m`, `MaxNodes=4096`, `MaxEdges=16384`, `MaxGaps=4096`,
+`HistoryLimit=65536`, and both byte limits `24 MiB`. Every duration, count, and
+byte limit must be positive, and `MaxGaps` must be at least three. Count maxima
+never drive preallocation; incremental
+count and byte admission bound physical growth. Byte limits
+equal to their empty baseline plus the 64 KiB diagnostic reserve are valid;
+one byte less is invalid. Construction computes baselines from the frozen
+logical owner schedule without allocating from configured maxima.
 
 These sentinels live in package graph, which imports `errors`. Every wrapped
 revision-exhausted or event-too-large outcome preserves `errors.Is` identity.
@@ -1202,6 +1247,7 @@ git commit -m "feat: normalize graph state evidence"
 - Create: `internal/graph/reconcile_test.go`
 - Modify: `tests/RISK_MODEL.md`
 - Modify: `tests/SABOTAGE_LOG.md`
+- Modify: `tests/LOUDNESS_AUDIT.md`
 
 - [ ] **Step 1: Amend the risk model and freeze coverage names**
 
@@ -1214,6 +1260,15 @@ metrics contributions, PID reuse, unproven incarnation rejection, strictly newer
 incarnation acceptance, retired replay, exact admission bounds, active gap
 open/accumulate/resolve, gap-ledger catch-all, history capacity, and atomic
 rejection. Ghosts and resume cancellation are not Task 5.
+
+Risk rows must state the universal DedupKey/Fingerprint gate, exact ordered and
+structural cursor matrix, stale-new witness history, all node/metrics field-group
+winner and TelemetryAt rules, contribution/health/approval history units, typed
+admission and diagnostic mapping, exact revision table and four ceiling rows,
+R0/P0 plus reserve equations, streaming portable preflight, current/previous
+generation ownership, private-only commits, observable COW assertions, and the
+subprocess heap protocol. The Coverage Matrix maps those rows to the existing 33
+names; shallow earlier wording is replaced, not left as a competing contract.
 
 Freeze these exact test names. Before implementation, map each one to a risk row
 and to one production plus one weakened-assertion sabotage entry:
@@ -1263,26 +1318,143 @@ tests do not assert nanoseconds or allocation counts.
 Implement every frozen test above with rule-naming failures and no production
 changes.
 
+Discard and rewrite any provisional RED fixture that mutates Reconciler config
+after construction, writes `r.edges` or revisions directly, calls a generation
+rebuild helper, compares addresses of value elements in changed public slices,
+uses dangling edge targets, assumes a first event costs one history unit, derives
+byte thresholds from arbitrary `reserve + N`, subtracts unsigned heap counters
+without underflow handling, saturates an external GapObserved counter, or tests
+only Topology revision exhaustion. RED scaffolding is not a contract exception.
+
+All 33 named unit tests inspect the relevant private owner or transaction state in
+addition to public Snapshot output. The field-merge tests cover every node field,
+all five metrics winner units, missing-field preservation, known zero, invalid
+merged context rejection, SourceMode-distinct complete-lane keying, equal-authority ReceivedAt and
+ordinal ties, TelemetryAt monotonicity, stable replay no-op, exact revision rows,
+and metrics preservation across a proven incarnation switch. The observation
+table covers collector-restart cursor sharing, the universal DedupKey/Fingerprint
+gate, and every ordered/structural transition above. Gap tests cover every event-to-capability Partial mapping,
+unrelated sources, two matching gaps with one resolution, first At, cumulative
+unique opens, replay no-count, all AdmissionKind diagnostic identities and
+fallback, saturated no-delta diagnostics, and Visibility exhaustion.
+Metrics merge covers `AdmissionContributionConflict` with its exact safe type,
+metrics collision gap, no rejected semantic or witness mutation, and successful
+later replay after a legal lane update.
+
+History tests derive exact deltas from the frozen owner list, including new
+fingerprint plus node/metric contribution lanes. They cover stale-new evidence at
+and below the limit and prove a later changed payload collides against its retained
+witness. Config tests use fresh construction for every row and cover all default
+durations/counts/bytes, each zero field, MaxGaps 2, exact
+`R0/P0 + reserve` acceptance, one-byte-under rejection, StoreState ordinary
+capacity, collision fallback, and mixed ordinary/reserved byte inequalities.
+
+Charge tests use independent literal oracles for every fixed and composite
+equation, streaming map accumulation, saturating add/multiply/alignment, checked
+int conversion, and no allocation proportional to a configured maximum before
+admission. Revision tests exercise max-safe-minus-one to max-safe and the next
+required change for Topology, Visibility, State, and Metrics independently. A
+root-consistent helper defined only in `reconcile_test.go` seeds a revision by
+preparing a real candidate generation, independently recomputing its charge, and
+committing through the normal transaction seam; tests never assign a revision
+scalar or generation field directly. COW
+tests compare canonical record pointers, old borrowed Snapshot bytes, whole-slice
+reuse for unchanged epochs, exactly current plus previous ownership, candidate-
+current charge once, and stale diagnostic-generation rejection. The heap test uses
+the subprocess protocol and real admitted topology frozen below.
+
 - [ ] **Step 3: Verify RED**
 
 Run: `go test ./internal/graph -run '^(TestLogicalCharge(GoldenSchedule|Saturates)|TestReconcile(ImmutableReplayAcrossCollectorRestart|SemanticCollisionOpensGapAtomically|ObservationRevisionTable|FieldWiseNodeMerge|FieldWiseMetricsMerge|ProcessIdentityDistinguishesPIDReuse|RejectsUnprovenIncarnationSwitch|AcceptsStrictlyNewerIncarnation|RetiredIncarnationReplayIsNoop|DefaultAdmissionBounds|ActiveGapEpisodes|GapLedgerCatchAll|HistoryLimitFailsClosed|RetiredStableWitnessDetectsCollision|RejectedEventIsAtomic|RetainedByteLimitRejectsAtomically|PublishedByteLimitRejectsAtomically|InvalidByteConfigRejected|DiagnosticReserveCannotBeConsumed|DiagnosticSlotsExactAndCollisionFallsBack|ExistingKeyGrowthCanReject|EqualOrSmallerExistingUpdateAtLimit|AdmissionFailureCanReplayLater|CopyOnWriteSharesUnchangedBacking|CopyOnWriteReplacesOnlyAffectedRecords|CandidateGenerationChargeMismatchRejectsBeforeCommit|GapOnlyPublicationReusesNodeAndEdgeBacking|PublishedSnapshotEpochRetentionBounded|RepresentativeFleetHeapBelow64MiB|JSONSafeCounterAndRevisionCeilings|RevisionCeilingStopsWithoutDiagnosticRecursion))$' -count=1`
 
 The anchored alternatives enumerate every frozen Task 5 test name above.
 
+The initial package compile failure is only an honest first RED. Add a shape-only,
+zero-behavior API skeleton sufficient to compile, then run each of the 33 exact
+test names alone with `go test ./internal/graph -run '^ExactName$' -count=1`.
+Record its rule-specific behavioral RED before implementing that rule or the
+smallest coherent rule batch. A compile failure or panic does not satisfy the
+behavioral RED; repair a wrong-reason failure and rerun before production logic.
+Do not implement all behavior after one package-level compile RED.
+
 - [ ] **Step 4: Implement node reconciliation and bounded admission**
 
-Create canonical private maps for nodes, source-lane field and metrics
+Create canonical private maps for nodes, source-lane field, metrics, and state
 contributions, edges, fingerprints, observation cursors, current and retired
-incarnations, sequences, approval relationships, messages, active gaps, and
-transitions. No method reads the clock.
+incarnations, sequences, approval relationships, the message-expiry index, active
+gaps, transitions, and health epochs. Edge relationship/message contributions are
+nested owners inside each edge record. No method reads the clock.
 
-Defaults are `MaxNodes=4096`, `MaxEdges=16384`, `MaxGaps=4096`,
-`HistoryLimit=65536`, `RetainedByteLimit=24 MiB`, and
-`PublishedByteLimit=24 MiB`. `NewReconciler` validates positive limits and
-returns `(*Reconciler, error)`. Retained ghosts count as nodes; active, message,
-and ghost edges all count. History units cover dedup fingerprints, observation cursors,
-retired incarnations, buffered or missing sequence records, live message
-contributions, and relationship contributions. All stable-mode dedup witnesses
+Node, metrics, state, and health contribution identity is `(Actor,
+ActorIncarnation, complete SourceRef, EventSource.Mode)`. Mode is part of the lane
+even when every SourceRef field is equal. Replay and incarnation checks run before contribution update. An
+exact stable replay is a zero-change no-op even when collector incarnation or
+`ReceivedAt` differs under that mode's replay equivalence. A present contribution
+updates its lane; an absent optional field preserves the prior value in that
+lane. A present pointer whose pointee is zero is known zero data, not absence.
+For `NodeObserved`, Runtime and Role are always present, nonempty display strings
+are present, and Process and StartedAt are present only through nonnil pointers.
+
+Metrics have five independent winner units: Usage as one atomic group; TokenRate;
+the `(ContextUsed, ContextWindow, ContextFill)` tuple as one atomic group;
+CacheUse; and `(CostUSD, CostSource)` as one atomic group. A group is absent only
+when every member is absent. Within a lane, only present context members update
+the prior tuple; absent members remain, and prepare validates the resulting tuple
+atomically before admission. Across lanes the complete context tuple comes from
+one winning lane, so public output never synthesizes used, window, or fill from
+different sources. Usage presence replaces the complete usage group. CostUSD
+presence replaces the complete cost pair with its accompanying CostSource,
+including empty source for runtime-reported cost. Validation has already rejected
+nonempty CostSource without CostUSD. Known zero pointees remain present data in
+all groups.
+
+Each public field or atomic group selects its winner independently. Hook outranks
+native, which outranks passive. Within one complete EventSource lane, only the event
+accepted by that mode's replay or observation ordering may replace its prior
+contribution. Across equal-authority lanes, greater `ReceivedAt` wins; a private
+monotonic accepted-event ordinal breaks an exact tie. Fold order is fixed and
+does not depend on Go map iteration. Missing winners leave the public zero value.
+`Node.TelemetryAt` is the maximum `ReceivedAt` of accepted, nonduplicate evidence
+for the current node. Older accepted evidence cannot move it backward, and a
+duplicate cannot move it forward.
+
+Gap capability maps to affected public contribution families exactly:
+
+| Event or contribution | Capability used for `Partial` |
+|---|---|
+| `NodeObserved` | `CapabilityIdentity` |
+| `MetricsObserved` | `CapabilityMetrics` |
+| `StateObserved`, `HeartbeatObserved` | `CapabilityState` |
+| `ExitObserved` | `CapabilityTerminal` |
+| spawn or launch relationship, `LaunchIntent`, `SessionBind` | `CapabilitySpawn` |
+| service relationship | `CapabilityService` |
+| `MessageObserved` | `CapabilityMessage` |
+| `GapObserved` | no derived family; its payload names the gap |
+
+For a node, a Source ID feeds a capability exactly when that source owns at least
+one currently published winning field or atomic group in that capability family;
+a retained losing lane does not feed the public node. For an aggregate edge in
+Task 7, every retained live contribution feeds its declared capability. `Partial`
+is true exactly when an active gap has the same feeding Source ID and has nil
+capability or that exact capability. A gap for an unrelated source, losing lane,
+or family does not mark the object. Resolving one gap recomputes from all remaining
+matching gaps rather than clearing a boolean blindly. Task 5 exercises identity and
+metrics node contributions; Tasks 6 and 7 apply the same table to state,
+terminal, relationship, and message contributions.
+
+Defaults are the exact values frozen in the API section, including all five
+duration fields and every count limit. `NewReconciler` validates every positive field,
+`MaxGaps >= 3`, and both byte baseline equations and returns
+`(*Reconciler, error)`. Retained ghosts count as nodes; active, message, and ghost
+edges all count. `HistoryLimit` counts one unit for each fingerprint witness,
+observation cursor, retired-incarnation proof, buffered event, missing-range
+record, node-field contribution lane,
+metric-contribution lanes, state-contribution lanes, health-epoch lanes,
+approval/relationship contributions, and live message contributions.
+Current-incarnation, node, edge, active-gap, and transition entries
+use their own limits and do not also consume history. Internal direct diagnostics
+create no fingerprint or history unit; an external `GapObserved` event creates its
+normal fingerprint witness. All stable-mode dedup witnesses
 and retired-incarnation proofs
 remain for the entire Reconciler lifetime because this phase has no replay
 watermark. They remain after owner, node, edge, ghost, or gap expiry and continue
@@ -1298,21 +1470,38 @@ at 256. Observation cursor and source-contribution state may compact only after
 the actor incarnation retires and the retained retired proof prevents replay
 mutation; its stable dedup witness remains. Never claim a safe watermark.
 
-At `HistoryLimit`, reject the new replay-sensitive admission, retain all prior
-witnesses, and open the active resource gap. Never evict retained truth to admit
-new work. Existing-key updates remain legal at capacity. Reserve exactly the
-three full gap identities frozen in the API contract above.
+At `HistoryLimit`, permit only an exact duplicate or an update whose fully staged
+history total, including legal removals, does not grow. Every new replay key
+requires a fingerprint witness,
+including an event that would otherwise update an existing node or edge. A cursor,
+retired proof, sequence record, relationship contribution, or message
+contribution that did not already exist is also a positive history delta. Reject
+positive history growth, retain all prior witnesses, and open the active resource
+gap. Never evict retained truth to admit new work. An existing semantic key is not
+by itself permission to bypass history admission. Reserve exactly the three full
+gap identities frozen in the API contract above.
 
-Retained and published budgets each reserve 64 KiB that ordinary admission cannot
-consume. `MaxGaps` reserves those same three identities. StoreState remains
-ordinary. Configurations too small for these reservations are
-invalid. Count ceilings remain hard maxima; byte limits may reject earlier.
-Existing-key growth may reject, while equal-size or smaller updates remain legal
-at the limit.
+Retained and published budgets each reserve exactly `64 << 10` logical bytes that
+ordinary admission cannot consume. `MaxGaps` reserves those same three identities.
+StoreState remains ordinary. Let `R0` and `P0` be the independently charged empty
+retained-owner and empty published-generation baselines below. A byte config is
+valid at equality `R0 + reserve` and `P0 + reserve`; smaller values are invalid.
+Ordinary admission must satisfy both `candidate <= limit - reserve` and
+`candidate <= limit`. Reserved diagnostic admission may consume the reserve but
+must still satisfy `candidate <= limit`. Mixed semantic-plus-diagnostic
+transactions apply the ordinary inequality to the semantic candidate first, then
+the total inequality after diagnostics. Count ceilings remain hard maxima and
+byte limits may reject earlier. Existing-key growth may reject; an equal-size or
+smaller update with zero history delta remains legal at the byte limit.
 
 `internal/graph/bytes.go` implements deterministic logical charging. It never
 uses `runtime.MemStats` as policy. All arithmetic saturates at `math.MaxUint64`
-and rejects before wrap. The golden schedule is:
+and rejects before wrap. It exposes checked saturating add, multiply, alignment,
+and nonnegative `int`-to-`uint64` conversion. A saturated result is an admission
+failure, never a usable charge. Map charging is a streaming accumulator with
+`start`, `add(keyCharge, valueCharge)`, and `total`; it must not first allocate a
+`[]logicalMapEntry` proportional to attacker-controlled cardinality. The golden
+schedule is:
 
 | Allocation | Logical bytes |
 |---|---:|
@@ -1332,7 +1521,163 @@ or cloned Event. Dynamic strings, slices, pointees, contribution maps, and
 embedded events add their schedule charges. Shared immutable records are charged
 once per owning projection. Golden cases cover empty and 1/16/17-byte strings,
 nil and present pointers, empty and one-element slices and maps, and one instance
-of each domain record.
+of each domain record. Tests compute expected values from independent numeric
+literals and field lengths; they do not reuse production logical-size constants
+or call a second production charger as their oracle.
+
+The fixed-record figures above are complete fixed base charges; they already
+include that record's header and are not added to another 64-byte record header.
+Define `A(n)` as `n` rounded up to 16 with saturation, `S(n)=16+A(n)` for a
+string or byte slice, `P=32` for a present scalar pointer and pointee, and
+`E=64` for one map entry before its key and value.
+
+The retained owner has one 64-byte reconciler header, four 16-byte collection
+epochs for nodes, edges, gaps, and transitions, and exactly fifteen
+conceptual map containers: nodes, node-field contributions, metric contributions,
+state contributions,
+edges, fingerprints, observation cursors, current incarnations, retired
+incarnations, sequence records, approval relationships, message-expiry index,
+gaps, transitions, and health epochs. Per-edge
+relationship and message maps are nested containers, not root containers. Empty-
+map charge applies even when the physical root map remains nil, so
+the exact empty retained baseline is `R0 = 64 + 4*16 + 15*64 = 1088`. Each entry adds the
+map's 64-byte entry charge, the exact composite key charge, and the exact immutable
+value charge. Composite keys charge every fixed digest and every dynamic Actor,
+Incarnation, SourceRef, relationship, or observation component owned by that key.
+A value reachable from two owners is charged once under its declared owner and
+other owners charge only their fixed reference slot. The owner table in
+`bytes_test.go` names every private map and fails if one is omitted or charged by
+two owners.
+
+The required composite equations are literal:
+
+```text
+SourceRef(s) = 96 + S(len(s.ID))
+ContributionKey(k) = 64 + S(len(k.Actor)) + S(len(k.ActorIncarnation))
+                     + SourceRef(k.Source.Ref) + 16 SourceMode
+ContributionOrder = 16 ReceivedAt + 16 accepted ordinal
+NodeContribution(v) = 64 + ContributionOrder + 2*16 Runtime/Role
+                    + S(ProvenName)+S(Model)+S(Project)+S(Worktree)+S(TaskName)
+                    + (64 if Process present) + (P if StartedAt present)
+MetricsValue(m) = 64 + (P+64 if Usage present) + P for each present TokenRate,
+                  ContextUsed, ContextWindow, ContextFill, CacheUse, CostUSD
+                  + S(len(CostSource))
+MetricsContribution(v) = 64 + ContributionOrder + MetricsValue(v.Metrics)
+StateContribution(v) = 64 + ContributionOrder + 3*16 State/ObservedAt/ValidUntil
+                       + S(len(Relationship)) + (P if Sequence present)
+FingerprintEntry = E + 32 key digest + 32 fingerprint digest = 128
+StableSourceKey(s) = 80 + S(len(s.ID))  [SourceRef base 96 minus Incarnation 16]
+CursorKey(k) = 64 + StableSourceKey(k.Source) + S(len(k.ObservationKey))
+CursorEntry(k) = E + CursorKey(k) + 160 cursor value
+RetiredProofKey(k) = 64 + S(len(k.Actor)) + S(len(k.Incarnation))
+RetiredProofValue(v) = 64 + (P if StartedAt present) + (P if StartTicks present)
+RetiredProofEntry(k,v) = E + RetiredProofKey(k) + RetiredProofValue(v)
+GapKey(g) = 64 + S(len(g.Source)) + 16 kind + (P if capability present)
+ActiveGapEntry(g) = E + GapKey(g) + 128 + S(len(g.Source))
+                    + (P if capability present)
+NodeContributionEntry(k,v) = E + ContributionKey(k) + NodeContribution(v)
+MetricsContributionEntry(k,v) = E + ContributionKey(k) + MetricsContribution(v)
+StateContributionEntry(k,v) = E + ContributionKey(k) + StateContribution(v)
+MetricsDynamic(m) = MetricsValue(m) - 64
+TransitionSlice(t) = 32 + A(TransitionLimit*96)
+                     + sum(S(len(item.Source.ID)) for retained items)
+NodeRecord(n) = 512 + S(len(ID))+S(len(Incarnation))+S(len(ProvenName))
+                +S(len(Model))+S(len(Project))+S(len(Worktree))+S(len(TaskName))
+                +(64 if Process present)+P for each present StartedAt, CompletedAt,
+                FailedAt, GhostExpiresAt + S(len(State.Source.ID))
+                +MetricsDynamic(Metrics)
+NodeEntry(n) = E + S(len(n.ID)) + NodeRecord(n)
+EdgeRecord(e) = 384 + S(len(Key))+S(len(Source))+S(len(Target))
+                +S(len(Relationship))+(64 if Trace present)
+                +(32+64+5*16 if Delivery present)
+                +S(len(SourceIncarnation))+S(len(TargetIncarnation))
+                +exactly one 64-byte contribution-map container
+                +sum(RelationshipEntry) or sum(MessageEntry), never both
+EdgeEntry(e) = E + S(len(e.Key)) + EdgeRecord(e)
+IncarnationKey(k) = 64 + S(len(k.Actor))
+IncarnationValue(v) = 64 + S(len(v.Incarnation))
+                      +(P if StartedAt present)+(P if StartTicks present)
+CurrentIncarnationEntry(k,v) = E + IncarnationKey(k) + IncarnationValue(v)
+SequenceKey(k) = 64 + S(len(k.Actor))+S(len(k.ActorIncarnation))+SourceRef(k.Source)
+SequenceValue(v) = 256 + 32 buffered-event slice
+                   +A(len(v.Buffered)*512)+sum(EventDynamic(buffered event))
+                   +32 missing-range slice+A(len(v.Missing)*32)
+SequenceEntry(k,v) = E + SequenceKey(k) + SequenceValue(v)
+RelationshipKey(k) = 64 + SourceRef(k.Source) + 16 provenance
+RelationshipValue(v) = 64 + 4*16 capability/created/activity/count
+RelationshipEntry(k,v) = E + RelationshipKey(k) + RelationshipValue(v)
+MessageKey = 32 fixed dedup digest
+MessageValue(v) = 64 + SourceRef(v.Source)+3*16 delivery/received/expires
+MessageEntry(v) = E + 32 + MessageValue(v)
+ApprovalKey(k) = 64 + S(len(k.Actor))+S(len(k.ActorIncarnation))
+                 +SourceRef(k.Source.Ref)+16 SourceMode+S(len(k.Relationship))
+ApprovalRelationshipEntry(k,v) = E + ApprovalKey(k) + StateContribution(v)
+MessageExpiryKey(k) = 64 + 16 ExpiresAt + 32 fixed message digest
+MessageExpiryIndexEntry(k,ref) = E + MessageExpiryKey(k) + 16 fixed reference
+TransitionEntry(actor,t) = E + S(len(actor)) + TransitionSlice(t)
+HealthEpochKey(k) = ContributionKey(k)
+HealthEpochValue(v) = 64 + 2*16 last-heartbeat/private-epoch-ordinal
+HealthEpochEntry(k,v) = E + HealthEpochKey(k) + HealthEpochValue(v)
+RetainedRoot = 64 + 4*16 epochs + 15*64 root map containers
+               + sum(all fifteen root-map entry equations), with EdgeEntry
+                 recursively owning its one nested map container and entries
+PublishedCurrent = 64 Snapshot header + 5*16 fixed snapshot scalars
+                   + charged Nodes slice + charged Edges slice + charged Gaps slice
+EventEnvelopeDynamic(e) = S(len(e.Source.Ref.ID))+S(len(e.Actor))
+                  +S(len(e.ActorIncarnation))+S(len(e.Target))
+                  +S(len(e.TargetIncarnation))+(P if Sequence present)
+                  +(P if SourceTime present)+(64 if Trace present)
+                  +(32+64+S(len(Observation.Key))+16 At+32 Digest if Observation present)
+PayloadDynamic(NodeObserved) = 64+2*16 runtime/role
+                  +S(ProvenName)+S(Model)+S(Project)+S(Worktree)+S(TaskName)
+                  +(64 if Process present)+(P if StartedAt present)
+PayloadDynamic(MetricsObserved) = MetricsValue(Metrics)
+PayloadDynamic(StateObserved) = 64+2*16 state/duration+S(len(Relationship))
+PayloadDynamic(RelationshipObserved) = 64+2*16 type/provenance+S(len(Relationship))
+PayloadDynamic(MessageObserved) = 64+2*16 kind/delivery+S(len(Relationship))
+PayloadDynamic(ExitObserved) = 64+16 outcome
+PayloadDynamic(HeartbeatObserved) = 64
+PayloadDynamic(GapObserved) = 64+4*16 capability/kind/status/count
+PayloadDynamic(LaunchIntentObserved) = 64+16 runtime+(64 if ChildProcess present)
+PayloadDynamic(SessionBindObserved) = 64+16 runtime+32 ProcessIdentity
+EventDynamic(e) = EventEnvelopeDynamic(e) + exactly one matching PayloadDynamic(e.Data)
+```
+
+`P` for Process is not used because it points to a record: its exact charge is a
+32-byte pointer slot plus the 32-byte ProcessIdentity base, or 64. Capability is
+stored as a scalar pointee, so its present charge is `P`. Empty strings still cost
+`S(0)=16` where the owning record retains the string field. Runtime, role, mode,
+kind, and other closed enums are fixed scalars already shown in their record base
+or payload equation; they are not charged again as Go string backing. The retained transition owner charges
+`TransitionSlice`; retained NodeRecord charges only its fixed slice reference,
+not that backing twice. The published current Node slice charges its reachable
+transition backing because the Snapshot owns that projection. Within
+PublishedCurrent, each reachable backing is charged once even when current and
+previous physically alias it; previous is not part of the candidate published
+charge. Tests enumerate every equation, the fifteen root maps, both possible
+nested edge-map shapes, and their single-owner sum.
+
+The published projection charges one 64-byte Snapshot header, its `At` plus four
+revision scalars at 16 bytes each, and its three empty 32-byte slice containers.
+The exact empty published baseline is `P0 = 64 + 5*16 + 3*32 = 240`. A candidate
+generation charges each Node, Edge, Gap, and nested dynamic backing once in the
+candidate current Snapshot. It does not charge generation bookkeeping, the
+previous generation, or a shared backing array a second time. The current-plus-
+previous retention policy is separately proved by ownership and the heap test.
+
+Admission is allocation-first only in arithmetic, never in memory. Prepare
+streams candidate charge and count deltas before `make`, capacity-bearing
+`append`, map insertion, full-capacity transition-ring replacement, top-level
+slice copy, or sort scratch allocation. It then allocates only after every count,
+history, ordinary-reserve, total-byte, and safe-integer check succeeds. Configured
+maxima never become `make` capacity hints. Before transition allocation, checked
+multiplication, rounding, count, retained, and published admission all pass;
+saturated or unrepresentable charge rejects. Adversarial event lengths and deltas
+therefore reject without a large allocation. Config is trusted operator policy:
+a deliberately huge positive TransitionLimit with sufficient byte budgets
+authorizes that capacity, but still cannot allocate before the checks. Linux/386
+compilation proves all conversions and intermediate products remain explicit and
+portable.
 
 Reconciler maps use internal `[32]byte` dedup and coalescing digests from the
 shared canonical encoder. Public `DedupKey()` and `CoalesceKey()` keep their
@@ -1371,13 +1716,24 @@ as committed only after infallible commit and pointer-store of the prevalidated
 generation. A fatal prepare error instead follows the already-frozen invariant
 abort path and accounts the discarded counts in `AbortedDiagnostics`.
 
+Reconciler owns exactly `current *generation` and `previous *generation`.
+Successful publication assigns the former current to previous and the prepared
+candidate to current, releasing any older generation. `publishedCharge` is the
+charge of current only and must equal the independently recomputed candidate
+charge before commit. `prepareStoreDiagnostics(gaps, previous, now)` requires
+`previous == r.current`; nil or stale identity is an invariant error with no
+transaction. Its candidate derives from that exact generation. Store pointer-
+stores the returned committed current generation and never supplies a generation
+it built or retained independently.
+
 `prepareApply` and `prepareAdvance` likewise stage their exact record
 replacements, projection, and retained/published charges. Every prepare validates
 dedup, collision, incarnation, counts, history, count limits, and projected
 retained and published charges before semantic commit. It does not
 apply then roll back, copy the full candidate graph, or hide rejected truth in a
-side map. Expected admission rejection commits only its reserved gap and partial
-diagnostic. It commits no semantic key, cursor, sequence, incarnation, or semantic
+side map. Expected admission rejection commits only its selected diagnostic gap
+and Partial changes, using a reserved fallback when ordinary source-scoped
+diagnostics cannot fit. It commits no semantic key, cursor, sequence, incarnation, or semantic
 revision, so replay may apply later when capacity permits. Unknown invariant
 errors commit nothing.
 
@@ -1396,6 +1752,73 @@ keeps the last snapshot, aborts, and accounts accepted/unapplied work in
 `AbortedQueued`. Reconciler and Store tests use `errors.Is` against the frozen
 sentinel.
 
+Reducer results are closed:
+
+| Outcome | `ChangeSet` | Error | Mutation | Store action |
+|---|---|---|---|---|
+| exact duplicate with an existing witness | zero | nil | none, including TelemetryAt | continue |
+| stale ordered or structural evidence under a new replay key | zero public change | nil | fingerprint witness and one history unit only; no cursor, contribution, revision, or TelemetryAt | continue |
+| accepted semantic or private contribution change | exact changed public categories, possibly zero when only a losing lane or witness changes | nil | staged commit | publish only for nonzero ChangeSet; continue |
+| expected collision, regime, proof, count, history, or byte rejection | exact diagnostic flags below | valid `*AdmissionError`, matching `ErrAdmission` | diagnostic gap/partial/visibility only; no rejected key, cursor, witness, contribution, incarnation, or semantic revision | publish only for nonzero ChangeSet; continue |
+| revision exhaustion | zero | `ErrRevisionExhausted` | none and no gap | abort, retain last generation |
+| invalid queued event, invalid AdmissionKind, charge mismatch, stale diagnostic generation, or internal invariant | zero | non-admission error | none | abort, retain last generation |
+
+Every expected rejection selects one closed `AdmissionKind`. Count and byte kinds
+identify the limit class, not an object or source. Collision, observation-regime,
+incarnation-proof, and contribution-conflict rejection use the capability table above when opening their
+diagnostic. A source event rejected by admission retains no new replay witness,
+so it may apply later.
+
+Diagnostic identities are exact. Collision uses
+`(event.Source.Ref.ID, &eventCapability, GapCollision)`. Observation-regime uses
+`(event.Source.Ref.ID, &eventCapability, GapSchema)`. Incarnation-proof uses
+`(event.Source.Ref.ID, &CapabilityIdentity, GapCollision)`. A metrics merge whose
+individually valid present fields conflict with preserved lane fields uses
+`AdmissionContributionConflict` and
+`(event.Source.Ref.ID,&CapabilityMetrics,GapCollision)`. It follows the expected
+diagnostic path and retains no rejected witness or contribution, so replay may
+apply after another accepted update makes the merged lane valid. Endpoint-identity uses
+the event capability from the mapping table with `GapCollision`. Topology-cycle
+uses `CapabilitySpawn` with `GapCollision`. Count, history, retained-byte, and
+published-byte rejection use `(SourceAITopGapLedger,nil,GapResource)`. An
+Apply-generated admission diagnostic uses supplied reducer `now`. An external
+GapObserved open uses `e.ReceivedAt`. A Store diagnostic batch preserves each
+input Gap.At rather than replacing it with publication `now`. Repeated opens in
+all paths preserve the episode's first At. Tests include differing event,
+diagnostic, and publication times. Any ordinary diagnostic that
+cannot fit its count or byte admission falls back to that fixed catchall. If the
+selected diagnostic counter is already saturated and all matching Partial values
+are already true, the valid AdmissionError has zero ChangeSet and no revision.
+If exposing a diagnostic requires Visibility while that revision is already at
+the ceiling, prepare instead returns `ErrRevisionExhausted` and commits nothing.
+Diagnostic flags are independent. A new gap, removed gap, or changed gap counter
+sets `Gap=true` and `Visibility=true`; a Partial-only change with an unchanged
+saturated gap sets `Gap=false` and `Visibility=true`; no public diagnostic or
+Partial delta returns zero ChangeSet. There is no `Gap=true, Visibility=false`
+diagnostic result. Gap and Partial changes increment only VisibilityRevision;
+`ChangeSet.Gap` is an additional delta flag, not a fifth public revision.
+
+Revision changes are exact and each category increments at most once per committed
+transaction:
+
+| Public delta | Revision and `ChangeSet` category |
+|---|---|
+| node or edge membership, node incarnation, edge key/endpoints/type | Topology |
+| existing-node identity/display/process/StartedAt winner; gap membership/count; any `Partial`, pin, ghost-visibility, lifecycle, provenance, relationship, activity, delivery, or other nonstructural edge field | Visibility |
+| `Node.State`, terminal timestamps, or transition history | State |
+| `Node.Metrics` or TelemetryAt | Metrics |
+| Snapshot.At alone, replay witnesses, cursors, ordinals, charges, and private proofs | none |
+
+Inserting a node or edge increments Topology once; its initial payload is covered
+by that insertion and does not also increment Visibility, State, or Metrics.
+Removing one does the same. An existing-node incarnation switch increments
+Topology and also State if its state reset changes public state; it increments
+Visibility only for an independently changed existing-node identity field.
+Multiple deltas in one category still add one. Before prepare, each category that
+must increment is checked independently against the JSON-safe ceiling. If any
+required category is already at the ceiling, none increments and the whole result
+is the revision-exhaustion row above.
+
 Reconciler owns single-writer mutable canonical Go maps whose values point to
 immutable records. Canonical maps are never shared with Snapshot. A transaction
 commits by replacing affected map-entry pointers and allocating new scalar
@@ -1410,27 +1833,69 @@ charge consistency checks run while preparing the candidate, before commit; no
 post-commit charge-mismatch path exists. No persistent-map implementation is
 claimed.
 
+Copy-on-write tests observe what Go can guarantee. They compare canonical private
+record pointers before and after: an unaffected record pointer is identical and
+an affected record pointer is replaced. They also retain an independently encoded
+or deep-cloned byte image of the old public Snapshot and prove it remains
+byte-identical after later publication. They do not compare addresses of Node or
+Edge values inside two changed `[]Node` or `[]Edge` top-level copies, because a
+slice copy necessarily gives those value elements new addresses. When an entire
+collection epoch is unchanged, such as nodes and edges during gap-only
+publication, the test may and must compare whole-slice backing identity.
+
 `Store.Snapshot()` returns a borrowed read-only generation by caller contract; Go
 cannot prevent caller mutation. Store guarantees later publication never mutates
 any earlier borrowed generation. Mutable or long-lived callers use
 `CloneSnapshot`, which remains a public deep clone. Production retains current and
-at most previous generation. The representative subprocess
-constructs 512 nodes and 2048 edges, verifies deterministic charge, and stays
-below 64 MiB heap. Adversarial limits reject before allocation growth can OOM.
-Benchmarks record `-benchmem`; unit tests set no time or bytes-per-operation
-threshold.
+at most previous generation. The representative heap assertion runs only in a
+subprocess of the Go test binary. The parent sets one private helper environment
+value, starts the exact test binary and exact helper test, and requires clean exit
+plus one bounded machine-readable result line. The child runs GC, reads
+`runtime.MemStats.Alloc`, admits 512 valid nodes and 2048 valid multigraph edges
+through staged Reconciler admission, retains the Reconciler plus current and
+previous borrowed Snapshots, runs GC again, then reads Alloc. Only after that
+final read does it call `runtime.KeepAlive(r)`, `runtime.KeepAlive(current)`, and
+`runtime.KeepAlive(previous)`, before returning. It checks unsigned subtraction
+explicitly: if after is below before the delta is zero, never wrapped.
+The topology has 512 distinct actors and 2048 distinct relationship IDs, all
+endpoints present, with fanout and nested branches rather than dangling targets.
+It populates real fingerprints, contribution maps, history, canonical maps, and
+the current generation; it never writes `r.edges` or rebuilds a generation
+directly. The generic staged relationship-contribution seam exists in Task 5 for
+this test and is the same seam Task 7 drives from validated events. The child
+verifies deterministic charge, cardinality, and a heap delta below 64 MiB. The
+parent owns timeout/crash/error reporting so allocator residue from the main test
+process cannot skew the result. Adversarial limits reject before allocation
+growth can OOM. Benchmarks record `-benchmem`; unit tests set no time or
+bytes-per-operation threshold.
 
-Observation cursors use stable source plus observation key. Nonzero `At` is
+Observation cursors use `StableSourceKey{SourceID, Runtime, Authority}` plus
+observation key. Collector Incarnation is excluded and mode is fixed to
+SourceObservation, so collector restart shares the cursor. Nonzero `At` is
 ordered with digest as collision witness; zero `At` is structural and follows
-strict receiver order. Same ordered timestamp with different digest is collision;
-newer ordered time accepts even the same digest; older is a no-op; unordered to
-ordered accepts; ordered to unordered rejects partial.
+strict receiver order. The universal first gate compares semantic Fingerprint
+after DedupKey equality: equal key and equal Fingerprint is a duplicate; equal key
+and different Fingerprint is collision, even when `Observation.Digest` is equal.
+Cursor ordering applies only to distinct keys. Ordered newer At accepts, older At
+is a stale no-op with its new fingerprint witness, and equal At necessarily
+shared a DedupKey and was handled by the first gate. Structural equal digest also
+shares a DedupKey and uses the first gate regardless of collector incarnation or
+ReceivedAt. Structural different digest accepts only at strictly greater
+ReceivedAt; older or equal ReceivedAt is a stale no-op with its new witness.
+Structural to ordered accepts. Ordered to structural returns
+`AdmissionObservationRegime`, opens the exact capability diagnostic, and marks
+only matching contributions partial. No rejected transition updates the cursor
+or stable witness.
 
 Only `NodeObserved` may switch actor incarnation. At least one comparable
 `StartedAt` or process `StartTicks` proof is strictly newer and no available proof
 is older. Retired, equal, contradictory, and unproven incarnations do not switch.
 Different-incarnation non-node events cannot establish identity. Task 5 resets
-incarnation-scoped identity and state records only; Task 7 owns ghost resume.
+incarnation-scoped identity and state records only. Metrics and their accepted
+winning contribution provenance survive a proven incarnation switch; retired-
+incarnation events cannot mutate those frozen contributions, and new current-
+incarnation metrics may replace them by the normal winner rules. Sequence and
+source-health epochs are Task 6, while ghosts and resume cancellation are Task 7.
 A proven switch that retires incarnation A retains both A's retired proof and
 stable dedup witness. Reusing A's stable key with a changed semantic payload
 opens the collision gap atomically and cannot mutate the current incarnation.
@@ -1454,6 +1919,9 @@ type ChangeSet struct {
 ```bash
 go test ./internal/graph -run '^(TestLogicalCharge(GoldenSchedule|Saturates)|TestReconcile(ImmutableReplayAcrossCollectorRestart|SemanticCollisionOpensGapAtomically|ObservationRevisionTable|FieldWiseNodeMerge|FieldWiseMetricsMerge|ProcessIdentityDistinguishesPIDReuse|RejectsUnprovenIncarnationSwitch|AcceptsStrictlyNewerIncarnation|RetiredIncarnationReplayIsNoop|DefaultAdmissionBounds|ActiveGapEpisodes|GapLedgerCatchAll|HistoryLimitFailsClosed|RetiredStableWitnessDetectsCollision|RejectedEventIsAtomic|RetainedByteLimitRejectsAtomically|PublishedByteLimitRejectsAtomically|InvalidByteConfigRejected|DiagnosticReserveCannotBeConsumed|DiagnosticSlotsExactAndCollisionFallsBack|ExistingKeyGrowthCanReject|EqualOrSmallerExistingUpdateAtLimit|AdmissionFailureCanReplayLater|CopyOnWriteSharesUnchangedBacking|CopyOnWriteReplacesOnlyAffectedRecords|CandidateGenerationChargeMismatchRejectsBeforeCommit|GapOnlyPublicationReusesNodeAndEdgeBacking|PublishedSnapshotEpochRetentionBounded|RepresentativeFleetHeapBelow64MiB|JSONSafeCounterAndRevisionCeilings|RevisionCeilingStopsWithoutDiagnosticRecursion))$' -count=1
 go test ./internal/types ./internal/join -count=1
+go test -race ./internal/graph -count=1
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1
+go vet ./internal/graph
 go test ./internal/graph -run '^$' -bench 'Benchmark(LogicalCharge|Reconcile)RepresentativeFleet$' -benchmem -count=3
 ```
 
@@ -1495,8 +1963,44 @@ Budget and copy-on-write plants are exact:
 
 Restore and record every exact named test's pair:
 
+Task-local deep-tests artifacts are mandatory before commit. `tests/RISK_MODEL.md`
+maps all 33 tests and two benchmarks. `tests/SABOTAGE_LOG.md` records one physical
+production mutation and one physical weakened-assertion mutation per test with
+prediction, observed behavioral RED or false GREEN, restoration, and rerun. A
+compile-only failure does not satisfy behavioral RED. `tests/LOUDNESS_AUDIT.md`
+contains a Task 5 Phase D sweep of every assertion and assertion helper in
+`internal/graph/bytes_test.go` and `internal/graph/reconcile_test.go`, including
+success, charge, COW, heap, error, and rejection paths. It includes every
+`Fatalf`, `Errorf`, `Fatal`, helper failure call, and assertion-library call. Each
+literal file:line row records the four boxes: present-tense rule name, enough
+offending state to debug without rerun, unique greppable phrase, and present-tense
+wording. Repair every failed box. Each `EXEMPTION:` names the exact covering
+assertion and file:line; generic coverage is invalid. Stage this task-local audit.
+Task 12 re-audits the branch but does not substitute for Task 5 Phase D evidence.
+
+Attempt the pinned critical-path mutation tool against both production files:
+
 ```bash
-git add internal/graph/bytes.go internal/graph/bytes_test.go internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
+aitop_task5_mutation_dir="$(mktemp -d)"
+GOBIN="$aitop_task5_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task5_mutation_tool="$aitop_task5_mutation_dir/go-mutesting"
+test -x "$aitop_task5_mutation_tool"
+go version -m "$aitop_task5_mutation_tool"
+"$aitop_task5_mutation_tool" --exec-timeout=15 internal/graph/bytes.go
+"$aitop_task5_mutation_tool" --exec-timeout=15 internal/graph/reconcile.go
+```
+
+Attach the score and surviving mutants. If the Go 1.26
+`go/types.(*StdSizes).Sizeof` nil-receiver package-loading crash recurs, attach
+that exact failure, pinned tool metadata, and `go version`, then mark the
+automated score unavailable; the
+33 physical pairs, comprising 66 individual plants, remain mandatory. Confirm no
+tool mutation remains in the
+worktree, rerun the anchored suite, race, 386 compile, vet, and loudness gates,
+then stage only Task 5 files:
+
+```bash
+git add internal/graph/bytes.go internal/graph/bytes_test.go internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
 git commit -m "feat: reconcile graph node observations"
 ```
 
@@ -1507,6 +2011,7 @@ git commit -m "feat: reconcile graph node observations"
 - Modify: `internal/graph/reconcile_test.go`
 - Modify: `tests/RISK_MODEL.md`
 - Modify: `tests/SABOTAGE_LOG.md`
+- Modify: `tests/LOUDNESS_AUDIT.md`
 
 - [ ] **Step 1: Amend the risk model and freeze coverage names**
 
@@ -1592,10 +2097,33 @@ source incarnations, late-heartbeat resurrection, terminal expiry, and clearing
 all relationships for one resolution. Also replace per-actor native heartbeat
 lanes with one source-wide timestamp; this must make
 `TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane` RED. Restore and
-record every exact named test's pair:
+record every exact named test's pair. Physical production and assertion plants
+remain mandatory regardless of mutation-tool availability.
+
+Task 6 changes the same critical `reconcile.go` surface as Task 5. Run the exact
+Task 5 pinned `go-mutesting` version against `internal/graph/reconcile.go` again.
+The only permitted citation instead of rerun is the Task 5 report for that exact
+pinned tool under the same `go version` when it records the same Go
+`go/types.(*StdSizes).Sizeof` nil-receiver package-loading crash. Cite its literal
+report location, tool build metadata, Go version, and failure signature in the
+Task 6 sabotage section. If any item differs, reinstall the exact pin and rerun.
+A different failure, missing metadata, or unexplained survivor blocks GREEN.
+Confirm no tool mutation remains.
+
+Before commit, perform a task-local Phase D sweep of every assertion and assertion
+helper in the complete modified `internal/graph/reconcile_test.go`, including
+inherited Task 5 sites and all success, timing, state, and rejection paths. Audit
+`Fatalf`, `Errorf`, `Fatal`, helper failure calls, and assertion-library calls.
+Append one literal file:line row per site to `tests/LOUDNESS_AUDIT.md` with the
+four-box result: present-tense rule name, enough offending state to debug without
+rerun, unique greppable phrase, and present-tense wording. Repair every failed
+box; an `EXEMPTION:` must name the exact covering assertion and file:line. Rerun
+the Step 5 suite plus package, race, 386 compile, vet, and `git diff --check` after
+restoring every plant. Task 12 re-audits this evidence; it is not a substitute
+for Task 6's full assertion sweep.
 
 ```bash
-git add internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
+git add internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
 git commit -m "feat: reconcile ordered state events"
 ```
 
@@ -1606,6 +2134,7 @@ git commit -m "feat: reconcile ordered state events"
 - Modify: `internal/graph/reconcile_test.go`
 - Modify: `tests/RISK_MODEL.md`
 - Modify: `tests/SABOTAGE_LOG.md`
+- Modify: `tests/LOUDNESS_AUDIT.md`
 
 - [ ] **Step 1: Amend the risk model and freeze coverage names**
 
@@ -1710,7 +2239,9 @@ Task 7 calls the generic Task 5 charger and does not modify `bytes.go` or its
 golden schedule. Adding either contribution type to an existing edge is a staged
 history and byte admission. Rejection leaves public edge fields, counters,
 delivery, partial state, and both private maps unchanged. Updating an existing
-contribution with equal or smaller charge remains legal at the limit.
+contribution with equal or smaller charge remains legal at the limit only when
+the fully staged retained, published, and history totals have zero or net-
+nonpositive growth; positive growth may reject.
 
 Public relationship timestamps derive as minimum CreatedAt and maximum
 LastActivity. EventCount is the JSON-safe sum of contribution counts. Native
@@ -1784,10 +2315,33 @@ For relationship and message byte-limit tests, skip generic charge admission;
 each assertion plant removes only atomic private/public edge equality. A second
 row makes equal-size existing updates reject and removes only their acceptance
 assertion.
-Restore and record every exact named test's pair:
+Restore and record every exact named test's pair. Physical production and
+assertion plants remain mandatory regardless of mutation-tool availability.
+
+Task 7 again changes the Task 5 critical reducer. Run the exact Task 5 pinned
+`go-mutesting` version against `internal/graph/reconcile.go`. The only permitted
+citation instead of rerun is the Task 5 report for that exact pinned tool under
+the same `go version` when it records the same
+`go/types.(*StdSizes).Sizeof` nil-receiver package-loading crash. Cite its literal
+report location, tool build metadata, Go version, and failure signature in the
+Task 7 sabotage section. Any mismatch requires reinstalling the exact pin and
+rerunning it. A different failure, missing metadata, or unexplained survivor
+blocks GREEN. Confirm no tool mutation remains.
+
+Before commit, perform a task-local Phase D sweep of every assertion and assertion
+helper in the complete modified `internal/graph/reconcile_test.go`, including all
+inherited Task 5 and Task 6 sites and all topology, message, ghost, charge,
+success, and rejection paths. Audit `Fatalf`, `Errorf`, `Fatal`, helper failure
+calls, and assertion-library calls. Append one literal file:line row per site to
+`tests/LOUDNESS_AUDIT.md` with the four-box result: present-tense rule name, enough
+offending state to debug without rerun, unique greppable phrase, and present-tense
+wording. Repair every failed box; an `EXEMPTION:` must name the exact covering
+assertion and file:line. Rerun the Step 5 suite plus package, race, 386 compile,
+vet, and `git diff --check` after restoring every plant. Task 12 re-audits this
+evidence; it is not a substitute for Task 7's full assertion sweep.
 
 ```bash
-git add internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
+git add internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
 git commit -m "feat: reconcile graph relationships and lifecycle"
 ```
 
