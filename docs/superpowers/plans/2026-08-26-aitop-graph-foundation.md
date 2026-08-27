@@ -161,6 +161,20 @@ type Metrics struct {
 	CostSource    string
 }
 
+type NodeState struct {
+	Value      State
+	Source     SourceRef
+	Since      time.Time
+	ValidUntil time.Time
+	Stale      bool
+}
+
+type Transition struct {
+	At     time.Time
+	State  State
+	Source SourceRef
+}
+
 type Node struct {
 	ID             NodeID
 	Incarnation    IncarnationID
@@ -198,6 +212,14 @@ type Edge struct {
 	Trace        *TraceID
 	MessageKind  MessageKind
 	Delivery     *DeliveryCounts
+}
+
+type Gap struct {
+	Source     SourceID
+	Capability Capability
+	Kind       GapKind
+	At         time.Time
+	Count      uint64
 }
 
 type Snapshot struct {
