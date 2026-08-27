@@ -94,33 +94,33 @@ func canonical(prefix string, parts ...string) (string, error) {
 	id := prefix
 	for index, part := range parts {
 		if part == "" {
-			return "", fmt.Errorf("canonical ID %q has empty component %d", prefix, index)
+			return "", fmt.Errorf("canonical ID component rule violated: prefix=%s component=%d bytes=0 class=empty", prefix, index)
 		}
 		if !utf8.ValidString(part) {
-			return "", fmt.Errorf("canonical ID %q component %d is not valid UTF-8", prefix, index)
+			return "", fmt.Errorf("canonical ID component rule violated: prefix=%s component=%d bytes=%d class=invalid-utf8; component is not valid UTF-8", prefix, index, len(part))
 		}
 		if strings.ContainsRune(part, ':') {
-			return "", fmt.Errorf("canonical ID %q component %d contains delimiter ':'", prefix, index)
+			return "", fmt.Errorf("canonical ID component rule violated: prefix=%s component=%d bytes=%d class=delimiter; contains delimiter ':'", prefix, index, len(part))
 		}
 		for _, r := range part {
 			if unicode.IsControl(r) {
-				return "", fmt.Errorf("canonical ID %q component %d contains control rune U+%04X", prefix, index, r)
+				return "", fmt.Errorf("canonical ID component rule violated: prefix=%s component=%d bytes=%d class=control; contains control rune U+%04X", prefix, index, len(part), r)
 			}
 		}
 		id += ":" + part
 	}
 	if len(id) > maxCanonicalIDBytes {
-		return "", fmt.Errorf("canonical ID %q is %d bytes; maximum is %d", id, len(id), maxCanonicalIDBytes)
+		return "", fmt.Errorf("canonical ID length rule violated: prefix=%s is %d bytes; maximum is %d; class=too-long", prefix, len(id), maxCanonicalIDBytes)
 	}
 	return id, nil
 }
 
 func validateProcessIdentity(p ProcessIdentity) error {
 	if p.PID <= 0 {
-		return fmt.Errorf("pid/start invariant violated: pid=%d startTicks=%d; pid must be positive", p.PID, p.StartTicks)
+		return fmt.Errorf("process-identity rule violated: field=PID class=nonpositive")
 	}
 	if p.StartTicks == 0 {
-		return fmt.Errorf("pid/start invariant violated: pid=%d startTicks=%d; start ticks must be positive", p.PID, p.StartTicks)
+		return fmt.Errorf("process-identity rule violated: field=StartTicks class=nonpositive")
 	}
 	return nil
 }
@@ -136,6 +136,6 @@ func validateRuntime(runtime types.Runtime) error {
 		types.RuntimeLocal:
 		return nil
 	default:
-		return fmt.Errorf("canonical ID runtime %q is an unknown or unsupported runtime", runtime)
+		return fmt.Errorf("canonical ID runtime rule violated: field=Runtime bytes=%d class=unsupported; unknown or unsupported runtime", len(runtime))
 	}
 }

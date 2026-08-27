@@ -419,10 +419,12 @@ func TestProcessIdentityRejectsPartialIdentity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.make()
-			pidContext := "pid=" + decimalInt32(tt.pid)
-			startContext := "startTicks=" + decimalUint64(tt.startTicks)
-			if err == nil || !strings.Contains(err.Error(), "pid/start invariant") || !strings.Contains(err.Error(), pidContext) || !strings.Contains(err.Error(), startContext) {
-				t.Fatalf("pid-start-pair invariant violated: rule=partial-identity name=%q input={pid:%d startTicks:%d} result=%q wantContexts=%q,%q error=%v", tt.name, tt.pid, tt.startTicks, got, pidContext, startContext, err)
+			wantField := "PID"
+			if tt.pid > 0 {
+				wantField = "StartTicks"
+			}
+			if err == nil || !strings.Contains(err.Error(), "process-identity rule") || !strings.Contains(err.Error(), "field="+wantField) || !strings.Contains(err.Error(), "class=nonpositive") {
+				t.Fatalf("pid-start-pair safe-rejection invariant violated: rule=partial-identity name=%q pidClass=%s startTicksClass=%s result=%q wantField=%s error=%v", tt.name, classifyPID(tt.pid), classifyStartTicks(tt.startTicks), got, wantField, err)
 			}
 		})
 	}
@@ -478,24 +480,6 @@ func TestProcessIdentityDistinguishesPIDReuse(t *testing.T) {
 
 func stringResult[T ~string](value T, err error) (string, error) {
 	return string(value), err
-}
-
-func decimalInt32(value int32) string {
-	if value == 0 {
-		return "0"
-	}
-	negative := value < 0
-	var magnitude uint32
-	if negative {
-		magnitude = uint32(-(int64(value)))
-	} else {
-		magnitude = uint32(value)
-	}
-	result := decimalUint64(uint64(magnitude))
-	if negative {
-		return "-" + result
-	}
-	return result
 }
 
 func decimalUint64(value uint64) string {

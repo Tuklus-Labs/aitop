@@ -414,3 +414,267 @@ Each review-specific pair was physically applied with `apply_patch`, run, weaken
 | 32-bit variadic portability | Removed only `uint64(...)` around the production constant in `fmt.Errorf`. Predicted the exact Linux/386 compile-only gate would turn RED. Ran `GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1`. | RED: `types.go:280:82: cannot use maxJSONSafeInteger ... as int value in argument to fmt.Errorf (overflows)`; package build failed before tests. | Weakened only the gate to the native-architecture command `go test ./internal/graph -run '^$' -count=1`. Predicted the same defective source would compile falsely GREEN on amd64. | PASS: `ok aitop/internal/graph [no tests to run]`. | Restored the `uint64` boundary conversion; the exact Linux/386 gate PASSed. Native compilation cannot substitute for the cross-architecture contract. |
 
 All four review-specific production and weakening plants were restored before final loudness and verification work. The earlier six Task 2A pairs and pinned mutation-tool failure remain historical evidence and were not rewritten.
+
+## Graph event replay, ingress, and ownership contracts, Task 3A (2026-08-27, base `04b93d6`)
+
+The eight-axis risk model, all nine bug prefixes, and the exact 21-test mapping were written before Task 3A test or production edits. The first fixed-vector test was behaviorally RED against landed Task 3: ordered observation fingerprint `4b01751b...` differed from the independent `4f45317a...`; structural fingerprint `82d9aacc...` differed from `96be9efe...`; and changing only `ReceivedAt` changed a replay fingerprint. The nine-domain mode table was then compile RED because the frozen constants did not exist. Validation/closure was compile RED on absent gap status. Candidate coalescing was behaviorally RED on forbidden modes, Node, terminal state, and omitted lane fields. Pair replacement and cloning were compile RED on absent helpers. Audit additions produced independent REDs for raw enum/runtime/kind errors, heartbeat mixed observation regimes, and CostSource-only loss. Each batch became GREEN only after its minimal production implementation.
+
+Historical Task 3 conclusions are preserved above but superseded as follows:
+
+- `GF-EVENT-BOUND-2a / TestEventMetricsDoesNotInventNumericPolicy` is wrong for the corrected contract. `TestSemanticValidationTable`, `TestCostSourceContract`, and `TestRejectsNonFiniteJSONHazards` now require closed JSON-safe numeric semantics.
+- `GF-EVENT-1b / TestObservationRejectsInvalidRevision` remains useful only for shape rejection. Its digest-first replay conclusion is superseded by timestamp-first ordered observations and digest-keyed structural observations in `TestObservationDedupTimestampFirst`.
+- `GF-EVENT-3b`, `GF-EVENT-3c`, and the later `GF-EVENT-3d` conclusions under the old fingerprint tests are superseded. Invalid present-zero sequence/time/trace values are validation failures, volatile receiver fields do not fingerprint, and the new semantic-field matrix plus independent fixed vectors define participation.
+- `GF-COALESCE-1a / TestCoalesceOnlySupersedableEvents` is superseded. Node never ingress-coalesces and candidate keys are full source lanes, not source-independent actor keys.
+
+### Task 3A physical sabotage pairs
+
+Every row below is executed one at a time with `apply_patch`. The production plant remains active while only the named decisive assertion is weakened; the same isolated command must then go falsely GREEN. Both changes are restored before the next row.
+
+| Exact test | Production plant and predicted RED | Production observation | Assertion weakening and predicted false GREEN | False-GREEN observation | Restoration and conclusion |
+|---|---|---|---|---|---|
+| `TestEventReplayModeFingerprintTable` | Changed `domainCoalesceKey` from v1 to v2. Predicted the exact domain row would fail. Ran `go test ./internal/graph -run '^TestEventReplayModeFingerprintTable$' -count=1`. | RED: `canonical event-domain literal contract violated: name=coalesce got=...v2 want=...v1`. | Removed only the coalesce-domain row. Predicted false GREEN under the same command. | PASS. | Restored the row and v1 literal. The exact ninth domain is load-bearing. |
+| `TestEventReplayAndCollisionComposition` | Included `ReceivedAt` in every fingerprint. Predicted legitimate replay would collide. Ran `go test ./internal/graph -run '^TestEventReplayAndCollisionComposition$' -count=1`. | RED: replay duplicate produced `fingerprint-collision rule violated`. | Removed only the replay `CheckFingerprintCollision` call. Predicted false GREEN while semantic-collision checks remained. | PASS. | Restored the call and removed `ReceivedAt` from the encoder. Replay composition is load-bearing. |
+| `TestEventFingerprintIncludesEverySemanticFieldAndPayload` | Omitted `Metrics.CostSource` from payload encoding. Predicted the default and every-mode mutations would fail. Ran the single named test. | RED at `metrics-cost-source` and `metrics-cost-source-mode-immutable-log` before the first failing subtest stopped the mode loop. | Removed only the CostSource mutation row, which also removed its derived mode rows. Predicted false GREEN. | PASS. | Restored the row and encoder field. CostSource participation is load-bearing across modes. |
+| `TestObservationDedupTimestampFirst` | Encoded digest instead of nonzero `At` in the ordered dedup key. Predicted the digest-witness equality assertion would fail. Ran the single named test. | RED: same timestamp with different digest produced different keys. | Removed only the ordered timestamp-first block, retaining structural replay assertions. Predicted false GREEN. | PASS. | Restored the ordered block and timestamp encoding. Timestamp-first identity is load-bearing. |
+| `TestObservationFingerprintCanonicalizesTime` | Changed the ordered fingerprint domain to v2. Predicted the independent fixed vector would fail. Ran the single named test. | RED: got `eb31f724...`, wanted `4f45317a...`. | Removed only the ordered fixed-vector/domain comparison. Predicted false GREEN while equal-instant and structural checks remained. | PASS. | Restored v1 and the comparison. The independent ordered vector is load-bearing. |
+| `TestEventKindPayloadCartesianClosed` | Accepted a nonnil `*NodeObserved` pointer as a value payload. Predicted the pointer malformed row would fail. Ran the single named test. | RED: pointer payload validated successfully. | Removed only the pointer row. Predicted false GREEN while nil, typed nil, unknown, zero-kind, and 10x10 checks remained. | PASS. | Restored exact-value-only switching and the row. Pointer rejection is load-bearing. |
+| `TestEventRejectsMalformedIdentityBounds` | Raised only the target-incarnation limit from 192 to 193. Predicted the 193-byte target-incarnation case would fail. Ran the single named test. | RED: `TargetIncarnation` returned nil for rejected length 193. | Skipped only that field/length pair; invalid UTF-8 and control cases remained. Predicted false GREEN. | PASS. | Restored the 192 limit and row. The endpoint-specific boundary is load-bearing. |
+| `TestEventRejectsInvalidOptionalZeros` | Removed protocol sequence-zero rejection. Predicted the sequence row would fail. Ran the single named test. | RED: present sequence zero returned nil. | Removed only the sequence-zero row and its unused fixture variable. Predicted false GREEN. | PASS. | Restored validation, row, and fixture. Nil-only absence is load-bearing. |
+| `TestEventRelationshipIDIsOpaqueAndBounded` | Rejected non-UTF-8 relationship bytes. Predicted all three owners would fail opaque-byte acceptance. Ran the single named test. | RED for relationship, message, and state owners on byte `ff`. | Removed only opaque-byte acceptance; empty and 64/65-byte boundaries remained. Predicted false GREEN. | PASS. | Restored opaque semantics and acceptance. The relationship byte contract is load-bearing. |
+| `TestGapObservedOpenResolvedValidation` | First accepted open count zero, then separately rejected empty scalar capability. Predicted the exact status/count row and both empty-capability positive rows would fail. Ran the single named test for each plant. | RED first on open count zero; RED second on legal empty open and resolved payloads. | Removed only the open-zero invalid row for the first plant, then only empty from the legal capability list for the second. Predicted false GREEN separately. | PASS for both weakened runs. | Restored both guards and rows before proceeding. Status/count and empty-as-unknown are independently load-bearing. |
+| `TestCoalesceCandidateLaneTable` | Allowed `NodeObserved` into candidate lanes. Predicted the identity-critical rejection row would fail. Ran the single named test. | RED: Node returned a nonempty coalesce key. | Removed only Node from the forbidden-kind list. Predicted false GREEN. | PASS. | Restored Node rejection and the row. Identity evidence cannot be ingress-coalesced. |
+| `TestCanCoalesceReplaceOrdering` | Treated any unequal ordered observation time as newer. Predicted reverse order would be accepted. Ran the single named test. | RED: reverse ordered observation returned true. | Removed only reverse-order assertions. Predicted false GREEN while strict forward, equal, mixed-regime, and lane checks remained. | PASS. | Restored `After` and reverse checks. Directional ordering is load-bearing. |
+| `TestCanCoalesceReplaceRequiresMetricCoverage` | Removed only the `CostUSD` presence guard. A runtime-cost fixture kept CostSource empty so no second guard could mask the defect. Ran the single named test. | RED: missing runtime cost returned true. | Removed only the runtime-cost loss row. Predicted false GREEN while CostSource-only and six other field losses remained. | PASS. | Restored the CostUSD guard and row. Cost and source presence are independently load-bearing. |
+| `TestCloneEventDeeplyIsolatesPointers` | Shallow-copied `Metrics.CostUSD`. Predicted caller-to-clone and clone-to-caller isolation would fail. Ran the single named test. | RED on caller mutation changing cloned cost. | Removed only both CostUSD mutations, retaining value checks and every other pointer mutation. Predicted false GREEN. | PASS. | Restored deep copy and both directional mutations. Cost ownership is load-bearing. |
+| `TestCloneEventRejectsInvalidPayloadShapes` | Normalized typed-nil `*NodeObserved` to zero `NodeObserved` with nil error. Predicted the typed-nil row would fail. Ran the single named test. | RED: nonzero cloned envelope and nil error. | Removed only typed-nil row and its now-unused fixture. Predicted false GREEN. | PASS. | Restored exact switch and typed-nil row. Typed nil cannot cross async ownership. |
+| `TestSemanticValidationTable` | Exempted CacheRead from the JSON-safe ceiling. Predicted its over-safe row would fail. Ran the single named test. | RED: over-safe CacheRead validated. | Removed only that row. Predicted false GREEN. | PASS. | Restored the shared ceiling and row. Every counter is independently constrained. |
+| `TestCostSourceContract` | Accepted `table:user` without cost while retaining the builtin guard. Predicted only that combination would fail. Ran the single named test. | RED: user-table source without cost returned nil. | Removed only the user-without-cost invalid case. Predicted false GREEN. | PASS. | Restored shared cost requirement and case. Cost-source pairing is load-bearing. |
+| `TestRejectsNonFiniteJSONHazards` | Accepted NaN while still rejecting infinities. Predicted all four NaN field rows would fail. Ran the single named test. | RED for TokenRate, ContextFill, CacheUse, and CostUSD NaN. | Removed only NaN from the nonfinite value table. Predicted false GREEN. | PASS. | Restored NaN rejection and row. Each JSON number must be finite. |
+| `TestValidationErrorsDoNotEchoRejectedBytes` | Separately formatted actor ID, relationship, observation key, display, cost source, and source collector bytes with `%q`. Ran the single named test for each family. | The first actor run unexpectedly passed because the test searched only raw newline bytes; it is a discarded non-verdict. After strengthening the helper to reject raw, quoted, ASCII-quoted, and hex forms, actor and all five other families turned RED on their unique sentinel. | Removed only the matching unique family row for each active plant. Predicted false GREEN each time. | PASS for all six weakened runs. | Restored every production/error row. The six family assertions are load-bearing; the initial miss remains recorded rather than counted. |
+| `TestPublicRolesExcludeClassifierSentinels` | Separately accepted `RoleIgnore` and `RoleDrop`. Ran the single named test for each. | RED first for `ignore`, then independently for the empty drop sentinel. | Retained only the other sentinel in the rejection slice for each plant. Predicted false GREEN. | PASS for both weakened runs. | Restored the six-role switch and both sentinel rows. Each classifier-only sentinel is independently excluded. |
+| `TestEventProcessIdentityJSONSafeBoundaries` | At NodeObserved, LaunchIntent child, and SessionBind, separately accepted zero StartTicks and above-safe StartTicks. Ran the single named test for all six site/bound plants. | Each plant turned RED only at its site and bound, with nil error instead of safe field/class/limit diagnostics. | Skipped only the matching site/bound row while retaining the other eleven site/bound combinations. Predicted false GREEN for each plant. | PASS for all six weakened runs. | Restored event-layer validation and all rows after every plant. Standalone constructors were never tightened. |
+
+Physical sabotage result: 21 exact tests completed, plus two independent gap branches, two independent public-role branches, six safe-error families, and six process site/bound branches. One initial safe-error run was a discarded non-verdict and was rerun after the assertion was repaired. Every counted production plant turned RED, every named weakening turned falsely GREEN with the plant still active, and every change was restored before the next pair.
+
+### Task 3A pinned mutation-tool escalation
+
+Commands:
+
+```bash
+aitop_task3a_mutation_dir="$(mktemp -d)"
+GOBIN="$aitop_task3a_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task3a_mutation_tool="$aitop_task3a_mutation_dir/go-mutesting"
+test -x "$aitop_task3a_mutation_tool"
+go version
+go version -m "$aitop_task3a_mutation_tool"
+"$aitop_task3a_mutation_tool" --exec-timeout=15 internal/graph/id.go
+"$aitop_task3a_mutation_tool" --exec-timeout=15 internal/graph/event.go
+```
+
+Go version:
+
+```text
+go version go1.26.6-X:nodwarf5 linux/amd64
+```
+
+Pinned tool build identity:
+
+```text
+/tmp/tmp.GCP4bjZ5ms/go-mutesting: go1.26.6-X:nodwarf5
+	path	github.com/zimmski/go-mutesting/cmd/go-mutesting
+	mod	github.com/zimmski/go-mutesting	v0.0.0-20210610104036-6d9217011a00	h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+	dep	github.com/davecgh/go-spew	v1.1.0	h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
+	dep	github.com/jessevdk/go-flags	v1.4.0	h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
+	dep	github.com/pmezard/go-difflib	v1.0.0	h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+	dep	github.com/stretchr/testify	v1.4.0	h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
+	dep	github.com/zimmski/go-tool	v0.0.0-20150119110811-2dfdc9ac8439	h1:yHqsjUkj0HWbKPw/6ZqC0/eMklaRpqubA199vaRLzzE=
+	dep	github.com/zimmski/osutil	v0.0.0-20190128123334-0d0b3ca231ac	h1:uiFRlKzyIzHeLOthe0ethUkSGW7POlqxU3Tc21R8QpQ=
+	dep	golang.org/x/tools	v0.0.0-20191018212557-ed542cd5b28a	h1:UuQ+70Pi/ZdWHuP4v457pkXeOynTdgd/4enxeIO/98k=
+	dep	gopkg.in/yaml.v2	v2.2.2	h1:ZCJp+EgiOT7lHqUV2J862kp8Qj64Jo6az82+3Td9dZw=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	DefaultGODEBUG=asynctimerchan=1,containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,gotypesalias=0,httpcookiemaxnum=0,httplaxcontentlength=1,httpmuxgo121=1,httpservecontentkeepheaders=1,multipathtcp=0,netedns0=0,panicnil=1,randseednop=0,rsa1024min=0,tls10server=1,tls3des=1,tlsmlkem=0,tlsrsakex=1,tlssecpmlkem=0,tlssha1=1,tlsunsafeekm=1,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509keypairleaf=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509usepolicies=0
+	build	CGO_ENABLED=1
+	build	CGO_CFLAGS=
+	build	CGO_CPPFLAGS=
+	build	CGO_CXXFLAGS=
+	build	CGO_LDFLAGS=
+	build	GOARCH=amd64
+	build	GOEXPERIMENT=nodwarf5
+	build	GOOS=linux
+	build	GOAMD64=v1
+```
+
+`internal/graph/id.go` exit status: 2
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5cbef2]
+
+goroutine 150 [running]:
+go/types.(*Checker).handleBailout(0xe73c2e30600, 0xe73c34d1c88)
+	/usr/lib/go/src/go/types/check.go:473 +0x91
+panic({0x76b6c0?, 0xa62f40?})
+	/usr/lib/go/src/runtime/panic.go:860 +0x13a
+go/types.(*StdSizes).Sizeof(0x0, {0x7f1ae0, 0xa673c0})
+	/usr/lib/go/src/go/types/sizes.go:229 +0x312
+go/types.(*Config).sizeof(...)
+	/usr/lib/go/src/go/types/sizes.go:334
+go/types.representableConst.func1(...)
+	/usr/lib/go/src/go/types/const.go:77
+go/types.representableConst({0x7f32e0, 0x8020c8}, 0xe73c2e30600, 0xa673c0, 0xe73c34d0a48)
+	/usr/lib/go/src/go/types/const.go:93 +0x1e9
+go/types.(*Checker).representation(0xe73c2e30600, 0xe73c344b900, 0xa673c0)
+	/usr/lib/go/src/go/types/const.go:257 +0x5f
+go/types.(*Checker).implicitTypeAndValue(0xe73c2e30600, 0xe73c344b900, {0x7f1ae0?, 0xa673c0?})
+	/usr/lib/go/src/go/types/expr.go:404 +0x3ed
+go/types.(*Checker).convertUntyped(0xe73c2e30600, 0xe73c344b900, {0x7f1ae0, 0xa673c0})
+	/usr/lib/go/src/go/types/const.go:290 +0x3f
+go/types.(*Checker).isValidIndex(0xe73c2e30600, 0xe73c344b900, 0x34, {0x7cc754, 0x5}, 0x0)
+	/usr/lib/go/src/go/types/index.go:425 +0x7b
+go/types.(*Checker).index(0xe73c2e30600, {0x7f28f0, 0xe73c34c41e0}, 0xffffffffffffffff)
+	/usr/lib/go/src/go/types/index.go:396 +0xbd
+go/types.(*Checker).indexExpr(0xe73c2e30600, 0xe73c344b8c0, 0xe73c2fc14a0)
+	/usr/lib/go/src/go/types/index.go:207 +0x60e
+go/types.(*Checker).exprInternal(0xe73c2e30600, 0x0, 0xe73c344b8c0, {0x7f2da0, 0xe73c34c4210}, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/expr.go:1092 +0xb97
+go/types.(*Checker).rawExpr(0xe73c2e30600, 0x0, 0xe73c344b8c0, {0x7f2da0?, 0xe73c34c4210?}, {0x0?, 0x0?}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).expr(0xe73c2e30600, 0x7f2590?, 0xe73c344b8c0, {0x7f2da0?, 0xe73c34c4210?})
+	/usr/lib/go/src/go/types/expr.go:1276 +0x30
+go/types.(*Checker).assignVar(0xe73c2e30600, {0x7f2590, 0xe73c34c80a0}, {0x7f2da0, 0xe73c34c4210}, 0x0, {0x7ce238, 0xa})
+	/usr/lib/go/src/go/types/assignments.go:272 +0x1af
+go/types.(*Checker).assignVars(0xe73c2e30600, {0xe73c3496060?, 0x1, 0x412707?}, {0xe73c3496070, 0x7b2a60?, 0xe73c34d1180?})
+	/usr/lib/go/src/go/types/assignments.go:486 +0x2ea
+go/types.(*Checker).stmt(0xe73c2e30600, 0x0, {0x7f2a40, 0xe73c34d4080})
+	/usr/lib/go/src/go/types/stmt.go:515 +0xb5c
+go/types.(*Checker).stmtList(0xe73c2e30600, 0x0, {0xe73c34c81a0?, 0xe73c312c1e0?, 0xe73c3512d20?})
+	/usr/lib/go/src/go/types/stmt.go:125 +0x85
+go/types.(*Checker).funcBody(0xe73c2e30600, 0x7f2590?, {0xe73c3492130?, 0x5?}, 0xe73c3240f80, 0xe73c34c4390, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/stmt.go:42 +0x37b
+go/types.(*Checker).funcDecl.func1()
+	/usr/lib/go/src/go/types/decl.go:838 +0x3a
+go/types.(*Checker).processDelayed(0xe73c2e30600, 0x0)
+	/usr/lib/go/src/go/types/check.go:595 +0x1e2
+go/types.(*Checker).checkFiles(0xe73c2e30600, {0xe73c3102048?, 0x5875c5?, 0xa678e0?})
+	/usr/lib/go/src/go/types/check.go:537 +0x3f9
+go/types.(*Checker).Files(0xe73c2e68240?, {0xe73c3102048?, 0xe73c312c240?, 0x9?})
+	/usr/lib/go/src/go/types/check.go:491 +0x75
+golang.org/x/tools/go/packages.(*loader).loadPackage(0xe73c2e68240, 0xe73c33ab800)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:835 +0x6ba
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1()
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:685 +0x1a7
+sync.(*Once).doSlow(0x0?, 0x0?)
+	/usr/lib/go/src/sync/once.go:78 +0xac
+sync.(*Once).Do(...)
+	/usr/lib/go/src/sync/once.go:69
+golang.org/x/tools/go/packages.(*loader).loadRecursive(0x0?, 0x0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:673 +0x3b
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1.1(0x0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:680 +0x26
+created by golang.org/x/tools/go/packages.(*loader).loadRecursive.func1 in goroutine 60
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:679 +0x8c
+```
+
+`internal/graph/event.go` exit status: 2
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5cbef2]
+
+goroutine 423 [running]:
+go/types.(*Checker).handleBailout(0x33e41d0a2000, 0x33e41cfe1c88)
+	/usr/lib/go/src/go/types/check.go:473 +0x91
+panic({0x76b6c0?, 0xa62f40?})
+	/usr/lib/go/src/runtime/panic.go:860 +0x13a
+go/types.(*StdSizes).Sizeof(0x0, {0x7f1ae0, 0xa673c0})
+	/usr/lib/go/src/go/types/sizes.go:229 +0x312
+go/types.(*Config).sizeof(...)
+	/usr/lib/go/src/go/types/sizes.go:334
+go/types.representableConst.func1(...)
+	/usr/lib/go/src/go/types/const.go:77
+go/types.representableConst({0x7f32e0, 0x8020c0}, 0x33e41d0a2000, 0xa673c0, 0x33e41cfe0080)
+	/usr/lib/go/src/go/types/const.go:93 +0x1e9
+go/types.(*Checker).representation(0x33e41d0a2000, 0x33e41ce2ec00, 0xa673c0)
+	/usr/lib/go/src/go/types/const.go:257 +0x5f
+go/types.(*Checker).implicitTypeAndValue(0x33e41d0a2000, 0x33e41ce2ec00, {0x7f1ae0?, 0xa673c0?})
+	/usr/lib/go/src/go/types/expr.go:404 +0x3ed
+go/types.(*Checker).convertUntyped(0x33e41d0a2000, 0x33e41ce2ec00, {0x7f1ae0, 0xa673c0})
+	/usr/lib/go/src/go/types/const.go:290 +0x3f
+go/types.(*Checker).matchTypes(0x33e41d0a2000, 0x33e41ce2ebc0, 0x33e41ce2ec00)
+	/usr/lib/go/src/go/types/expr.go:929 +0x79
+go/types.(*Checker).binary(0x33e41d0a2000, 0x33e41ce2ebc0, {0x7f2830, 0x33e41cea8390}, {0x7f2590, 0x33e41ceab540}, {0x7f28f0, 0x33e41cea8360}, 0x2c, 0x2b74)
+	/usr/lib/go/src/go/types/expr.go:799 +0x145
+go/types.(*Checker).exprInternal(0x33e41d0a2000, 0x0, 0x33e41ce2ebc0, {0x7f2830, 0x33e41cea8390}, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/expr.go:1179 +0x745
+go/types.(*Checker).rawExpr(0x33e41d0a2000, 0x0, 0x33e41ce2ebc0, {0x7f2830?, 0x33e41cea8390?}, {0x0?, 0x0?}, 0x1)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).genericExprList(0x33e41d0a2000, {0x33e41ce94100, 0x1, 0x33e41ceab520?})
+	/usr/lib/go/src/go/types/call.go:408 +0x3b5
+go/types.(*Checker).callExpr(0x33e41d0a2000, 0x33e41ce2eb80, 0x33e41ce861c0)
+	/usr/lib/go/src/go/types/call.go:306 +0x8b3
+go/types.(*Checker).exprInternal(0x33e41d0a2000, 0x0, 0x33e41ce2eb80, {0x7f2aa0, 0x33e41ce861c0}, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/expr.go:1137 +0x870
+go/types.(*Checker).rawExpr(0x33e41d0a2000, 0x0, 0x33e41ce2eb80, {0x7f2aa0?, 0x33e41ce861c0?}, {0x0?, 0x0?}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).expr(0x33e41d0a2000, 0x33e41ce2eb80?, 0x33e41ce2eb80, {0x7f2aa0?, 0x33e41ce861c0?})
+	/usr/lib/go/src/go/types/expr.go:1276 +0x30
+go/types.(*Checker).callExpr(0x33e41d0a2000, 0x33e41ce2eb80, 0x33e41ce86200)
+	/usr/lib/go/src/go/types/call.go:208 +0x3db
+go/types.(*Checker).exprInternal(0x33e41d0a2000, 0x0, 0x33e41ce2eb80, {0x7f2aa0, 0x33e41ce86200}, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/expr.go:1137 +0x870
+go/types.(*Checker).rawExpr(0x33e41d0a2000, 0x0, 0x33e41ce2eb80, {0x7f2aa0?, 0x33e41ce86200?}, {0x0?, 0x0?}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:982 +0x18c
+go/types.(*Checker).multiExpr(0x33e41d0a2000, {0x7f2aa0, 0x33e41ce86200}, 0x0)
+	/usr/lib/go/src/go/types/expr.go:1295 +0x79
+go/types.(*Checker).assignVars(0x33e41d0a2000, {0x33e41ce940f0, 0x1, 0x1}, {0x33e41ce94120, 0x1, 0x1})
+	/usr/lib/go/src/go/types/assignments.go:503 +0xcc
+go/types.(*Checker).stmt(0x33e41d0a2000, 0x0, {0x7f2a40, 0x33e41ce86240})
+	/usr/lib/go/src/go/types/stmt.go:515 +0xb5c
+go/types.(*Checker).stmtList(0x33e41d0a2000, 0x0, {0x33e41ceab660?, 0x33e41cc88de0?, 0x33e41d292e00?})
+	/usr/lib/go/src/go/types/stmt.go:125 +0x85
+go/types.(*Checker).funcBody(0x33e41d0a2000, 0x7f2590?, {0x33e41ce802a0?, 0x4243d3?}, 0x33e41ce2e080, 0x33e41cea8510, {0x0?, 0x0?})
+	/usr/lib/go/src/go/types/stmt.go:42 +0x37b
+go/types.(*Checker).funcDecl.func1()
+	/usr/lib/go/src/go/types/decl.go:838 +0x3a
+go/types.(*Checker).processDelayed(0x33e41d0a2000, 0x0)
+	/usr/lib/go/src/go/types/check.go:595 +0x1e2
+go/types.(*Checker).checkFiles(0x33e41d0a2000, {0x33e41cb38440?, 0x5875c5?, 0x7b8d60?})
+	/usr/lib/go/src/go/types/check.go:537 +0x3f9
+go/types.(*Checker).Files(0x33e41cb6c240?, {0x33e41cb38440?, 0x33e41cc88e40?, 0xc?})
+	/usr/lib/go/src/go/types/check.go:491 +0x75
+golang.org/x/tools/go/packages.(*loader).loadPackage(0x33e41cb6c240, 0x33e41d0fa060)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:835 +0x6ba
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1()
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:685 +0x1a7
+sync.(*Once).doSlow(0x0?, 0x0?)
+	/usr/lib/go/src/sync/once.go:78 +0xac
+sync.(*Once).Do(...)
+	/usr/lib/go/src/sync/once.go:69
+golang.org/x/tools/go/packages.(*loader).loadRecursive(0x33e41ce26110?, 0x33e41ce7cfd0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:673 +0x3b
+golang.org/x/tools/go/packages.(*loader).loadRecursive.func1.1(0x0?)
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:680 +0x26
+created by golang.org/x/tools/go/packages.(*loader).loadRecursive.func1 in goroutine 331
+	/home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:679 +0x8c
+```
+
+Killed mutants: not reported. Survived mutants: not reported. Timed-out mutants: not reported. No mutation score exists. Both attempts failed during package loading in the allowed Go 1.26 `go/types.(*StdSizes).Sizeof` nil-receiver crash from the pinned tool's 2019 `golang.org/x/tools`. The 21 physical production mutants and required branch plants above are the executable fallback report. Neither invocation reached source mutation.
+
+### Task 3A quality-gate amendment: payload type tags
+
+The official quality gate independently removed each `Data.Type` field. Metrics, State, Relationship, Message, Exit, LaunchIntent, and SessionBind survived the complete graph suite at `d340241`; Node, Heartbeat, and Gap were already killed. The risk-model amendment was written before test edits. A single ten-row table now freezes every full payload fingerprint using an independent Python standard-library oracle and one shared closed fixture.
+
+Each uncovered tag was removed alone from production, the exact fingerprint test was run, then only its literal vector row was removed while the production defect remained. All seven RED observations matched the independent omit-tag oracle. Full expected digests remain only in the committed test table; the mutant digests are recorded below as sabotage evidence and are never accepted expectations.
+
+| Payload tag | Production plant and prediction | RED observation | Assertion weakening and false-GREEN observation | Restoration and conclusion |
+|---|---|---|---|---|
+| `MetricsObserved` | Removed only its `Data.Type` field. Predicted the Metrics literal vector would fail. | RED at `payload=MetricsObserved`, mutant digest `cd771785ae0378410d135753ef1f254d2684780a3d07e0bcbc2c02ea2c42c852`; every prior field mutation still passed. | Removed only the Metrics vector row. The first weakened run was a mechanical build failure from now-unused fixture locals, not a verdict. Fixtures were organized behind the shared keyed fixture map, the plant was rerun, and the single-row weakening PASSed. | Restored tag and row. The vector is load-bearing. |
+| `StateObserved` | Removed only its `Data.Type` field. Predicted the State literal vector would fail. | RED only at the State vector, mutant digest `3d9b8ecd1445a803e7da1867d34df6d25f201728f5bae03ffc6d364568b6f48d`. | Removed only the State row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+| `RelationshipObserved` | Removed only its `Data.Type` field. Predicted the Relationship literal vector would fail. | RED only at the Relationship vector, mutant digest `0358634de6b8a5d7eef76ba97546bab7199a988efc77cb11386138e71be97fc6`. | Removed only the Relationship row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+| `MessageObserved` | Removed only its `Data.Type` field. Predicted the Message literal vector would fail. | RED only at the Message vector, mutant digest `5844388167c20bb2164ca35751001052593e47cef4398329499d1b6acba4f327`. | Removed only the Message row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+| `ExitObserved` | Removed only its `Data.Type` field. Predicted the Exit literal vector would fail. | RED only at the Exit vector, mutant digest `4e942f4bd89b3beed993ab99951015a9c32124f9f3e1f1b4e8b700a239995c00`. | Removed only the Exit row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+| `LaunchIntentObserved` | Removed only its `Data.Type` field. Predicted the LaunchIntent literal vector would fail. | RED only at the LaunchIntent vector, mutant digest `40b47485bb4ebaa567db8d1d1ba5935b72c3c375cab05d39c4df55e5164f2ef7`. | Removed only the LaunchIntent row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+| `SessionBindObserved` | Removed only its `Data.Type` field. Predicted the SessionBind literal vector would fail. | RED only at the SessionBind vector, mutant digest `63ec6af6e4b21d809a7afb49fb693709362671ee386459fdb77061dac44392f2`. | Removed only the SessionBind row; the test falsely GREENed. | Restored tag and row. The vector is load-bearing. |
+
+Quality-amend sabotage result: seven production plants RED, seven single-row weakenings falsely GREEN, and every tag and vector restored. The final table retains all ten payload types so Node, Heartbeat, and Gap share the same audit surface as the seven repaired gaps.
