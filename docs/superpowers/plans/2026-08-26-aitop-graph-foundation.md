@@ -519,10 +519,10 @@ Define the API from this plan plus:
 ```go
 func CloneSnapshot(in *Snapshot) *Snapshot
 func SortSnapshot(in *Snapshot) *Snapshot
-func (d *DeliveryCounts) Observe(v Delivery)
+func (d *DeliveryCounts) Observe(v Delivery) error
 ```
 
-`CloneSnapshot(nil)` returns an empty non-nil snapshot with non-nil empty slices. Copy every pointer value and transition slice. Sort nodes by ID, edges by key, gaps by source/capability/kind.
+`CloneSnapshot(nil)` returns an empty non-nil snapshot with non-nil empty slices. Copy every pointer value and transition slice. Sort nodes by ID, edges by key, gaps by source/capability/kind. `DeliveryCounts.Observe` returns an error for values outside the closed delivery vocabulary without mutating any counter or `Latest`.
 
 - [ ] **Step 4: Verify GREEN and race-free reads**
 
