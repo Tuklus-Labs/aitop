@@ -716,3 +716,100 @@ go version -m "$temporary_directory/go-mutesting"
 Executable validation reported Go 1.26.6 and the pinned module checksum `h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=`. The mutation command exited 2 before source mutation. Its pinned `golang.org/x/tools` version `v0.0.0-20191018212557-ed542cd5b28a` panicked during package loading at `go/types.(*StdSizes).Sizeof` with a nil receiver while checking `internal/coverage/rtcov`.
 
 Killed mutants: not reported. Survived mutants: not reported by the tool. Timed-out mutants: not reported. No tool mutation score exists. The 15 physical production pairs above are the executable fallback report; one initially surviving signed-narrowing plant was converted into a kill by strengthening the boundary test before restoration.
+
+## Task 5 bounded reconciliation and charging
+
+Each production plant below was applied physically and predicted to make its named rule RED. The production defect remained while the listed decisive assertion was weakened; every test then false-GREENed. Both edits were restored before the next pair.
+
+| Exact test | Production plant, observed RED | Assertion weakening, observed false GREEN |
+|---|---|---|
+| `TestReconcileImmutableReplayAcrossCollectorRestart` | Collector incarnation entered stable replay key; Metrics changed. | Removed zero-result/private-owner checks. |
+| `TestReconcileSemanticCollisionOpensGapAtomically` | Changed fingerprint treated as duplicate; collision vanished. | Removed collision diagnostic/atomic checks. |
+| `TestReconcileObservationRevisionTable` | Older ordered revision accepted; cursor rewound. | Disabled stale-new witness check. |
+| `TestReconcileFieldWiseNodeMerge` | Lane replaced wholesale; absent fields erased. | Disabled missing-field preservation check. |
+| `TestReconcileFieldWiseMetricsMerge` | Used-only context cleared window; conflict vanished. | Returned when expected conflict vanished. |
+| `TestReconcileProcessIdentityDistinguishesPIDReuse` | Strict newer StartTicks proof removed; valid switch rejected. | Returned on switch error. |
+| `TestReconcileRejectsUnprovenIncarnationSwitch` | Proof gate bypassed; five invalid switches accepted. | Returned when expected proof error vanished. |
+| `TestReconcileAcceptsStrictlyNewerIncarnation` | Pin dropped on switch. | Removed pin assertion only. |
+| `TestReconcileRetiredIncarnationReplayIsNoop` | Fingerprints pruned at retirement; replay became proof rejection. | Disabled exact replay assertion. |
+| `TestReconcileDefaultAdmissionBounds` | Default MaxNodes changed to 4095. | Disabled exact-config check. |
+| `TestReconcileActiveGapEpisodes` | Repeat open reset first At. | Disabled cumulative first-At check. |
+| `TestReconcileGapLedgerCatchAll` | Count/history/bytes used GapCollision. | Removed GapKind comparison. |
+| `TestReconcileHistoryLimitFailsClosed` | One unit above history limit allowed. | Returned when error vanished. |
+| `TestReconcileRetiredStableWitnessDetectsCollision` | Retired witness pruned; collision became proof error. | Expected proof error instead. |
+| `TestReconcileRejectedEventIsAtomic` | Invalid event returned nil. | Removed nonnil-error term. |
+| `TestLogicalChargeGoldenSchedule` | 17 bytes rounded to 16. | Changed affected literal rows. |
+| `TestLogicalChargeSaturates` | Checked add wrapped. | Removed add row. |
+| `TestReconcileRetainedByteLimitRejectsAtomically` | Retained limit bypassed. | Returned when admission vanished. |
+| `TestReconcilePublishedByteLimitRejectsAtomically` | Published limit bypassed. | Returned when admission vanished. |
+| `TestReconcileInvalidByteConfigRejected` | Exact one-byte-under retained config accepted. | Skipped that row only. |
+| `TestReconcileDiagnosticReserveCannotBeConsumed` | Semantic transaction marked diagnostic. | Returned when admission vanished. |
+| `TestReconcileDiagnosticSlotsExactAndCollisionFallsBack` | StoreState treated as reserved. | Returned on erroneous reservation. |
+| `TestReconcileExistingKeyGrowthCanReject` | Existing node contribution exempted from retained limit. | Returned when admission vanished. |
+| `TestReconcileEqualOrSmallerExistingUpdateAtLimit` | Fixed-size pin rejected at exact limit. | Returned on pin error. |
+| `TestReconcileAdmissionFailureCanReplayLater` | Rejected metrics fingerprint retained. | Returned when rejected key appeared. |
+| `TestReconcileCopyOnWriteSharesUnchangedBacking` | Private-only node record replaced. | Removed affected pointer check. |
+| `TestReconcileCopyOnWriteReplacesOnlyAffectedRecords` | Canonical node mutated in place. | Removed affected replacement check. |
+| `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` | Candidate mismatch ignored. | Removed nonnil-error term. |
+| `TestReconcileGapOnlyPublicationReusesNodeAndEdgeBacking` | Unchanged node slice rebuilt. | Removed node-backing term. |
+| `TestReconcilePublishedSnapshotEpochRetentionBounded` | Previous generation never rotated. | Removed previous-generation terms. |
+| `TestReconcileRepresentativeFleetHeapBelow64MiB` | Extra 65 MiB retained. | Removed heap-delta term. |
+| `TestReconcileJSONSafeCounterAndRevisionCeilings` | Diagnostic count exceeded safe maximum. | Returned on over-ceiling staged value. |
+| `TestReconcileRevisionCeilingStopsWithoutDiagnosticRecursion` | Topology ceiling guard removed. | Skipped Topology row only. |
+
+Named result: 33 production RED observations, 33 false-GREEN assertion weakenings, 66 edits restored.
+
+### Task 5 audit-specific branch plants
+
+| IDs | Physical plants, all RED then false GREEN after decisive weakening |
+|---|---|
+| E1-E5 | Stale witness skipped retained preflight; winner Partial disabled; collision witness overwritten; ReceivedAt order removed; lane incarnation/mode omitted. |
+| E6-E10 | StableSourceKey runtime/authority omitted; context synthesized across lanes; MaxNodes and both MaxEdges guards bypassed; four Store batch defects planted; external gap overflow silently saturated. |
+| E11-E13 | Compensating NodeEntry/SequenceEntry charges; physical owner omitted; both nested edge maps allowed; transitionEpoch omitted. |
+| E14-E17 | Relationship prefix committed before later invalid item; large owner cloned before rejection; stale generation accepted; Visibility, State, and Metrics ceiling guards removed separately. |
+
+Each branch plant was restored before the next. Audit-extra result: 24 production RED observations, 24 false-GREEN weakenings, 48 edits restored. Combined Task 5 result: 57 valid pairs and 114 restored physical edits.
+
+Non-verdicts, restored and excluded from counts:
+
+- One restoration matched an identical return and caused a compile failure; clean collision and empty-batch baselines were proven before resuming.
+- A StoreState plant survived the GapLedger-only test; it was replanted on the owning diagnostic-slots test.
+- A `limit+1` plant overflowed MaxUint64; it was safely replanted on exact one-byte-under equality.
+- A single MaxEdges guard bypass survived the independent second guard; both guards were then bypassed and killed.
+- Store batch diagnostic initialization was overwritten by post-staging classification; the decisive assignment was then replanted and killed.
+
+### Task 5 pinned mutation-tool escalation
+
+The pinned tool was installed once and invoked separately on `internal/graph/bytes.go` and `internal/graph/reconcile.go`:
+
+```text
+go-mutesting v0.0.0-20210610104036-6d9217011a00
+module checksum h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+Go 1.26.6-X:nodwarf5 linux/amd64
+```
+
+Both invocations exited 2 before source mutation. The pinned 2019 `golang.org/x/tools` package loader panicked at `go/types.(*StdSizes).Sizeof` with a nil receiver while checking `/usr/lib/go/src/internal/coverage/rtcov/rtcov.go:19:6`. Killed, survived, and timed-out mutant counts are unavailable; no automated score exists. The 57 physical pairs above are the executable fallback report. No tool-generated mutation reached or remained in the worktree.
+
+### Task 5 specification-review fixes
+
+Four additional physical pairs cover the review fixes. For each, the production plant first made the owning exact test RED, the defective production remained while only the decisive assertion was weakened to false GREEN, and both edits were restored.
+
+| ID | Production RED | Assertion false GREEN |
+|---|---|---|
+| SR1 | Forced every mixed Store batch ordinary subset to fallback; the fit ordinary StoreState identity became GapLedger. | Returned only when unexpected catchall appeared. |
+| SR2 | Disabled the topology-cycle override; a service cycle emitted CapabilityService. | Expected Service instead of Spawn. |
+| SR3A | Echoed the unique node-fold Actor secret. | Kept only the nonnil-error assertion. |
+| SR3B | Echoed the unique metrics-owner Actor secret. | Kept only nonnil/non-admission assertions. |
+
+Specification-review result: four production RED observations, four false-GREEN weakenings, eight edits restored. Cumulative Task 5 evidence is 61 valid pairs and 122 restored physical edits.
+
+### Task 5 quality-review fixes
+
+| ID | Production RED | Assertion false GREEN |
+|---|---|---|
+| QR1 | Reordered ordinary candidates, forced the fitting existing episode to fallback, and aggregated its cumulative count instead of its pending delta; catchall became 12 at historical At. | Returned only on the defective catchall count 12. |
+| QR2 | Restored `len(base)+len(overlay)` capacities for changed Nodes, Edges, and Gaps; replacement-heavy candidate caps became 7/6/6 for final lengths 4/3/3. | Removed only exact-capacity terms while retaining length and charge checks. |
+
+Quality-review result: two production RED observations, two false-GREEN weakenings, four edits restored. Cumulative Task 5 evidence is 63 valid pairs and 126 restored physical edits.
+
+Quality non-verdict: changing the pending value to cumulative without also forcing a fitting existing episode into fallback survived because deterministic existing-first fitting correctly preserved that episode. It was restored, then QR1 was replanted on the full historical-double-count defect and killed.

@@ -379,6 +379,123 @@ The landed `TestEventMetricsDoesNotInventNumericPolicy` and its sabotage conclus
 | `TestValidateStateEvidence` | `GF-T4-EVIDENCE`, `GF-T4-TIME-BOUND`, `GF-T4-SEQUENCE-BOUND`, `GF-T4-MALFORMED` |
 | `TestPreferStateExactOrdering` | `GF-T4-PREFERENCE`, `GF-T4-SEQUENCE-BOUND`, `GF-T4-PURE`, `GF-T4-REPLAY` |
 
+#### Task 5 bounded node reconciliation: eight-axis risk model
+
+**Invariants**
+
+- `GF-T5-REPLAY-GATE`: Every event first enters the universal DedupKey/Fingerprint gate. Equal key and fingerprint is a complete no-op, including TelemetryAt, ordinal, cursor, history, charge, epoch, and revision. Equal key with a different fingerprint is collision. Private maps retain fixed `[32]byte` digests rather than public hex strings.
+- `GF-T5-LANES`: Node, metrics, state, and health contributions use `(Actor, ActorIncarnation, complete SourceRef, SourceMode)`. Mode remains part of the lane when SourceRef is identical. Every public node field and metrics winner unit folds independently by authority, accepted order within a lane, greater ReceivedAt across equal-authority lanes, then a private accepted-event ordinal. Map iteration never decides a winner.
+- `GF-T5-NODE-WINNERS`: Runtime and Role are always present. Nonempty display strings, nonnil Process, and nonnil StartedAt update only their own lane fields; absence preserves the lane's prior value. Present zero pointees remain known data. TelemetryAt is the monotonic maximum ReceivedAt of accepted nonduplicate current-node evidence.
+- `GF-T5-METRIC-WINNERS`: Metrics have exactly five atomic winner units: Usage; TokenRate; ContextUsed/ContextWindow/ContextFill; CacheUse; CostUSD/CostSource. The context tuple is validated after within-lane preservation and never assembled across lanes. CostUSD presence replaces the cost pair, including empty runtime-reported CostSource. A proven incarnation switch retains winning metrics and provenance.
+- `GF-T5-CHARGE-OWNERS`: Logical charging uses the literal schedule, 16-byte alignment, complete fixed bases, streaming map accumulation, saturating checked add/multiply/alignment/int conversion, and single ownership. RetainedRoot owns one header, four epochs, and exactly fifteen root maps: nodes, node fields, metrics, state, edges, fingerprints, cursors, current incarnations, retired proofs, sequences, approvals, message expiry, gaps, transitions, and health. Each edge owns exactly one nested contribution map. R0 is 1088 and P0 is 240.
+- `GF-T5-TXN`: Prepare contains every uncommitted replacement, revision, epoch, charge, ChangeSet, and candidate generation. Commit is private and infallible. Expected rejection commits only its selected diagnostic/Partial delta; invalid events, invalid AdmissionKind, charge mismatch, stale generation, internal invariant, and revision exhaustion commit nothing.
+- `GF-T5-REVISION`: Topology, Visibility, State, and Metrics each increment at most once per committed transaction under the exact public-delta table. Gap is a ChangeSet delta flag, not a revision. Snapshot.At, witnesses, cursors, ordinals, private proofs, and charges increment nothing.
+
+**State transitions**
+
+- `GF-T5-OBSERVATION`: Cursors use StableSourceKey `(SourceID, Runtime, Authority)` plus ObservationKey and exclude collector incarnation. Universal replay comparison precedes cursor logic. Ordered newer accepts, ordered older retains only the new stale witness, structural different-digest accepts only at strictly newer ReceivedAt, structural stale retains only its witness, structural-to-ordered accepts, and ordered-to-structural returns typed AdmissionObservationRegime without a rejected witness or cursor change.
+- `GF-T5-INCARNATION`: Only NodeObserved may establish or switch incarnation. StartedAt and StartTicks are compared only when available on both sides; at least one must be strictly newer and none older. Equal, contradictory, absent, retired, opaque-ID, lexical-ID, and arrival-time-only evidence reject with typed AdmissionIncarnationProof. A switch resets incarnation-scoped identity/state only, retains metrics, adds a retired proof, and never creates or cancels a ghost.
+- `GF-T5-GAP`: External unique opens accumulate below the safe ceiling and preserve the first event ReceivedAt; exact replay adds nothing. Resolution removes the episode. Direct diagnostics use reducer now; Store diagnostic batches preserve supplied At. Resolving one matching episode recomputes Partial from every remaining matching gap.
+- `GF-T5-PARTIAL`: A published winner feeds only its owning SourceID and capability. Identity winners map to identity; metrics winners to metrics; state/heartbeat to state; exit to terminal; spawn/launch/bind to spawn; service to service; messages to message. Losing lanes and unrelated sources or capability families do not mark Partial. GapObserved does not derive another family.
+- `GF-T5-RESULT`: Duplicate, stale-new witness, accepted private/public change, expected typed admission, revision exhaustion, and invariant failure follow the exact result matrix. New stale evidence can grow history while returning zero ChangeSet. A losing accepted lane can commit privately with zero ChangeSet. Store publishes only nonzero ChangeSet.
+
+**Boundaries**
+
+- `GF-T5-CONFIG`: Defaults freeze ReorderWindow 2s, HookFreshness 6s, TransitionLimit 256, MessageWindow 60s, SuccessGhostTTL 5m, FailureGhostTTL 15m, MaxNodes 4096, MaxEdges 16384, MaxGaps 4096, HistoryLimit 65536, and both byte limits 24 MiB. Every duration/count/byte field is positive, MaxGaps is at least three, and equality at `R0/P0 + 64<<10` is valid while one byte under is invalid.
+- `GF-T5-RESERVES`: Ordinary semantic admission must fit `limit-reserve` and total limit. A reserved diagnostic may consume the reserve but still fits total limit. Mixed transactions test semantic ordinary inequality before the final diagnostic total. Exactly three full gap identities are reserved; StoreState is ordinary.
+- `GF-T5-HISTORY`: One unit belongs to every fingerprint witness, cursor, retired proof, buffered event, missing range, node lane, metric lane, state lane, health lane, approval/relationship contribution, and live message contribution. Current incarnations, nodes, edges, gaps, and transitions use their own limits. At HistoryLimit only exact duplicate or fully staged zero-growth work is legal; an existing semantic key with a new replay key still grows history.
+- `GF-T5-GROWTH`: New-key and existing-key growth can reject before allocation. Equal-size or smaller zero-history-delta updates remain legal at the exact byte limit. Admission rejection retains no witness, cursor, incarnation, or contribution and the same event can apply later after capacity or a legal lane update changes.
+- `GF-T5-SAFEINT`: An independent typed 9007199254740991 oracle governs event counts, gap-event additions, diagnostic saturation, and all four revisions. Each revision accepts max-minus-one to max, and the next required category change returns ErrRevisionExhausted with zero ChangeSet, no gap, and no mutation.
+- `GF-T5-PORTABLE`: Count and charge preflight streams before allocation. Config maxima never become make capacity. Transition multiplication/alignment and int conversion are checked before make/append/map insertion/sort scratch. Linux/386 compilation freezes explicit portable arithmetic.
+
+**Malformed inputs**
+
+- `GF-T5-COLLISION`: Same key with changed semantic fingerprint returns a safe `*AdmissionError` matching ErrAdmission and AdmissionCollision, opens the source/capability GapCollision identity, retains the original witness, and cannot mutate semantic state. The proof remains after incarnation retirement.
+- `GF-T5-CONTRIBUTION-CONFLICT`: Individually valid present metrics that make a preserved lane tuple invalid return AdmissionContributionConflict and the metrics collision diagnostic. Rejection retains no witness or contribution, and a later legal lane update permits replay.
+- `GF-T5-ADMISSION-TYPE`: AdmissionKind is closed. Count, history, retained-byte, published-byte, collision, observation-regime, incarnation-proof, endpoint-identity, topology-cycle, and contribution-conflict errors carry safe type and exact diagnostic identity. Invalid kind is a non-admission invariant error.
+- `GF-T5-CHARGE-MISMATCH`: Candidate charge is independently recomputed before commit. Mismatch and stale `prepareStoreDiagnostics` generation identity return non-admission errors with canonical maps, revisions, epochs, current/previous generations, and charges byte-identical.
+
+**Concurrency**
+
+- `GF-T5-SINGLE-WRITER`: One owner mutates canonical maps whose values point to immutable records. Transactions replace affected pointers and allocate new pointees; no canonical map escapes in Snapshot.
+- `GF-T5-COW`: A changed collection creates a sorted top-level value slice while unchanged collection epochs reuse whole-slice backing. Canonical unaffected record pointers remain identical; affected pointers change. A retained encoded/deep-cloned old Snapshot remains byte-identical after later publication.
+- `GF-T5-GENERATIONS`: Reconciler owns exactly current and previous generation. Publication moves current to previous and releases older. Published charge covers current once, excludes bookkeeping/previous, and matches independent candidate charge. `prepareStoreDiagnostics` accepts only identity-equal current generation.
+
+**Persistence and replay**
+
+- `GF-T5-STABLE-REPLAY`: Immutable, occupancy, and sidecar witnesses survive collector restart and actor-incarnation retirement. Protocol remains incarnation scoped. Exact retired replay is a no-op; changed retired replay collides against the lifetime witness. No safe watermark or witness eviction is claimed.
+- `GF-T5-STALE-WITNESS`: Ordered/structural stale events with distinct replay keys retain a fingerprint witness and one history unit while leaving cursor, contribution, semantic revisions, and TelemetryAt unchanged. At/below HistoryLimit, later changed payload for that stale key collides.
+- `GF-T5-COMPACTION`: Contribution/cursor state may compact only after actor retirement and with retained retired proof; stable witnesses remain for Reconciler lifetime. Active gaps resolve away; transition backing caps at 256; relationship/message/sequence lifetime handoffs stay owned by Tasks 6 and 7.
+
+**Integration contracts**
+
+- `GF-T5-API`: Frozen API includes ErrRevisionExhausted, ErrEventTooLarge, ErrAdmission, AdmissionKind and `*AdmissionError`, full ReconcileConfig, ChangeSet, NewReconciler, Apply, Advance, SetPinned, Snapshot, and the private prepare/commit/generation seams. Task 5 adds the staged relationship-contribution seam used by the real heap topology and Task 7.
+- `GF-T5-DIAGNOSTIC`: Reserved identities are GapLedger/nil/Resource, StoreNormal/nil/Saturation, and StoreCritical/nil/Saturation. Collision/regime/proof/conflict diagnostics use the event source and mapped capability. Ordinary diagnostic overflow falls back to GapLedger; saturated no-delta diagnostics return a valid AdmissionError with zero ChangeSet.
+- `GF-T5-PROJECTION`: PublishedCurrent is one Snapshot header, five fixed scalars, three slices, and all reachable Node/Edge/Gap backing charged once. Current/previous physical aliasing does not double-charge current. Generation construction after committed projection is infallible.
+- `GF-T5-HEAP`: The parent test launches the exact test binary/helper with one private environment value and parses one bounded machine line. The child admits 512 valid nodes and 2048 valid multigraph relationships through normal staged seams, retains reconciler/current/previous, runs GC, guards unsigned subtraction, keeps owners alive after the final read, verifies real owner cardinality/charge, and stays below 64 MiB. No direct map writes, dangling targets, or synthetic public slices are valid evidence.
+
+**Regression traps, all nine bug-shape prefixes**
+
+- boundary: populated by R0/P0 equality and underflow, reserve split, every zero config field, MaxGaps two, max-safe revisions/counters, 1/16/17-byte alignment, negative int conversion, exact history delta, and equal/growing replacement.
+- concurrency: populated by canonical pointer replacement, whole-slice epoch reuse, old-borrow immutability, current/previous ownership, stale-generation rejection, and subprocess isolation.
+- contract: populated by exact lanes, five metrics units, Partial capability table, typed admission/result matrices, exact revision categories, fifteen owner maps, three diagnostics, and frozen API signatures.
+- encoding: populated by fixed binary replay digests, StableSourceKey collector-incarnation exclusion, SourceMode lane inclusion, canonical time ordering, pointer presence, known zero, and literal composite charge equations.
+- framework: populated by Go map nondeterminism, slice backing semantics, nil versus empty maps, errors.Is/errors.As identity, int-width conversion, subprocess test-binary protocol, and runtime allocator counter underflow.
+- io: populated only by the heap parent's bounded subprocess stdout/stderr protocol; the reducer itself performs no filesystem, network, IPC, device, clock, or writer operation.
+- persistence: populated by stable replay across restart, stale-new witnesses, cursor regimes, retired proofs, lifetime collision detection, no watermark, and legal later replay after rejection.
+- resource: populated by streaming preflight, fifteen root owners, nested edge ownership, node/edge/gap/history/byte limits, diagnostic reserve, transition capacity, two-generation retention, real fleet heap, and benchmarks without thresholds.
+- state: populated by contribution preservation/winner order, context conflict rejection, incarnation proof matrix, gap episodes/Partial recomputation, exact result rows, and four independent revision ceilings.
+
+#### Task 5 exact test and benchmark mapping, written before test edits
+
+| Exact test or benchmark | Primary risk rows |
+|---|---|
+| `TestReconcileImmutableReplayAcrossCollectorRestart` | `GF-T5-REPLAY-GATE`, `GF-T5-STABLE-REPLAY`, `GF-T5-RESULT` |
+| `TestReconcileSemanticCollisionOpensGapAtomically` | `GF-T5-COLLISION`, `GF-T5-TXN`, `GF-T5-DIAGNOSTIC` |
+| `TestReconcileObservationRevisionTable` | `GF-T5-OBSERVATION`, `GF-T5-STALE-WITNESS`, `GF-T5-REPLAY-GATE` |
+| `TestReconcileFieldWiseNodeMerge` | `GF-T5-LANES`, `GF-T5-NODE-WINNERS`, `GF-T5-REVISION` |
+| `TestReconcileFieldWiseMetricsMerge` | `GF-T5-METRIC-WINNERS`, `GF-T5-CONTRIBUTION-CONFLICT`, `GF-T5-LANES` |
+| `TestReconcileProcessIdentityDistinguishesPIDReuse` | `GF-T5-INCARNATION`, `GF-T5-NODE-WINNERS` |
+| `TestReconcileRejectsUnprovenIncarnationSwitch` | `GF-T5-INCARNATION`, `GF-T5-TXN` |
+| `TestReconcileAcceptsStrictlyNewerIncarnation` | `GF-T5-INCARNATION`, `GF-T5-REPLAY` |
+| `TestReconcileRetiredIncarnationReplayIsNoop` | `GF-T5-INCARNATION`, `GF-T5-REPLAY` |
+| `TestReconcileDefaultAdmissionBounds` | `GF-T5-CONFIG`, `GF-T5-API`, `GF-T5-PORTABLE` |
+| `TestReconcileActiveGapEpisodes` | `GF-T5-GAP`, `GF-T5-PARTIAL`, `GF-T5-REVISION` |
+| `TestReconcileGapLedgerCatchAll` | `GF-T5-ADMISSION-TYPE`, `GF-T5-DIAGNOSTIC`, `GF-T5-RESULT` |
+| `TestReconcileHistoryLimitFailsClosed` | `GF-T5-HISTORY`, `GF-T5-DIAGNOSTIC` |
+| `TestReconcileRetiredStableWitnessDetectsCollision` | `GF-T5-REPLAY`, `GF-T5-COLLISION` |
+| `TestReconcileRejectedEventIsAtomic` | `GF-T5-TXN`, `GF-T5-SINGLE-WRITER` |
+| `TestLogicalChargeGoldenSchedule` | `GF-T5-CHARGE-OWNERS`, `GF-T5-PROJECTION` |
+| `TestLogicalChargeSaturates` | `GF-T5-CHARGE-OWNERS`, `GF-T5-PORTABLE` |
+| `TestReconcileRetainedByteLimitRejectsAtomically` | `GF-T5-CHARGE-OWNERS`, `GF-T5-RESERVES`, `GF-T5-TXN` |
+| `TestReconcilePublishedByteLimitRejectsAtomically` | `GF-T5-CHARGE-OWNERS`, `GF-T5-PROJECTION`, `GF-T5-TXN` |
+| `TestReconcileInvalidByteConfigRejected` | `GF-T5-CONFIG`, `GF-T5-LIMIT` |
+| `TestReconcileDiagnosticReserveCannotBeConsumed` | `GF-T5-RESERVES`, `GF-T5-DIAGNOSTIC` |
+| `TestReconcileDiagnosticSlotsExactAndCollisionFallsBack` | `GF-T5-GAP`, `GF-T5-DIAGNOSTIC` |
+| `TestReconcileExistingKeyGrowthCanReject` | `GF-T5-GROWTH`, `GF-T5-TXN` |
+| `TestReconcileEqualOrSmallerExistingUpdateAtLimit` | `GF-T5-GROWTH`, `GF-T5-CHARGE` |
+| `TestReconcileAdmissionFailureCanReplayLater` | `GF-T5-GROWTH`, `GF-T5-REPLAY` |
+| `TestReconcileCopyOnWriteSharesUnchangedBacking` | `GF-T5-COW`, `GF-T5-GENERATIONS`, `GF-T5-SINGLE-WRITER` |
+| `TestReconcileCopyOnWriteReplacesOnlyAffectedRecords` | `GF-T5-COW`, `GF-T5-NODE-WINNERS` |
+| `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` | `GF-T5-CHARGE-MISMATCH`, `GF-T5-TXN` |
+| `TestReconcileGapOnlyPublicationReusesNodeAndEdgeBacking` | `GF-T5-COW`, `GF-T5-GENERATIONS` |
+| `TestReconcilePublishedSnapshotEpochRetentionBounded` | `GF-T5-GENERATIONS`, `GF-T5-PROJECTION` |
+| `TestReconcileRepresentativeFleetHeapBelow64MiB` | `GF-T5-HEAP`, `GF-T5-CHARGE-OWNERS` |
+| `TestReconcileJSONSafeCounterAndRevisionCeilings` | `GF-T5-SAFEINT`, `GF-T5-GAP`, `GF-T5-REVISION` |
+| `TestReconcileRevisionCeilingStopsWithoutDiagnosticRecursion` | `GF-T5-SAFEINT`, `GF-T5-REVISION`, `GF-T5-TXN` |
+| `BenchmarkLogicalChargeRepresentativeFleet` | `GF-T5-CHARGE-OWNERS`, `GF-T5-HEAP` |
+| `BenchmarkReconcileRepresentativeFleet` | `GF-T5-HEAP`, `GF-T5-PROJECTION` |
+
+#### Task 5 specification-review amendments
+
+- `GF-T5-RESERVES`: Mixed Store diagnostic batches preflight the ordinary subset against `limit-reserve` without charging existing or staged reserved identities against that subset. If the ordinary subset fits, its identities remain intact; the reserved subset then uses only the final total limit. Only an ordinary item that cannot fit falls back.
+- `GF-T5-ADMISSION-TYPE`: `AdmissionTopologyCycle` always selects `(event source, CapabilitySpawn, GapCollision)`, including a service-shaped relationship event.
+- `GF-T5-TXN`: Internal actor invariant diagnostics report `field=Actor`, encoded byte length, and closed class. Node-fold and metrics-owner errors never echo the Actor value.
+- Review coverage remains in the frozen exact names: mixed batch identity/count/time in `TestReconcileDiagnosticSlotsExactAndCollisionFallsBack`, service-cycle mapping in `TestReconcileGapLedgerCatchAll`, and both unique-secret redaction paths in `TestReconcileRejectedEventIsAtomic`.
+- `GF-T5-DIAGNOSTIC`: Store staging retains pending delta/count/time separately from each cumulative candidate episode. When ordinary identities exceed their byte budget, fitting existing episode updates are preserved first in canonical order; only nonfitting pending deltas enter the catchall. Historical counts and old episode At never become new pending loss.
+- `GF-T5-COW`: Before allocating a changed top-level Nodes, Edges, or Gaps slice, the transaction computes exact final cardinality from replacements, insertions, and deletions. Capacity equals final length and logical fixed-backing charge.
+- Quality-review coverage remains in `TestReconcileDiagnosticSlotsExactAndCollisionFallsBack` for both input permutations and `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` for replacement-heavy exact capacities.
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.

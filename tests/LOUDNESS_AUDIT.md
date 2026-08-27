@@ -230,3 +230,238 @@ Every assertion in `internal/graph/state_test.go` was checked after the final te
 | 394 | `state-preference concurrent-read purity rule` | worker and fully formatted got/want | yes | yes | PASS |
 
 Task 4 loudness result: 29 PASS, zero failures, zero exemptions.
+
+## Task 5 bounded reconciliation loudness audit
+
+Every literal failure call and assertion helper in `internal/graph/bytes_test.go` and `internal/graph/reconcile_test.go` was checked after the quality-review fixes. Each row names a present-tense rule, includes formatted offending state, has a unique greppable phrase, and uses present-tense wording.
+
+| Literal file:line | Rule phrase | Debug state | Unique | Present tense | Result |
+|---|---|---|---|---|---|
+| `internal/graph/bytes_test.go:34` | logical-charge primitive golden rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:40` | logical-charge empty-map golden rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:45` | logical-charge one-entry map golden rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:67` | logical-charge fixed/composite golden rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:78` | logical-charge fifteen-root-owner rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:81` | logical-charge empty-retained-baseline rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:84` | logical-charge empty-published-baseline rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:90` | logical-charge published transition-backing rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:95` | logical-charge public-edge projection rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:102` | logical-charge nonempty sequence-record rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:110` | logical-charge relationship-nested edge rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:114` | logical-charge message-nested edge rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:119` | logical-charge mutually-exclusive nested edge-map rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:123` | logical-charge nonnil-both-empty nested edge-map rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:126` | logical-charge relationship-entry exact equation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:130` | logical-charge message-entry exact equation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:134` | logical-charge approval-entry exact equation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:138` | logical-charge message-expiry exact equation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:175` | logical-charge owner equation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:181` | logical-charge actual owner-registry cardinality rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:186` | logical-charge actual owner-registry uniqueness rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:206` | logical-charge owner-registry physical-map bijection rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:218` | logical-charge independent owner-entry literal rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:221` | logical-charge independent owner-entry subtotal rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:224` | logical-charge full retained-root single-owner rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:228` | logical-charge staged owner-replacement atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:245` | logical-charge saturated-result rejection rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:251` | logical-charge streaming saturation propagation rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:255` | logical-charge transition-limit preflight rule | yes | yes | yes | PASS |
+| `internal/graph/bytes_test.go:265` | logical-charge benchmark exact-result rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:31` | default reconciliation config exact-values rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:34` | default reconciliation config construction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:42` | baseline-plus-reserve equality acceptance rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:54` | node count exact-bound rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:70` | edge count diagnostic transaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:74` | edge count exact-bound rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:87` | typed admission closed-kind rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:92` | typed admission forged-kind rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:96` | typed admission nil-receiver rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:104` | Task5 prepareAdvance no-op transaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:107` | Task5 prepareAdvance no-op ownership rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:110` | Task5 public Advance delegation no-op rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:113` | Task5 Advance zero-time atomic rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:117` | empty relationship batch no-op transaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:120` | empty relationship batch ownership no-op rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:150` | invalid reconciliation config rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:163` | huge positive config no-preallocation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:172` | stable replay first-insert revision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:184` | stable replay zero-result rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:187` | stable replay private/public no-mutation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:190` | stable replay exact owner-count rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:212` | semantic collision diagnostic ChangeSet rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:215` | semantic collision exact diagnostic identity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:218` | semantic collision atomic semantic/witness rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:221` | semantic collision exact revision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:224` | semantic collision original-witness retention replay rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:240` | ordered observation collector-restart duplicate rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:243` | ordered duplicate TelemetryAt preservation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:251` | ordered universal fingerprint collision cursor rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:257` | ordered newer collector-restart cursor/shared-lane-distinction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:266` | ordered stale-new witness-only rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:278` | structural restart exact replay rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:286` | structural same-digest semantic collision witness rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:296` | structural stale receiver-order witness rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:301` | structural-to-ordered cursor transition rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:326` | observation StableSourceKey full-field closure rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:340` | stale-witness fixture independent initial charge rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:347` | stale-witness retained-byte rejection/no-witness rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:362` | ordered-to-structural typed diagnostic/Partial rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:365` | ordered-to-structural rejected-witness/cursor atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:381` | node field initial insertion revision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:385` | node field complete initial projection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:393` | node within-lane missing-field preservation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:405` | node field independent authority winner rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:422` | node equal-authority exact-time ordinal tie rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:437` | node equal-authority ReceivedAt-before-ordinal rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:451` | node SourceMode-distinct lane rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:459` | node stable replay complete no-op rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:468` | node TelemetryAt monotonicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:472` | same-incarnation preservation pin setup rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:483` | same-incarnation identity refresh nonidentity preservation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:486` | transition collection generation-epoch carry rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:503` | metrics five-unit initial projection/revision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:511` | metrics within-lane absent-preservation and known-zero rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:521` | metrics independent authority group winner rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:531` | metrics exact-time ordinal winner rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:543` | metrics equal-authority ReceivedAt-before-ordinal rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:557` | metrics cross-lane atomic context winner rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:569` | metrics SourceMode lane and atomic cost-pair rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:584` | metrics contribution-conflict typed diagnostic rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:587` | metrics conflict rejected witness/contribution atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:594` | metrics rejected-event later replay rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:598` | metrics legal-lane-update replay projection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:606` | metrics stable duplicate no-op rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:619` | metrics collector-restart full-lane/stable-cursor rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:631` | losing metrics source gap isolation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:637` | winner-change matching metrics gap Partial rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:644` | winner-change losing gapped metrics source Partial-clear rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:658` | PID reuse strict start-tick incarnation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:661` | PID reuse incarnation-scoped identity reset rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:693` | unproven incarnation atomic rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:696` | unproven incarnation exact diagnostic rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:723` | strictly newer incarnation pin seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:732` | strictly newer incarnation reset/preserve rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:747` | retired incarnation exact replay no-op rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:755` | retired incarnation new-key mutation rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:769` | retired stable witness changed-payload collision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:794` | event-to-Partial capability mapping rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:814` | active gap first-open event-time/Partial/revision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:821` | active gap exact replay no-count rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:827` | active gap cumulative count/first-detection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:835` | active gap unrelated-source/family isolation setup rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:843` | active gap one-of-two resolution recomputation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:848` | active gap complete matching-resolution Partial rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:852` | active gap zero-count nonpublication rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:859` | active nil-capability matching metrics-source rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:877` | active gap canonical nil-first capability sort rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:911` | admission exact diagnostic identity/result rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:914` | direct admission diagnostic no-history rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:924` | ordinary diagnostic reserved-slot fallback rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:927` | invalid admission kind invariant-failure rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:938` | topology-cycle fixed spawn diagnostic rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:949` | history owner exact first-node delta rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:952` | history-at-limit exact duplicate allowance rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:959` | history positive-growth rejection witness atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:968` | history observation fingerprint-cursor-lane delta rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:972` | history stale-new witness admission-at-limit rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:978` | history retained stale-witness collision rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:995` | large existing-edge preflight fixture prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:999` | large existing-edge exact history fixture rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1014` | large existing-edge rejected preflight owner-stability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1018` | large existing-edge diagnostic commit isolation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1032` | invalid event whole-reducer atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1037` | node-fold invariant bounded-redaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1045` | metrics-owner redaction fixture removal rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1051` | metrics-owner invariant bounded-redaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1066` | retained-byte semantic rejection atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1071` | retained-byte diagnostic-only exact charge rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1086` | published-byte semantic rejection atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1089` | published-byte diagnostic-only exact charge rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1103` | ordinary semantic exclusion/reserved diagnostic admission rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1110` | minimum-byte ordinary collision reserved-fallback rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1122` | exact reserved diagnostic identity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1126` | StoreState ordinary diagnostic identity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1140` | ordinary diagnostic collision fallback/capacity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1147` | StoreState ordinary batch fallback prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1151` | StoreState ordinary batch reserved-slot fallback rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1164` | mixed fallback base catchall seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1175` | mixed fallback aggregation prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1180` | mixed fallback all-count/earliest-At/no-overwrite rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1197` | mixed byte-fallback base catchall seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1209` | mixed byte-fallback aggregation prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1214` | mixed byte-fallback no-overwrite all-count rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1224` | mixed fallback saturation seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1233` | mixed fallback saturation prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1237` | mixed fallback safe saturation/earliest-At rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1256` | mixed ordinary-reserved independent precheck rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1261` | mixed ordinary-reserved identity preservation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1266` | mixed ordinary-reserved count/time preservation rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1286` | pending-delta fallback seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1300` | pending-delta fallback prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1307` | pending-delta fallback excludes historical episode rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1318` | existing-key growth fixture ordering rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1333` | existing semantic-key retained growth rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1347` | fixed-size existing update at exact byte limit rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1351` | fixed-size pin projection/charge rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1368` | admission failure rejected-key nonretention rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1374` | admission failure later replay success rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1378` | admission failure later replay semantic projection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1402` | copy-on-write private losing-lane result rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1405` | copy-on-write private-only canonical/generation sharing rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1425` | copy-on-write affected-only canonical replacement rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1428` | copy-on-write affected collection epoch rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1431` | copy-on-write old borrowed snapshot immutability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1444` | candidate charge mismatch invariant rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1447` | candidate charge mismatch precommit atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1451` | stale diagnostic generation identity rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1460` | later-item diagnostic batch precommit atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1467` | over-ceiling later-item diagnostic batch atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1480` | later-item relationship batch validation atomicity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1494` | exact-capacity edge fixture prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1535` | exact-capacity replacement-heavy prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1539` | candidate exact top-level backing capacity rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1558` | gap-only collection-epoch backing reuse rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1561` | gap-only exact collection epoch rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1577` | current-plus-previous generation ownership rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1581` | generation monotonic node-epoch ownership rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1586` | retained historical generation byte-immutability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1603` | representative fleet heap subprocess deadline rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1606` | representative fleet heap subprocess clean-exit rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1613` | representative fleet heap machine-line parse rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1616` | representative fleet heap/cardinality/charge rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1623` | reconcile JSON-safe independent oracle rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1628` | diagnostic max-safe seed transaction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1639` | internal diagnostic safe-counter saturation/no-delta rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1647` | saturated store-diagnostic batch zero-delta prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1650` | saturated store-diagnostic batch ownership stability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1658` | minimum-config saturated batch seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1665` | minimum-config saturated zero-delta early-return rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1668` | minimum-config saturated ownership-stability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1682` | external semantic gap overflow typed-rejection rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1691` | revision inclusive max-safe transition rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1708` | revision exhaustion whole-reducer nonrecursive rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1720` | visibility-exhausted diagnostic recursion prevention rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1742` | large incarnation-switch preflight owner-stability rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1750` | representative reconciliation benchmark cardinality rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1808` | Task5 reconciler fixture construction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1817` | Task5 fixture application success rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1826` | Task5 typed admission result rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1834` | Task5 single-node fixture cardinality rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1849` | Task5 single-cursor fixture cardinality rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1854` | Task5 single-cursor iteration rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1950` | Task5 gap fixture lookup rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1971` | Task5 nonidentity seed owner rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1991` | Task5 nonidentity root-consistent seed prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:1995` | Task5 nonidentity root-consistent transition-owner seed rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2094` | Task5 relationship fixture prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2143` | representative fleet independent charge/owner/cardinality rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2155` | representative fleet construction rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2162` | representative fleet node admission rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2184` | representative fleet relationship batch prepare rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2188` | representative fleet one-transaction relationship publication rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2215` | representative fleet exactly-one machine-line rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2244` | revision seed closed-category rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2250` | revision seed candidate consistency rule | yes | yes | yes | PASS |
+| `internal/graph/reconcile_test.go:2254` | revision seed committed projection rule | yes | yes | yes | PASS |
+
+Task 5 loudness result: 226 PASS, zero failures, zero exemptions.
