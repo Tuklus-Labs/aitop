@@ -1,9 +1,11 @@
 package graph
 
 import (
+	"container/heap"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -20,6 +22,7 @@ type AdmissionKind string
 const (
 	AdmissionCollision            AdmissionKind = "collision"
 	AdmissionObservationRegime    AdmissionKind = "observation-regime"
+	AdmissionSequenceRegime       AdmissionKind = "sequence-regime"
 	AdmissionIncarnationProof     AdmissionKind = "incarnation-proof"
 	AdmissionContributionConflict AdmissionKind = "contribution-conflict"
 	AdmissionCountLimit           AdmissionKind = "count-limit"
@@ -32,7 +35,7 @@ const (
 
 func (k AdmissionKind) Valid() bool {
 	switch k {
-	case AdmissionCollision, AdmissionObservationRegime, AdmissionIncarnationProof,
+	case AdmissionCollision, AdmissionObservationRegime, AdmissionSequenceRegime, AdmissionIncarnationProof,
 		AdmissionContributionConflict, AdmissionCountLimit, AdmissionHistoryLimit,
 		AdmissionRetainedBytes, AdmissionPublishedBytes, AdmissionTopologyCycle,
 		AdmissionEndpointIdentity:
@@ -176,13 +179,267 @@ func (r *Reconciler) prepareAdvance(now time.Time) (*reconcileTxn, error) {
 	if r == nil || now.IsZero() {
 		return nil, fmt.Errorf("reconcile advance input rule violated: receiverNil=%t nowZero=%t", r == nil, now.IsZero())
 	}
-	return &reconcileTxn{
+	txn := &reconcileTxn{
 		historyUnits: r.historyUnits, acceptedOrdinal: r.acceptedOrdinal,
 		topologyRevision: r.topologyRevision, visibilityRevision: r.visibilityRevision,
 		stateRevision: r.stateRevision, metricsRevision: r.metricsRevision,
 		retainedCharge: r.retainedCharge, publishedCharge: r.publishedCharge,
 		nodeEpoch: r.nodeEpoch, edgeEpoch: r.edgeEpoch, gapEpoch: r.gapEpoch, transitionEpoch: r.transitionEpoch,
-	}, nil
+	}
+	type pendingSequenceGap struct {
+		source SourceID
+		at     time.Time
+		ranges []missingRange
+	}
+	pendingGaps := make([]pendingSequenceGap, 0)
+	keys := make([]sequenceKey, 0, len(r.sequenceRecords))
+	for key, record := range r.sequenceRecords {
+		if record != nil && !record.deadline.IsZero() && !now.Before(record.deadline) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool { return sequenceKeyLess(keys[i], keys[j]) })
+	for _, key := range keys {
+		current := r.sequenceRecords[key]
+		record := cloneSequenceRecord(current)
+		queue := &sequenceEventHeap{events: exactEventSlice(record.buffered)}
+		heap.Init(queue)
+		ranges := make([]missingRange, 0, len(record.buffered))
+		for queue.Len() != 0 {
+			event := heap.Pop(queue).(Event)
+			txn.historyUnits--
+			sequence := *event.Sequence
+			if record.regime == sequenceExhausted || sequence < record.next {
+				continue
+			}
+			if sequence > record.next {
+				ranges = append(ranges, missingRange{first: record.next, last: sequence - 1})
+			}
+			if err := r.stageSemanticEvent(txn, event, now); err != nil {
+				return r.advanceStageError(event, now, err)
+			}
+			advanceSequenceRecord(record, sequence)
+		}
+		record.buffered = nil
+		record.deadline = time.Time{}
+		if len(ranges) != 0 {
+			record.missing = append(exactMissingRanges(record.missing), ranges...)
+			record.missing = exactMissingRanges(record.missing)
+			txn.historyUnits += len(ranges)
+			pendingGaps = append(pendingGaps, pendingSequenceGap{source: key.source.ID, at: current.deadline, ranges: exactMissingRanges(ranges)})
+		}
+		if txn.sequenceRecords == nil {
+			txn.sequenceRecords = make(map[sequenceKey]*sequenceRecord)
+		}
+		txn.sequenceRecords[key] = record
+	}
+	if err := r.stageDueStateExpiry(txn, now); err != nil {
+		return nil, err
+	}
+	if txn.historyUnits > r.config.HistoryLimit {
+		return r.prepareAdvanceResourceAdmission(now, AdmissionHistoryLimit)
+	}
+	if err := r.preflightTransactionCharges(txn); err != nil {
+		var admission *AdmissionError
+		if errors.As(err, &admission) && admission != nil && (admission.Kind == AdmissionRetainedBytes || admission.Kind == AdmissionPublishedBytes) {
+			return r.prepareAdvanceResourceAdmission(now, admission.Kind)
+		}
+		return nil, err
+	}
+	for _, pending := range pendingGaps {
+		if err := r.stageSequenceGap(txn, pending.source, pending.at, pending.ranges); err != nil {
+			var admission *AdmissionError
+			if errors.As(err, &admission) && admission != nil && admission.Kind == AdmissionCountLimit {
+				return r.prepareAdvanceResourceAdmission(now, admission.Kind)
+			}
+			return nil, err
+		}
+	}
+	if len(pendingGaps) != 0 {
+		txn.diagnostic = true
+	}
+	if txn.gaps != nil {
+		r.stageNodePartialUpdates(txn)
+	}
+	if err := r.finalizeTransaction(txn, now); err != nil {
+		var admission *AdmissionError
+		if errors.As(err, &admission) && admission != nil && (admission.Kind == AdmissionRetainedBytes || admission.Kind == AdmissionPublishedBytes) {
+			return r.prepareAdvanceResourceAdmission(now, admission.Kind)
+		}
+		return nil, err
+	}
+	return txn, nil
+}
+
+func (r *Reconciler) stageDueStateExpiry(txn *reconcileTxn, now time.Time) error {
+	type actorIncarnation struct {
+		actor       NodeID
+		incarnation IncarnationID
+	}
+	affected := make(map[actorIncarnation]struct{})
+	stateKeys := make(map[contributionKey]struct{}, len(r.stateContributions)+len(txn.stateContributions))
+	for key := range r.stateContributions {
+		stateKeys[key] = struct{}{}
+	}
+	for key := range txn.stateContributions {
+		stateKeys[key] = struct{}{}
+	}
+	for key := range stateKeys {
+		value := candidateStateContribution(r.stateContributions, txn.stateContributions, key)
+		if value != nil && !value.evidence.ValidUntil.IsZero() && !now.Before(value.evidence.ValidUntil) {
+			affected[actorIncarnation{actor: key.actor, incarnation: key.incarnation}] = struct{}{}
+		}
+	}
+	healthKeys := make(map[contributionKey]struct{}, len(r.healthEpochs)+len(txn.healthEpochs))
+	for key := range r.healthEpochs {
+		healthKeys[key] = struct{}{}
+	}
+	for key := range txn.healthEpochs {
+		healthKeys[key] = struct{}{}
+	}
+	for key := range healthKeys {
+		epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, key)
+		if epoch == nil || now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
+			continue
+		}
+		if txn.healthEpochs == nil {
+			txn.healthEpochs = make(map[contributionKey]*healthEpoch)
+		}
+		txn.healthEpochs[key] = nil
+		txn.historyUnits--
+		if state := candidateStateContribution(r.stateContributions, txn.stateContributions, key); state != nil && !state.evidence.Value.Terminal() {
+			if txn.stateContributions == nil {
+				txn.stateContributions = make(map[contributionKey]*stateContribution)
+			}
+			txn.stateContributions[key] = nil
+			txn.historyUnits--
+		}
+		approvalKeys := make(map[approvalKey]struct{}, len(r.approvalRelationships)+len(txn.approvalRelationships))
+		for approval := range r.approvalRelationships {
+			approvalKeys[approval] = struct{}{}
+		}
+		for approval := range txn.approvalRelationships {
+			approvalKeys[approval] = struct{}{}
+		}
+		for approval := range approvalKeys {
+			if approval.actor == key.actor && approval.incarnation == key.incarnation && approval.source == key.source && candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
+				if txn.approvalRelationships == nil {
+					txn.approvalRelationships = make(map[approvalKey]*stateContribution)
+				}
+				txn.approvalRelationships[approval] = nil
+				txn.historyUnits--
+			}
+		}
+		affected[actorIncarnation{actor: key.actor, incarnation: key.incarnation}] = struct{}{}
+	}
+	actors := make([]actorIncarnation, 0, len(affected))
+	for key := range affected {
+		actors = append(actors, key)
+	}
+	sort.Slice(actors, func(i, j int) bool {
+		if actors[i].actor != actors[j].actor {
+			return actors[i].actor < actors[j].actor
+		}
+		return actors[i].incarnation < actors[j].incarnation
+	})
+	for _, key := range actors {
+		current := r.currentIncarnations[key.actor]
+		if current == nil || current.incarnation != key.incarnation {
+			continue
+		}
+		if err := r.stageStateProjection(txn, key.actor, key.incarnation, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Reconciler) stageNodePartialUpdates(txn *reconcileTxn) {
+	for id := range r.nodes {
+		record := candidateNodeRecord(r.nodes, txn.nodes, id)
+		if record == nil {
+			continue
+		}
+		partial := nodePartialWithGaps(record, r.gaps, txn.gaps)
+		if partial != record.value.Partial {
+			replacement := cloneNodeRecord(record)
+			replacement.value.Partial = partial
+			if txn.nodes == nil {
+				txn.nodes = make(map[NodeID]*nodeRecord)
+			}
+			txn.nodes[id] = replacement
+			txn.change.Visibility = true
+		}
+	}
+}
+
+func sequenceKeyLess(left, right sequenceKey) bool {
+	if left.actor != right.actor {
+		return left.actor < right.actor
+	}
+	if left.incarnation != right.incarnation {
+		return left.incarnation < right.incarnation
+	}
+	if left.source.ID != right.source.ID {
+		return left.source.ID < right.source.ID
+	}
+	if left.source.Runtime != right.source.Runtime {
+		return left.source.Runtime < right.source.Runtime
+	}
+	if left.source.Incarnation != right.source.Incarnation {
+		return left.source.Incarnation < right.source.Incarnation
+	}
+	return left.source.Authority < right.source.Authority
+}
+
+func (r *Reconciler) stageSequenceGap(txn *reconcileTxn, source SourceID, at time.Time, ranges []missingRange) error {
+	key := gapKey{source: source, kind: GapSequence}
+	current := candidateGap(r.gaps, txn.gaps, key)
+	if current == nil && candidateOrdinaryGapCount(r.gaps, txn.gaps) >= r.config.MaxGaps-3 {
+		return &AdmissionError{Kind: AdmissionCountLimit}
+	}
+	next := &Gap{Source: source, Kind: GapSequence, At: at}
+	if current != nil {
+		*next = *current
+		next.Capability = nil
+		if at.Before(next.At) {
+			next.At = at
+		}
+	}
+	for _, value := range ranges {
+		next.Count = addMissingCount(next.Count, value)
+	}
+	if txn.gaps == nil {
+		txn.gaps = make(map[gapKey]*Gap)
+	}
+	txn.gaps[key] = next
+	txn.change.Gap = true
+	txn.change.Visibility = true
+	return nil
+}
+
+func addMissingCount(current uint64, value missingRange) uint64 {
+	limit := uint64(maxJSONSafeInteger)
+	if current >= limit || value.last < value.first {
+		return current
+	}
+	distance := value.last - value.first
+	if distance >= limit || distance+1 > limit-current {
+		return limit
+	}
+	return current + distance + 1
+}
+
+func (r *Reconciler) advanceStageError(event Event, now time.Time, err error) (*reconcileTxn, error) {
+	var admission *AdmissionError
+	if errors.As(err, &admission) && admission != nil && admission.Kind.Valid() {
+		return r.prepareAdmission(event, now, admission.Kind)
+	}
+	return nil, err
+}
+
+func (r *Reconciler) prepareAdvanceResourceAdmission(now time.Time, kind AdmissionKind) (*reconcileTxn, error) {
+	return r.prepareAdmission(Event{}, now, kind)
 }
 func (r *Reconciler) SetPinned(id NodeID, pinned bool, now time.Time) error {
 	if r == nil || now.IsZero() {
@@ -224,6 +481,8 @@ type nodeRecord struct {
 	value           Node
 	identitySources map[SourceID]struct{}
 	metricSources   map[SourceID]struct{}
+	stateSources    map[SourceID]struct{}
+	terminalSources map[SourceID]struct{}
 }
 
 type generation struct {
@@ -322,8 +581,9 @@ type metricsContribution struct {
 }
 
 type stateContribution struct {
-	order    contributionOrder
-	evidence StateEvidence
+	order      contributionOrder
+	evidence   StateEvidence
+	capability Capability
 }
 
 type stableSourceKey struct {
@@ -351,8 +611,35 @@ type observationCursor struct {
 	receivedAt time.Time
 }
 type sequenceRecord struct {
+	regime   sequenceRegime
+	next     uint64
+	deadline time.Time
 	buffered []Event
 	missing  []missingRange
+}
+
+type sequenceRegime uint8
+
+const (
+	sequenceUnsequenced sequenceRegime = iota + 1
+	sequenceOrdered
+	sequenceExhausted
+)
+
+type sequenceEventHeap struct{ events []Event }
+
+func (h sequenceEventHeap) Len() int { return len(h.events) }
+func (h sequenceEventHeap) Less(i, j int) bool {
+	return *h.events[i].Sequence < *h.events[j].Sequence
+}
+func (h sequenceEventHeap) Swap(i, j int)   { h.events[i], h.events[j] = h.events[j], h.events[i] }
+func (h *sequenceEventHeap) Push(value any) { h.events = append(h.events, value.(Event)) }
+func (h *sequenceEventHeap) Pop() any {
+	last := len(h.events) - 1
+	value := h.events[last]
+	h.events[last] = Event{}
+	h.events = h.events[:last]
+	return value
 }
 
 type missingRange struct{ first, last uint64 }
@@ -811,7 +1098,7 @@ func hasOrdinaryGap(gaps map[gapKey]*Gap) bool {
 }
 
 func (r *Reconciler) ordinaryDiagnosticCharges(txn *reconcileTxn) (chargeResult, chargeResult) {
-	retained := chargeRetainedRoot(r, txn)
+	retained := r.retainedTransactionCharge(txn)
 	published := chargePublishedProjection(r, txn)
 	subtractReserved := func(key gapKey, value *Gap) {
 		if value == nil || !reservedDiagnosticKey(key) {
@@ -980,15 +1267,11 @@ func (r *Reconciler) prepareApply(event Event, now time.Time) (*reconcileTxn, er
 		}
 		return r.prepareAdmission(event, now, AdmissionCollision)
 	}
-
-	txn := &reconcileTxn{
-		fingerprints:     map[[32]byte]RevisionDigest{key: fingerprint},
-		historyUnits:     r.historyUnits + 1,
-		acceptedOrdinal:  r.acceptedOrdinal,
-		topologyRevision: r.topologyRevision, visibilityRevision: r.visibilityRevision,
-		stateRevision: r.stateRevision, metricsRevision: r.metricsRevision,
-		retainedCharge: r.retainedCharge, publishedCharge: r.publishedCharge,
+	if event.Source.Mode == SourceProtocol {
+		return r.prepareProtocolApply(event, now, key, fingerprint)
 	}
+
+	txn := r.newApplyTransaction(key, fingerprint)
 
 	if event.Source.Mode == SourceObservation {
 		decision, observationKey, cursor := r.classifyObservation(event)
@@ -1015,29 +1298,191 @@ func (r *Reconciler) prepareApply(event Event, now time.Time) (*reconcileTxn, er
 		}
 	}
 
+	if event.Kind == EventGapObserved {
+		return r.stageExternalGap(txn, event)
+	}
+	if err := r.stageSemanticEvent(txn, event, now); err != nil {
+		return r.applyStageError(event, now, err)
+	}
+	return r.finishApplyTransaction(txn, event, now)
+}
+
+func (r *Reconciler) newApplyTransaction(key [32]byte, fingerprint RevisionDigest) *reconcileTxn {
+	return &reconcileTxn{
+		fingerprints: map[[32]byte]RevisionDigest{key: fingerprint}, historyUnits: r.historyUnits + 1,
+		acceptedOrdinal: r.acceptedOrdinal, topologyRevision: r.topologyRevision, visibilityRevision: r.visibilityRevision,
+		stateRevision: r.stateRevision, metricsRevision: r.metricsRevision,
+		retainedCharge: r.retainedCharge, publishedCharge: r.publishedCharge,
+	}
+}
+
+func (r *Reconciler) prepareProtocolApply(event Event, now time.Time, replayKey [32]byte, fingerprint RevisionDigest) (*reconcileTxn, error) {
+	key := sequenceKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source.Ref}
+	current := r.sequenceRecords[key]
+	wantOrdered := event.Sequence != nil
+	if current != nil && (wantOrdered != (current.regime == sequenceOrdered || current.regime == sequenceExhausted)) {
+		return r.prepareAdmission(event, now, AdmissionSequenceRegime)
+	}
+	txn := r.newApplyTransaction(replayKey, fingerprint)
+	record := cloneSequenceRecord(current)
+	if record == nil {
+		record = &sequenceRecord{}
+		if !wantOrdered {
+			record.regime = sequenceUnsequenced
+		} else if *event.Sequence == math.MaxUint64 {
+			record.regime = sequenceExhausted
+			record.next = math.MaxUint64
+		} else {
+			record.regime = sequenceOrdered
+			record.next = *event.Sequence + 1
+		}
+		txn.sequenceRecords = map[sequenceKey]*sequenceRecord{key: record}
+		if err := r.stageSemanticEvent(txn, event, now); err != nil {
+			return r.applyStageError(event, now, err)
+		}
+		return r.finishApplyTransaction(txn, event, now)
+	}
+	if record.regime == sequenceUnsequenced {
+		if err := r.stageSemanticEvent(txn, event, now); err != nil {
+			return r.applyStageError(event, now, err)
+		}
+		return r.finishApplyTransaction(txn, event, now)
+	}
+	sequence := *event.Sequence
+	if record.regime == sequenceExhausted || sequence < record.next {
+		if sequenceInMissingRanges(record.missing, sequence) {
+			beforeRanges := len(record.missing)
+			record.missing = removeSequenceFromRanges(record.missing, sequence)
+			txn.historyUnits += len(record.missing) - beforeRanges
+			txn.sequenceRecords = map[sequenceKey]*sequenceRecord{key: record}
+			if len(record.missing) == 0 && !r.sourceHasMissing(key.source.ID, txn.sequenceRecords) {
+				gap := gapKey{source: key.source.ID, kind: GapSequence}
+				if r.gaps[gap] != nil {
+					txn.gaps = map[gapKey]*Gap{gap: nil}
+					txn.change.Gap = true
+					txn.change.Visibility = true
+					r.stageNodePartialUpdates(txn)
+				}
+			}
+		}
+		return r.finishApplyTransaction(txn, event, now)
+	}
+	if sequence > record.next {
+		owned, err := cloneEvent(event)
+		if err != nil {
+			return nil, err
+		}
+		queue := &sequenceEventHeap{events: exactEventSlice(record.buffered)}
+		heap.Init(queue)
+		heap.Push(queue, owned)
+		record.buffered = exactEventSlice(queue.events)
+		if record.deadline.IsZero() {
+			record.deadline = event.ReceivedAt.Add(r.config.ReorderWindow)
+		}
+		txn.historyUnits++
+		txn.sequenceRecords = map[sequenceKey]*sequenceRecord{key: record}
+		return r.finishApplyTransaction(txn, event, now)
+	}
+	if err := r.stageSemanticEvent(txn, event, now); err != nil {
+		return r.applyStageError(event, now, err)
+	}
+	advanceSequenceRecord(record, sequence)
+	queue := &sequenceEventHeap{events: exactEventSlice(record.buffered)}
+	heap.Init(queue)
+	for record.regime == sequenceOrdered && queue.Len() != 0 && *queue.events[0].Sequence == record.next {
+		ready := heap.Pop(queue).(Event)
+		txn.historyUnits--
+		if err := r.stageSemanticEvent(txn, ready, now); err != nil {
+			return r.applyStageError(ready, now, err)
+		}
+		advanceSequenceRecord(record, *ready.Sequence)
+	}
+	record.buffered = exactEventSlice(queue.events)
+	if len(record.buffered) == 0 {
+		record.deadline = time.Time{}
+	}
+	txn.sequenceRecords = map[sequenceKey]*sequenceRecord{key: record}
+	return r.finishApplyTransaction(txn, event, now)
+}
+
+func (r *Reconciler) stageSemanticEvent(txn *reconcileTxn, event Event, now time.Time) error {
 	switch event.Kind {
 	case EventNodeObserved:
-		if err := r.stageNodeObserved(txn, event); err != nil {
-			var admission *AdmissionError
-			if errors.As(err, &admission) && admission != nil && admission.Kind.Valid() {
-				return r.prepareAdmission(event, now, admission.Kind)
-			}
-			return nil, err
-		}
+		return r.stageNodeObserved(txn, event)
 	case EventMetricsObserved:
-		if err := r.stageMetricsObserved(txn, event); err != nil {
-			var admission *AdmissionError
-			if errors.As(err, &admission) && admission != nil && admission.Kind.Valid() {
-				return r.prepareAdmission(event, now, admission.Kind)
-			}
-			return nil, err
-		}
+		return r.stageMetricsObserved(txn, event)
+	case EventStateObserved:
+		return r.stageStateObserved(txn, event, now)
+	case EventHeartbeatObserved:
+		return r.stageHeartbeatObserved(txn, event, now)
+	case EventExitObserved:
+		return r.stageExitObserved(txn, event, now)
 	case EventGapObserved:
-		return r.stageExternalGap(txn, event)
+		return r.stageGapObserved(txn, event)
 	default:
-		return nil, fmt.Errorf("reconcile Task5 event-kind rule violated: kind=%s class=deferred", event.Kind)
+		return fmt.Errorf("reconcile Task6 event-kind rule violated: kind=%s class=deferred", event.Kind)
 	}
+}
 
+func (r *Reconciler) stageHeartbeatObserved(txn *reconcileTxn, event Event, now time.Time) error {
+	current := r.currentIncarnations[event.Actor]
+	if current == nil || current.incarnation != event.ActorIncarnation {
+		return &AdmissionError{Kind: AdmissionEndpointIdentity}
+	}
+	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
+	txn.acceptedOrdinal++
+	rolled := r.refreshHealthEpoch(txn, key, event.ReceivedAt, txn.acceptedOrdinal)
+	if rolled {
+		return r.stageStateProjection(txn, event.Actor, event.ActorIncarnation, now)
+	}
+	return nil
+}
+
+func (r *Reconciler) stageExitObserved(txn *reconcileTxn, event Event, now time.Time) error {
+	current := r.currentIncarnations[event.Actor]
+	if current == nil || current.incarnation != event.ActorIncarnation {
+		return &AdmissionError{Kind: AdmissionEndpointIdentity}
+	}
+	data := event.Data.(ExitObserved)
+	state := StateVanished
+	switch data.Outcome {
+	case OutcomeCompleted:
+		state = StateCompleted
+	case OutcomeFailed:
+		state = StateFailed
+	}
+	evidence := StateEvidence{Value: state, Source: event.Source.Ref, ObservedAt: event.ReceivedAt, Sequence: clonePointer(event.Sequence)}
+	if err := ValidateStateEvidence(evidence, event.ReceivedAt); err != nil {
+		return &AdmissionError{Kind: AdmissionContributionConflict}
+	}
+	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
+	if candidateStateContribution(r.stateContributions, txn.stateContributions, key) == nil {
+		txn.historyUnits++
+	}
+	txn.acceptedOrdinal++
+	if txn.stateContributions == nil {
+		txn.stateContributions = make(map[contributionKey]*stateContribution)
+	}
+	txn.stateContributions[key] = &stateContribution{
+		order: contributionOrder{receivedAt: event.ReceivedAt, ordinal: txn.acceptedOrdinal}, capability: CapabilityTerminal,
+		evidence: evidence,
+	}
+	r.clearActorApprovals(txn, event.Actor, event.ActorIncarnation)
+	if err := r.stageStateProjection(txn, event.Actor, event.ActorIncarnation, now); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Reconciler) applyStageError(event Event, now time.Time, err error) (*reconcileTxn, error) {
+	var admission *AdmissionError
+	if errors.As(err, &admission) && admission != nil && admission.Kind.Valid() {
+		return r.prepareAdmission(event, now, admission.Kind)
+	}
+	return nil, err
+}
+
+func (r *Reconciler) finishApplyTransaction(txn *reconcileTxn, event Event, now time.Time) (*reconcileTxn, error) {
 	if txn.historyUnits > r.config.HistoryLimit {
 		return r.prepareAdmission(event, now, AdmissionHistoryLimit)
 	}
@@ -1049,6 +1494,87 @@ func (r *Reconciler) prepareApply(event Event, now time.Time) (*reconcileTxn, er
 		return nil, err
 	}
 	return txn, nil
+}
+
+func cloneSequenceRecord(input *sequenceRecord) *sequenceRecord {
+	if input == nil {
+		return nil
+	}
+	result := *input
+	result.buffered = exactEventSlice(input.buffered)
+	result.missing = exactMissingRanges(input.missing)
+	return &result
+}
+
+func exactEventSlice(input []Event) []Event {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make([]Event, len(input))
+	copy(result, input)
+	return result
+}
+
+func exactMissingRanges(input []missingRange) []missingRange {
+	if len(input) == 0 {
+		return nil
+	}
+	result := make([]missingRange, len(input))
+	copy(result, input)
+	return result
+}
+
+func advanceSequenceRecord(record *sequenceRecord, applied uint64) {
+	if applied == math.MaxUint64 {
+		record.regime = sequenceExhausted
+		record.next = math.MaxUint64
+		return
+	}
+	record.regime = sequenceOrdered
+	record.next = applied + 1
+}
+
+func sequenceInMissingRanges(ranges []missingRange, sequence uint64) bool {
+	for _, value := range ranges {
+		if sequence >= value.first && sequence <= value.last {
+			return true
+		}
+	}
+	return false
+}
+
+func removeSequenceFromRanges(ranges []missingRange, sequence uint64) []missingRange {
+	result := make([]missingRange, 0, len(ranges)+1)
+	for _, value := range ranges {
+		if sequence < value.first || sequence > value.last {
+			result = append(result, value)
+			continue
+		}
+		if value.first < sequence {
+			result = append(result, missingRange{first: value.first, last: sequence - 1})
+		}
+		if sequence < value.last {
+			result = append(result, missingRange{first: sequence + 1, last: value.last})
+		}
+	}
+	return exactMissingRanges(result)
+}
+
+func (r *Reconciler) sourceHasMissing(source SourceID, overlay map[sequenceKey]*sequenceRecord) bool {
+	for key, record := range r.sequenceRecords {
+		if replacement, exists := overlay[key]; exists {
+			record = replacement
+		}
+		if key.source.ID == source && record != nil && len(record.missing) != 0 {
+			return true
+		}
+	}
+	for key, record := range overlay {
+		if _, exists := r.sequenceRecords[key]; !exists && key.source.ID == source && record != nil && len(record.missing) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type observationDecision uint8
@@ -1145,6 +1671,39 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 				txn.historyUnits--
 			}
 		}
+		removedSequenceSources := make(map[SourceID]struct{})
+		if txn.sequenceRecords == nil {
+			txn.sequenceRecords = make(map[sequenceKey]*sequenceRecord)
+		}
+		for key, record := range r.sequenceRecords {
+			if key.actor == event.Actor && key.incarnation == current.incarnation {
+				txn.sequenceRecords[key] = nil
+				txn.historyUnits -= len(record.buffered) + len(record.missing)
+				removedSequenceSources[key.source.ID] = struct{}{}
+			}
+		}
+		if txn.healthEpochs == nil {
+			txn.healthEpochs = make(map[contributionKey]*healthEpoch)
+		}
+		for key := range r.healthEpochs {
+			if key.actor == event.Actor && key.incarnation == current.incarnation {
+				txn.healthEpochs[key] = nil
+				txn.historyUnits--
+			}
+		}
+		for source := range removedSequenceSources {
+			if !r.sourceHasMissing(source, txn.sequenceRecords) {
+				gap := gapKey{source: source, kind: GapSequence}
+				if r.gaps[gap] != nil {
+					if txn.gaps == nil {
+						txn.gaps = make(map[gapKey]*Gap)
+					}
+					txn.gaps[gap] = nil
+					txn.change.Gap = true
+					txn.change.Visibility = true
+				}
+			}
+		}
 		if _, exists := r.transitions[event.Actor]; exists {
 			txn.transitions = map[NodeID][]Transition{event.Actor: nil}
 		}
@@ -1156,7 +1715,7 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 	}
 
 	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
-	contribution := cloneNodeContribution(r.nodeContributions[key])
+	contribution := cloneNodeContribution(candidateNodeContribution(r.nodeContributions, txn.nodeContributions, key))
 	if contribution == nil {
 		contribution = &nodeFieldContribution{}
 		txn.historyUnits++
@@ -1181,7 +1740,7 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 	}
 	txn.nodeContributions[key] = contribution
 
-	before := r.nodes[event.Actor]
+	before := candidateNodeRecord(r.nodes, txn.nodes, event.Actor)
 	after := r.foldNode(event.Actor, event.ActorIncarnation, txn.nodeContributions, nil)
 	if after == nil {
 		return reconcileActorInvariant("node-fold", event.Actor)
@@ -1203,6 +1762,8 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 		}
 		after.value.Metrics = before.value.Metrics
 		after.metricSources = cloneSourceSet(before.metricSources)
+		after.stateSources = cloneSourceSet(before.stateSources)
+		after.terminalSources = cloneSourceSet(before.terminalSources)
 		if switching {
 			after.value.Pinned = before.value.Pinned
 			after.value.GhostExpiresAt = clonePointer(before.value.GhostExpiresAt)
@@ -1222,18 +1783,21 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 			}
 		}
 	}
-	after.value.Partial = nodePartialWithGaps(after, r.gaps, nil)
+	after.value.Partial = nodePartialWithGaps(after, r.gaps, txn.gaps)
 	if before != nil && after.value.Partial != before.value.Partial {
 		txn.change.Visibility = true
 	}
 	if before == nil || !nodeRecordEqual(before, after) {
-		txn.nodes = map[NodeID]*nodeRecord{event.Actor: after}
+		if txn.nodes == nil {
+			txn.nodes = make(map[NodeID]*nodeRecord)
+		}
+		txn.nodes[event.Actor] = after
 	}
 	return nil
 }
 
 func (r *Reconciler) preflightIncarnationSwitch(txn *reconcileTxn, event Event, data NodeObserved, current, candidate *incarnationRecord) error {
-	before := r.nodes[event.Actor]
+	before := candidateNodeRecord(r.nodes, txn.nodes, event.Actor)
 	if before == nil {
 		return fmt.Errorf("reconcile incarnation preflight owner rule violated: class=missing")
 	}
@@ -1243,7 +1807,7 @@ func (r *Reconciler) preflightIncarnationSwitch(txn *reconcileTxn, event Event, 
 	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
 	contribution := nodeContributionFromObservation(data, contributionOrder{receivedAt: event.ReceivedAt, ordinal: txn.acceptedOrdinal + 1})
 	after := nodeRecordFromNewIncarnation(event, data, before)
-	after.value.Partial = nodePartialWithGaps(after, r.gaps, nil)
+	after.value.Partial = nodePartialWithGaps(after, r.gaps, txn.gaps)
 	projectedHistory := txn.historyUnits + 2
 	retained := validCharge(r.retainedCharge)
 	retained = addCharges(retained, chargeFingerprintEntry())
@@ -1272,6 +1836,35 @@ func (r *Reconciler) preflightIncarnationSwitch(txn *reconcileTxn, event Event, 
 			retained = subtractCharge(retained, chargeApprovalEntry(approvalKey, value).bytes)
 		}
 	}
+	removedSequenceSources := make(map[SourceID]struct{})
+	removedPublishedGaps := validCharge(0)
+	for sequenceKey, value := range r.sequenceRecords {
+		if sequenceKey.actor == event.Actor && sequenceKey.incarnation == current.incarnation && value != nil {
+			projectedHistory -= len(value.buffered) + len(value.missing)
+			retained = subtractCharge(retained, chargeSequenceEntry(sequenceKey, value).bytes)
+			removedSequenceSources[sequenceKey.source.ID] = struct{}{}
+		}
+	}
+	for healthKey, value := range r.healthEpochs {
+		if healthKey.actor == event.Actor && healthKey.incarnation == current.incarnation && value != nil {
+			projectedHistory--
+			retained = subtractCharge(retained, chargeHealthEpochEntry(healthKey, *value).bytes)
+		}
+	}
+	for source := range removedSequenceSources {
+		outstanding := false
+		for sequenceKey, value := range r.sequenceRecords {
+			if sequenceKey.source.ID == source && !(sequenceKey.actor == event.Actor && sequenceKey.incarnation == current.incarnation) && value != nil && len(value.missing) != 0 {
+				outstanding = true
+				break
+			}
+		}
+		gapKey := gapKey{source: source, kind: GapSequence}
+		if !outstanding && r.gaps[gapKey] != nil {
+			retained = subtractCharge(retained, chargeActiveGapEntry(gapKey, *r.gaps[gapKey]).bytes)
+			removedPublishedGaps = addCharges(removedPublishedGaps, chargeGap(*r.gaps[gapKey]))
+		}
+	}
 	if transitions, exists := r.transitions[event.Actor]; exists {
 		retained = subtractCharge(retained, chargeTransitionEntry(event.Actor, transitions, r.config.TransitionLimit).bytes)
 	}
@@ -1283,6 +1876,10 @@ func (r *Reconciler) preflightIncarnationSwitch(txn *reconcileTxn, event Event, 
 		return &AdmissionError{Kind: AdmissionRetainedBytes}
 	}
 	published := validCharge(r.publishedCharge)
+	if !removedPublishedGaps.ok {
+		return &AdmissionError{Kind: AdmissionPublishedBytes}
+	}
+	published = subtractCharge(published, removedPublishedGaps.bytes)
 	published = subtractCharge(published, chargePublishedNode(before.value).bytes)
 	published = addCharges(published, chargePublishedNode(after.value))
 	if !published.ok || published.bytes > r.config.PublishedByteLimit-reserve {
@@ -1318,7 +1915,7 @@ func nodeRecordFromNewIncarnation(event Event, data NodeObserved, before *nodeRe
 			Process: clonePointer(data.Process), StartedAt: clonePointer(data.StartedAt), Metrics: cloneMetrics(before.value.Metrics),
 			Pinned: before.value.Pinned, GhostExpiresAt: clonePointer(before.value.GhostExpiresAt), TelemetryAt: before.value.TelemetryAt,
 		},
-		identitySources: identitySources, metricSources: cloneSourceSet(before.metricSources),
+		identitySources: identitySources, metricSources: cloneSourceSet(before.metricSources), stateSources: make(map[SourceID]struct{}), terminalSources: make(map[SourceID]struct{}),
 	}
 	if event.ReceivedAt.After(result.value.TelemetryAt) {
 		result.value.TelemetryAt = event.ReceivedAt
@@ -1438,7 +2035,7 @@ func (r *Reconciler) foldNode(actor NodeID, incarnation IncarnationID, nodeOverl
 	if startedWinner != nil {
 		identitySources[startedSource] = struct{}{}
 	}
-	return &nodeRecord{value: node, identitySources: identitySources, metricSources: make(map[SourceID]struct{})}
+	return &nodeRecord{value: node, identitySources: identitySources, metricSources: make(map[SourceID]struct{}), stateSources: make(map[SourceID]struct{}), terminalSources: make(map[SourceID]struct{})}
 }
 
 func (r *Reconciler) foldNodePointers(actor NodeID, incarnation IncarnationID, overlay map[contributionKey]*nodeFieldContribution) (*ProcessIdentity, SourceID, *time.Time, SourceID) {
@@ -1481,7 +2078,7 @@ func (r *Reconciler) stageMetricsObserved(txn *reconcileTxn, event Event) error 
 	}
 	data := event.Data.(MetricsObserved)
 	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
-	contribution := cloneMetricsContribution(r.metricContributions[key])
+	contribution := cloneMetricsContribution(candidateMetricsContribution(r.metricContributions, txn.metricContributions, key))
 	if contribution == nil {
 		contribution = &metricsContribution{}
 		txn.historyUnits++
@@ -1522,7 +2119,7 @@ func (r *Reconciler) stageMetricsObserved(txn *reconcileTxn, event Event) error 
 	contribution.order = contributionOrder{receivedAt: event.ReceivedAt, ordinal: txn.acceptedOrdinal}
 	txn.metricContributions = map[contributionKey]*metricsContribution{key: contribution}
 
-	before := r.nodes[event.Actor]
+	before := candidateNodeRecord(r.nodes, txn.nodes, event.Actor)
 	if before == nil {
 		return reconcileActorInvariant("metrics-owner", event.Actor)
 	}
@@ -1530,7 +2127,7 @@ func (r *Reconciler) stageMetricsObserved(txn *reconcileTxn, event Event) error 
 	metrics, sources := r.foldMetrics(event.Actor, txn.metricContributions)
 	after.value.Metrics = metrics
 	after.metricSources = sources
-	after.value.Partial = nodePartialWithGaps(after, r.gaps, nil)
+	after.value.Partial = nodePartialWithGaps(after, r.gaps, txn.gaps)
 	if event.ReceivedAt.After(after.value.TelemetryAt) {
 		after.value.TelemetryAt = event.ReceivedAt
 	}
@@ -1541,9 +2138,417 @@ func (r *Reconciler) stageMetricsObserved(txn *reconcileTxn, event Event) error 
 		txn.change.Visibility = true
 	}
 	if !nodeRecordEqual(before, after) {
-		txn.nodes = map[NodeID]*nodeRecord{event.Actor: after}
+		if txn.nodes == nil {
+			txn.nodes = make(map[NodeID]*nodeRecord)
+		}
+		txn.nodes[event.Actor] = after
 	}
 	return nil
+}
+
+func (r *Reconciler) stageStateObserved(txn *reconcileTxn, event Event, now time.Time) error {
+	current := r.currentIncarnations[event.Actor]
+	if current == nil || current.incarnation != event.ActorIncarnation {
+		return &AdmissionError{Kind: AdmissionEndpointIdentity}
+	}
+	data := event.Data.(StateObserved)
+	validity, err := NormalizeValidity(data.State, data.ValidFor)
+	if err != nil {
+		return &AdmissionError{Kind: AdmissionContributionConflict}
+	}
+	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
+	evidence := StateEvidence{
+		Value: data.State, Source: event.Source.Ref, ObservedAt: event.ReceivedAt,
+		Relationship: data.Relationship, Sequence: clonePointer(event.Sequence),
+	}
+	if validity > 0 {
+		evidence.ValidUntil = event.ReceivedAt.Add(validity)
+	}
+	if err := ValidateStateEvidence(evidence, event.ReceivedAt); err != nil {
+		return &AdmissionError{Kind: AdmissionContributionConflict}
+	}
+	txn.acceptedOrdinal++
+	if !data.State.Terminal() && (event.Source.Ref.Authority == AuthorityNative || event.Source.Ref.Authority == AuthorityHook) {
+		r.refreshHealthEpoch(txn, key, event.ReceivedAt, txn.acceptedOrdinal)
+	}
+	contribution := &stateContribution{order: contributionOrder{receivedAt: event.ReceivedAt, ordinal: txn.acceptedOrdinal}, evidence: evidence, capability: CapabilityState}
+	if data.State == StateApproval || data.State == StateBlocked {
+		approval := approvalKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source, relationship: data.Relationship}
+		if candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) == nil {
+			txn.historyUnits++
+		}
+		if txn.approvalRelationships == nil {
+			txn.approvalRelationships = make(map[approvalKey]*stateContribution)
+		}
+		txn.approvalRelationships[approval] = contribution
+	} else {
+		if data.Relationship != "" {
+			approval := approvalKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source, relationship: data.Relationship}
+			if candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
+				if txn.approvalRelationships == nil {
+					txn.approvalRelationships = make(map[approvalKey]*stateContribution)
+				}
+				txn.approvalRelationships[approval] = nil
+				txn.historyUnits--
+			}
+		}
+		if candidateStateContribution(r.stateContributions, txn.stateContributions, key) == nil {
+			txn.historyUnits++
+		}
+		if txn.stateContributions == nil {
+			txn.stateContributions = make(map[contributionKey]*stateContribution)
+		}
+		txn.stateContributions[key] = contribution
+	}
+	if data.State.Terminal() {
+		r.clearActorApprovals(txn, event.Actor, event.ActorIncarnation)
+	}
+
+	return r.stageStateProjection(txn, event.Actor, event.ActorIncarnation, now)
+}
+
+func candidateNodeRecord(base map[NodeID]*nodeRecord, overlay map[NodeID]*nodeRecord, actor NodeID) *nodeRecord {
+	if value, exists := overlay[actor]; exists {
+		return value
+	}
+	return base[actor]
+}
+
+func candidateNodeContribution(base map[contributionKey]*nodeFieldContribution, overlay map[contributionKey]*nodeFieldContribution, key contributionKey) *nodeFieldContribution {
+	if value, exists := overlay[key]; exists {
+		return value
+	}
+	return base[key]
+}
+
+func candidateMetricsContribution(base map[contributionKey]*metricsContribution, overlay map[contributionKey]*metricsContribution, key contributionKey) *metricsContribution {
+	if value, exists := overlay[key]; exists {
+		return value
+	}
+	return base[key]
+}
+
+func candidateStateContribution(base map[contributionKey]*stateContribution, overlay map[contributionKey]*stateContribution, key contributionKey) *stateContribution {
+	if value, exists := overlay[key]; exists {
+		return value
+	}
+	return base[key]
+}
+
+func candidateHealthEpoch(base map[contributionKey]*healthEpoch, overlay map[contributionKey]*healthEpoch, key contributionKey) *healthEpoch {
+	if value, exists := overlay[key]; exists {
+		return value
+	}
+	return base[key]
+}
+
+func (r *Reconciler) refreshHealthEpoch(txn *reconcileTxn, key contributionKey, receivedAt time.Time, ordinal uint64) bool {
+	current := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, key)
+	rolled := current != nil && !receivedAt.Before(current.lastHeartbeat.Add(r.config.HookFreshness))
+	if rolled {
+		r.purgeHealthLane(txn, key)
+		current = nil
+	}
+	if current == nil {
+		txn.historyUnits++
+	}
+	lastHeartbeat := receivedAt
+	if current != nil && current.lastHeartbeat.After(lastHeartbeat) {
+		lastHeartbeat = current.lastHeartbeat
+	}
+	if txn.healthEpochs == nil {
+		txn.healthEpochs = make(map[contributionKey]*healthEpoch)
+	}
+	txn.healthEpochs[key] = &healthEpoch{lastHeartbeat: lastHeartbeat, ordinal: ordinal}
+	return rolled
+}
+
+func (r *Reconciler) purgeHealthLane(txn *reconcileTxn, key contributionKey) {
+	if candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, key) != nil {
+		if txn.healthEpochs == nil {
+			txn.healthEpochs = make(map[contributionKey]*healthEpoch)
+		}
+		txn.healthEpochs[key] = nil
+		txn.historyUnits--
+	}
+	if state := candidateStateContribution(r.stateContributions, txn.stateContributions, key); state != nil && !state.evidence.Value.Terminal() {
+		if txn.stateContributions == nil {
+			txn.stateContributions = make(map[contributionKey]*stateContribution)
+		}
+		txn.stateContributions[key] = nil
+		txn.historyUnits--
+	}
+	keys := make(map[approvalKey]struct{}, len(r.approvalRelationships)+len(txn.approvalRelationships))
+	for approval := range r.approvalRelationships {
+		keys[approval] = struct{}{}
+	}
+	for approval := range txn.approvalRelationships {
+		keys[approval] = struct{}{}
+	}
+	for approval := range keys {
+		if approval.actor == key.actor && approval.incarnation == key.incarnation && approval.source == key.source && candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
+			if txn.approvalRelationships == nil {
+				txn.approvalRelationships = make(map[approvalKey]*stateContribution)
+			}
+			txn.approvalRelationships[approval] = nil
+			txn.historyUnits--
+		}
+	}
+}
+
+func candidateApproval(base map[approvalKey]*stateContribution, overlay map[approvalKey]*stateContribution, key approvalKey) *stateContribution {
+	if value, exists := overlay[key]; exists {
+		return value
+	}
+	return base[key]
+}
+
+func (r *Reconciler) clearActorApprovals(txn *reconcileTxn, actor NodeID, incarnation IncarnationID) {
+	keys := make(map[approvalKey]struct{}, len(r.approvalRelationships)+len(txn.approvalRelationships))
+	for key := range r.approvalRelationships {
+		keys[key] = struct{}{}
+	}
+	for key := range txn.approvalRelationships {
+		keys[key] = struct{}{}
+	}
+	for key := range keys {
+		if key.actor == actor && key.incarnation == incarnation && candidateApproval(r.approvalRelationships, txn.approvalRelationships, key) != nil {
+			if txn.approvalRelationships == nil {
+				txn.approvalRelationships = make(map[approvalKey]*stateContribution)
+			}
+			txn.approvalRelationships[key] = nil
+			txn.historyUnits--
+		}
+	}
+}
+
+func (r *Reconciler) foldState(actor NodeID, incarnation IncarnationID, txn *reconcileTxn, now time.Time) (StateEvidence, Capability, map[SourceID]struct{}) {
+	values := make([]struct {
+		key   contributionKey
+		value *stateContribution
+	}, 0, len(r.stateContributions)+len(txn.stateContributions))
+	seen := make(map[contributionKey]struct{})
+	for key, value := range r.stateContributions {
+		if replacement, exists := txn.stateContributions[key]; exists {
+			value = replacement
+		}
+		seen[key] = struct{}{}
+		if key.actor == actor && key.incarnation == incarnation && value != nil {
+			values = append(values, struct {
+				key   contributionKey
+				value *stateContribution
+			}{key, value})
+		}
+	}
+	for key, value := range txn.stateContributions {
+		if _, exists := seen[key]; !exists && key.actor == actor && key.incarnation == incarnation && value != nil {
+			values = append(values, struct {
+				key   contributionKey
+				value *stateContribution
+			}{key, value})
+		}
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].value.order.ordinal < values[j].value.order.ordinal })
+	var winner *stateContribution
+	var winnerKey contributionKey
+	for _, candidate := range values {
+		if !candidate.value.evidence.Value.Terminal() && candidate.key.source.Ref.Authority != AuthorityPassive {
+			epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, candidate.key)
+			if epoch == nil || !now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
+				continue
+			}
+		}
+		if !stateEvidenceEligible(candidate.value.evidence, now) {
+			continue
+		}
+		if winner == nil || stateContributionWins(winnerKey, winner, candidate.key, candidate.value) {
+			winnerKey, winner = candidate.key, candidate.value
+		}
+	}
+	winnerEvidence := StateEvidence{}
+	winnerCapability := Capability("")
+	if winner != nil {
+		winnerEvidence = winner.evidence
+		winnerCapability = winner.capability
+	}
+	if !winnerEvidence.Value.Terminal() {
+		overlays := r.approvalValues(actor, incarnation, txn, now)
+		if len(overlays) != 0 {
+			winnerEvidence = overlays[0].evidence
+			winnerCapability = CapabilityState
+			winnerOrder := overlays[0].order
+			for _, candidate := range overlays[1:] {
+				if approvalEvidenceWins(candidate.evidence, candidate.order, winnerEvidence, winnerOrder) {
+					winnerEvidence, winnerOrder = candidate.evidence, candidate.order
+					winnerCapability = CapabilityState
+				}
+			}
+		}
+	}
+	sources := make(map[SourceID]struct{})
+	if winnerEvidence.Source.ID != "" {
+		sources[winnerEvidence.Source.ID] = struct{}{}
+	}
+	return winnerEvidence, winnerCapability, sources
+}
+
+func stateContributionWins(currentKey contributionKey, current *stateContribution, candidateKey contributionKey, candidate *stateContribution) bool {
+	currentRank, candidateRank := terminalRank(current.evidence.Value), terminalRank(candidate.evidence.Value)
+	if currentRank != candidateRank {
+		return candidateRank > currentRank
+	}
+	if current.evidence.Source.Authority != candidate.evidence.Source.Authority {
+		return candidate.evidence.Source.Authority > current.evidence.Source.Authority
+	}
+	if sameCompleteSource(current.evidence.Source, candidate.evidence.Source) && current.evidence.Sequence != nil && candidate.evidence.Sequence != nil && *current.evidence.Sequence != *candidate.evidence.Sequence {
+		return *candidate.evidence.Sequence > *current.evidence.Sequence
+	}
+	if !current.evidence.ObservedAt.Equal(candidate.evidence.ObservedAt) {
+		return candidate.evidence.ObservedAt.After(current.evidence.ObservedAt)
+	}
+	if currentKey == candidateKey {
+		return false
+	}
+	return candidate.order.ordinal > current.order.ordinal
+}
+
+func (r *Reconciler) approvalValues(actor NodeID, incarnation IncarnationID, txn *reconcileTxn, now time.Time) []*stateContribution {
+	values := make([]*stateContribution, 0, len(r.approvalRelationships)+len(txn.approvalRelationships))
+	seen := make(map[approvalKey]struct{})
+	visit := func(key approvalKey, value *stateContribution) {
+		if key.actor != actor || key.incarnation != incarnation || value == nil {
+			return
+		}
+		healthKey := contributionKey{actor: key.actor, incarnation: key.incarnation, source: key.source}
+		epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, healthKey)
+		if epoch == nil || !now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
+			return
+		}
+		values = append(values, value)
+	}
+	for key, value := range r.approvalRelationships {
+		if replacement, exists := txn.approvalRelationships[key]; exists {
+			value = replacement
+		}
+		seen[key] = struct{}{}
+		visit(key, value)
+	}
+	for key, value := range txn.approvalRelationships {
+		if _, exists := seen[key]; !exists {
+			visit(key, value)
+		}
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].order.ordinal < values[j].order.ordinal })
+	return values
+}
+
+func approvalEvidenceWins(candidate StateEvidence, candidateOrder contributionOrder, current StateEvidence, currentOrder contributionOrder) bool {
+	if candidate.Source.Authority != current.Source.Authority {
+		return candidate.Source.Authority > current.Source.Authority
+	}
+	if sameCompleteSource(candidate.Source, current.Source) && candidate.Sequence != nil && current.Sequence != nil && *candidate.Sequence != *current.Sequence {
+		return *candidate.Sequence > *current.Sequence
+	}
+	if !candidate.ObservedAt.Equal(current.ObservedAt) {
+		return candidate.ObservedAt.After(current.ObservedAt)
+	}
+	return candidateOrder.ordinal > currentOrder.ordinal
+}
+
+func (r *Reconciler) stageStateProjection(txn *reconcileTxn, actor NodeID, incarnation IncarnationID, now time.Time) error {
+	before := candidateNodeRecord(r.nodes, txn.nodes, actor)
+	if before == nil {
+		return reconcileActorInvariant("state-owner", actor)
+	}
+	after := cloneNodeRecord(before)
+	winner, capability, sources := r.foldState(actor, incarnation, txn, now)
+	after.stateSources = make(map[SourceID]struct{})
+	after.terminalSources = make(map[SourceID]struct{})
+	if capability == CapabilityTerminal {
+		after.terminalSources = sources
+	} else if capability == CapabilityState {
+		after.stateSources = sources
+	}
+	after.value.State = projectNodeState(winner)
+	if before.value.State != after.value.State {
+		transitions, err := r.nextTransitions(txn, actor, now, after.value.State)
+		if err != nil {
+			return err
+		}
+		after.value.Transitions = transitions
+		txn.change.State = true
+	}
+	applyTerminalMetadata(&after.value, winner, r.config)
+	if !timePointerEqual(before.value.CompletedAt, after.value.CompletedAt) || !timePointerEqual(before.value.FailedAt, after.value.FailedAt) || !timePointerEqual(before.value.GhostExpiresAt, after.value.GhostExpiresAt) {
+		txn.change.Visibility = true
+	}
+	after.value.Partial = nodePartialWithGaps(after, r.gaps, txn.gaps)
+	if before.value.Partial != after.value.Partial {
+		txn.change.Visibility = true
+	}
+	if !nodeRecordEqual(before, after) {
+		if txn.nodes == nil {
+			txn.nodes = make(map[NodeID]*nodeRecord)
+		}
+		txn.nodes[actor] = after
+	}
+	return nil
+}
+
+func applyTerminalMetadata(node *Node, winner StateEvidence, config ReconcileConfig) {
+	if node == nil {
+		return
+	}
+	if !winner.Value.Terminal() {
+		return
+	}
+	node.CompletedAt = nil
+	node.FailedAt = nil
+	node.GhostExpiresAt = nil
+	ghostTTL := config.SuccessGhostTTL
+	if winner.Value == StateCompleted {
+		node.CompletedAt = clonePointer(&winner.ObservedAt)
+	}
+	if winner.Value == StateFailed {
+		node.FailedAt = clonePointer(&winner.ObservedAt)
+		ghostTTL = config.FailureGhostTTL
+	}
+	ghost := winner.ObservedAt.Add(ghostTTL)
+	node.GhostExpiresAt = &ghost
+}
+
+func projectNodeState(evidence StateEvidence) NodeState {
+	if evidence.Value == "" || evidence.Source == (SourceRef{}) {
+		return NodeState{}
+	}
+	return NodeState{Value: evidence.Value, Source: evidence.Source, Since: evidence.ObservedAt, ValidUntil: evidence.ValidUntil}
+}
+
+func (r *Reconciler) nextTransitions(txn *reconcileTxn, actor NodeID, now time.Time, state NodeState) ([]Transition, error) {
+	current := r.transitions[actor]
+	if values, exists := txn.transitions[actor]; exists {
+		current = values
+	}
+	if len(current) != 0 && now.Before(current[len(current)-1].At) {
+		return nil, fmt.Errorf("reconcile transition time rule violated: nondecreasing=false")
+	}
+	next := Transition{At: now, State: state.Value, Source: state.Source}
+	limit := r.config.TransitionLimit
+	var result []Transition
+	if len(current) < limit {
+		result = make([]Transition, len(current)+1, limit)
+		copy(result, current)
+		result[len(current)] = next
+	} else {
+		result = make([]Transition, limit, limit)
+		copy(result, current[1:])
+		result[limit-1] = next
+	}
+	if txn.transitions == nil {
+		txn.transitions = make(map[NodeID][]Transition)
+	}
+	txn.transitions[actor] = result
+	return result, nil
 }
 
 func reconcileActorInvariant(rule string, actor NodeID) error {
@@ -1552,6 +2557,8 @@ func reconcileActorInvariant(rule string, actor NodeID) error {
 		return fmt.Errorf("reconcile node fold rule violated: field=Actor bytes=%d class=empty", len(actor))
 	case "metrics-owner":
 		return fmt.Errorf("reconcile metrics owner rule violated: field=Actor bytes=%d class=missing", len(actor))
+	case "state-owner":
+		return fmt.Errorf("reconcile state owner rule violated: field=Actor bytes=%d class=missing", len(actor))
 	default:
 		return fmt.Errorf("reconcile actor invariant rule violated: field=Actor bytes=%d class=unknown", len(actor))
 	}
@@ -1569,7 +2576,7 @@ func nodeRecordEqual(left, right *nodeRecord) bool {
 		!timePointerEqual(a.FailedAt, b.FailedAt) || !timePointerEqual(a.GhostExpiresAt, b.GhostExpiresAt) ||
 		a.Pinned != b.Pinned || !a.TelemetryAt.Equal(b.TelemetryAt) || a.Partial != b.Partial ||
 		len(a.Transitions) != len(b.Transitions) || cap(a.Transitions) != cap(b.Transitions) ||
-		!sourceSetEqual(left.identitySources, right.identitySources) || !sourceSetEqual(left.metricSources, right.metricSources) {
+		!sourceSetEqual(left.identitySources, right.identitySources) || !sourceSetEqual(left.metricSources, right.metricSources) || !sourceSetEqual(left.stateSources, right.stateSources) || !sourceSetEqual(left.terminalSources, right.terminalSources) {
 		return false
 	}
 	for index := range a.Transitions {
@@ -1791,6 +2798,9 @@ func (r *Reconciler) prepareAdmissionWithFallback(event Event, now time.Time, ki
 	if kind == AdmissionObservationRegime {
 		gapKind = GapSchema
 	}
+	if kind == AdmissionSequenceRegime {
+		gapKind = GapSchema
+	}
 	if kind == AdmissionTopologyCycle {
 		capability, present, gapKind = CapabilitySpawn, true, GapCollision
 	}
@@ -1903,6 +2913,12 @@ func nodePartialWithGaps(node *nodeRecord, base map[gapKey]*Gap, overlay map[gap
 		if _, ok := node.metricSources[key.source]; ok && (!key.capabilityPresent || key.capability == CapabilityMetrics) {
 			return true
 		}
+		if _, ok := node.stateSources[key.source]; ok && (!key.capabilityPresent || key.capability == CapabilityState) {
+			return true
+		}
+		if _, ok := node.terminalSources[key.source]; ok && (!key.capabilityPresent || key.capability == CapabilityTerminal) {
+			return true
+		}
 		return false
 	}
 	for key, gap := range base {
@@ -1926,66 +2942,65 @@ func cloneNodeRecord(input *nodeRecord) *nodeRecord {
 	if input == nil {
 		return nil
 	}
-	return &nodeRecord{value: cloneNode(input.value), identitySources: cloneSourceSet(input.identitySources), metricSources: cloneSourceSet(input.metricSources)}
+	value := cloneNode(input.value)
+	if input.value.Transitions != nil {
+		value.Transitions = make([]Transition, len(input.value.Transitions), cap(input.value.Transitions))
+		copy(value.Transitions, input.value.Transitions)
+	}
+	return &nodeRecord{value: value, identitySources: cloneSourceSet(input.identitySources), metricSources: cloneSourceSet(input.metricSources), stateSources: cloneSourceSet(input.stateSources), terminalSources: cloneSourceSet(input.terminalSources)}
 }
 
 func (r *Reconciler) stageExternalGap(txn *reconcileTxn, event Event) (*reconcileTxn, error) {
+	if err := r.stageGapObserved(txn, event); err != nil {
+		return r.applyStageError(event, event.ReceivedAt, err)
+	}
+	return r.finishApplyTransaction(txn, event, event.ReceivedAt)
+}
+
+func (r *Reconciler) stageGapObserved(txn *reconcileTxn, event Event) error {
 	data := event.Data.(GapObserved)
 	key := gapKey{source: event.Source.Ref.ID, capability: data.Capability, capabilityPresent: data.Capability != "", kind: data.Kind}
+	current := candidateGap(r.gaps, txn.gaps, key)
 	if data.Status == GapStatusResolved {
-		if _, exists := r.gaps[key]; exists {
-			txn.gaps = map[gapKey]*Gap{key: nil}
+		if current != nil {
+			if txn.gaps == nil {
+				txn.gaps = make(map[gapKey]*Gap)
+			}
+			txn.gaps[key] = nil
 			txn.change.Gap, txn.change.Visibility = true, true
 		}
 	} else {
-		if _, exists := r.gaps[key]; !exists && ordinaryGapCount(r.gaps) >= r.config.MaxGaps-3 {
-			return r.prepareAdmission(event, event.ReceivedAt, AdmissionCountLimit)
+		if current == nil && candidateOrdinaryGapCount(r.gaps, txn.gaps) >= r.config.MaxGaps-3 {
+			return &AdmissionError{Kind: AdmissionCountLimit}
 		}
 		gap := &Gap{Source: key.source, Kind: key.kind, At: event.ReceivedAt, Count: data.Count}
 		if key.capabilityPresent {
 			gap.Capability = clonePointer(&key.capability)
 		}
-		if current := r.gaps[key]; current != nil {
+		if current != nil {
 			gap.At = current.At
 			if current.Count > uint64(maxJSONSafeInteger)-data.Count {
-				return r.prepareAdmission(event, event.ReceivedAt, AdmissionCountLimit)
+				return &AdmissionError{Kind: AdmissionCountLimit}
 			}
 			gap.Count += current.Count
 		}
-		txn.gaps = map[gapKey]*Gap{key: gap}
+		if txn.gaps == nil {
+			txn.gaps = make(map[gapKey]*Gap)
+		}
+		txn.gaps[key] = gap
 		txn.change.Gap, txn.change.Visibility = true, true
 	}
 	if txn.gaps != nil {
-		for id, record := range r.nodes {
-			partial := nodePartialWithGaps(record, r.gaps, txn.gaps)
-			if partial != record.value.Partial {
-				copyRecord := cloneNodeRecord(record)
-				copyRecord.value.Partial = partial
-				if txn.nodes == nil {
-					txn.nodes = make(map[NodeID]*nodeRecord)
-				}
-				txn.nodes[id] = copyRecord
-				txn.change.Visibility = true
-			}
-		}
+		r.stageNodePartialUpdates(txn)
 	}
-	if txn.historyUnits > r.config.HistoryLimit {
-		return r.prepareAdmission(event, event.ReceivedAt, AdmissionHistoryLimit)
-	}
-	if err := r.finalizeTransaction(txn, event.ReceivedAt); err != nil {
-		var admission *AdmissionError
-		if errors.As(err, &admission) && admission != nil && admission.Kind.Valid() {
-			return r.prepareAdmission(event, event.ReceivedAt, admission.Kind)
-		}
-		return nil, err
-	}
-	return txn, nil
+	return nil
 }
 
 func (r *Reconciler) finalizeTransaction(txn *reconcileTxn, now time.Time) error {
 	if txn == nil {
 		return fmt.Errorf("reconcile transaction rule violated: transaction=nil")
 	}
+	r.normalizeTransactionDeltas(txn)
 	if txn.change.Topology {
 		if r.topologyRevision >= uint64(maxJSONSafeInteger) {
 			return ErrRevisionExhausted
@@ -2023,7 +3038,7 @@ func (r *Reconciler) finalizeTransaction(txn *reconcileTxn, now time.Time) error
 	if txn.transitions != nil {
 		txn.transitionEpoch++
 	}
-	retained := chargeRetainedRoot(r, txn)
+	retained := r.retainedTransactionCharge(txn)
 	if !retained.ok {
 		return &AdmissionError{Kind: AdmissionRetainedBytes}
 	}
@@ -2058,11 +3073,52 @@ func (r *Reconciler) finalizeTransaction(txn *reconcileTxn, now time.Time) error
 	return nil
 }
 
+func (r *Reconciler) normalizeTransactionDeltas(txn *reconcileTxn) {
+	if txn == nil {
+		return
+	}
+	hadEdgeVisibility := txn.change.Visibility && len(txn.edges) != 0
+	for key, candidate := range txn.gaps {
+		if gapValueEqual(r.gaps[key], candidate) {
+			delete(txn.gaps, key)
+		}
+	}
+	if len(txn.gaps) == 0 {
+		txn.gaps = nil
+	}
+	for id, candidate := range txn.nodes {
+		if nodeRecordEqual(r.nodes[id], candidate) {
+			delete(txn.nodes, id)
+		}
+	}
+	if len(txn.nodes) == 0 {
+		txn.nodes = nil
+	}
+	txn.change.Gap = txn.gaps != nil
+	txn.change.Visibility = hadEdgeVisibility || r.transactionHasVisibilityDelta(txn)
+}
+
+func (r *Reconciler) transactionHasVisibilityDelta(txn *reconcileTxn) bool {
+	if txn.gaps != nil {
+		return true
+	}
+	for id, after := range txn.nodes {
+		before := r.nodes[id]
+		if before == nil || after == nil {
+			continue
+		}
+		if nodeIdentityChanged(before.value, after.value) || before.value.Partial != after.value.Partial || before.value.Pinned != after.value.Pinned || !timePointerEqual(before.value.GhostExpiresAt, after.value.GhostExpiresAt) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Reconciler) preflightTransactionCharges(txn *reconcileTxn) error {
 	if r == nil || txn == nil {
 		return fmt.Errorf("reconcile charge preflight rule violated: receiverNil=%t transactionNil=%t", r == nil, txn == nil)
 	}
-	retained := chargeRetainedRoot(r, txn)
+	retained := r.retainedTransactionCharge(txn)
 	if !retained.ok {
 		return &AdmissionError{Kind: AdmissionRetainedBytes}
 	}
@@ -2083,6 +3139,18 @@ func (r *Reconciler) preflightTransactionCharges(txn *reconcileTxn) error {
 		return &AdmissionError{Kind: AdmissionPublishedBytes}
 	}
 	return nil
+}
+
+func (r *Reconciler) retainedTransactionCharge(txn *reconcileTxn) chargeResult {
+	retained := chargeRetainedRoot(r, txn)
+	for actor, values := range txn.transitions {
+		if values == nil {
+			if _, exists := r.transitions[actor]; exists {
+				retained = subtractCharge(retained, chargeTransitionEntry(actor, nil, r.config.TransitionLimit).bytes)
+			}
+		}
+	}
+	return retained
 }
 
 func (r *Reconciler) buildGeneration(txn *reconcileTxn, now time.Time) *generation {

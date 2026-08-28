@@ -496,6 +496,92 @@ The landed `TestEventMetricsDoesNotInventNumericPolicy` and its sabotage conclus
 - `GF-T5-COW`: Before allocating a changed top-level Nodes, Edges, or Gaps slice, the transaction computes exact final cardinality from replacements, insertions, and deletions. Capacity equals final length and logical fixed-backing charge.
 - Quality-review coverage remains in `TestReconcileDiagnosticSlotsExactAndCollisionFallsBack` for both input permutations and `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` for replacement-heavy exact capacities.
 
+#### Task 6 ordered state reconciliation: amended eight-axis risk model
+
+**Invariants**
+
+- `GF-T6-PREDISPATCH`: Sequence handling is one generic wrapper before semantic dispatch for every `SourceProtocol` event kind. Its key is exactly `(Actor, ActorIncarnation, complete SourceRef)`; protocol mode is implicit and absent from `sequenceKey`. Node, metrics, state, heartbeat, exit, and later protocol kinds cannot bypass one another. Nonprotocol events never read, create, or mutate sequence state.
+- `GF-T6-SEQUENCE-ACCOUNTING`: A sequence lane is unseen, unsequenced, ordered, or exhausted. The first accepted nil or positive value freezes its regime. The base marker consumes retained bytes but no history unit. Every replay fingerprint, buffered event, and inclusive missing-range record consumes one history unit; draining releases only the buffered-event unit. Every retained buffered/range slice has `cap == len`.
+- `GF-T6-GAP-EPISODE`: All outstanding ranges from lanes sharing one SourceID feed one `(SourceID,nil,GapSequence)` episode. Public Count is cumulative, adds each newly detected missing cardinality with JSON-safe saturation, never decrements during partial recovery, and retains first At. The row resolves only when every lane range is empty. A protocol gap opened and resolved from an absent base inside one drain normalizes to no public gap, Visibility, revision, epoch, or generation delta.
+- `GF-T6-CLOCKS`: Canonical state ObservedAt, ValidUntil base, health lastHeartbeat, CompletedAt, FailedAt, and initial ghost deadline all derive from `Event.ReceivedAt`. Apply now is only transaction/transition time. SourceTime and wall-clock reads never supply canonical evidence time.
+- `GF-T6-PUBLIC-STATE`: StateRevision and the transition ring change only when the complete published `Node.State` value/source/since/valid-until changes. Losing and private-only state, approval, heartbeat, range, and expiry mutations do neither. When otherwise tied contributions have distinct complete EventSource lanes, the final accepted ordinal selects the private winner capability without changing Task 4 StateEvidence or creating a public state revision.
+
+**State transitions**
+
+- `GF-T6-REORDER`: The first positive sequence establishes its baseline without earlier loss. A later skip arms `D = firstSkippedEvent.ReceivedAt + ReorderWindow`. At D, all inclusive holes through the highest buffered sequence are inferred and buffered semantics drain in ascending sequence while skipping holes. No later event means no detectable final loss.
+- `GF-T6-REGIME`: Nil-to-positive and positive-to-nil transitions return `AdmissionSequenceRegime`. The expected rejection may publish only its exact schema diagnostic and affected Partial/Visibility; it retains no rejected fingerprint, sequence mutation, contribution, state, or semantic revision. Replay can succeed later only if the lane is otherwise absent through legal ownership cleanup.
+- `GF-T6-RANGE-RECOVERY`: Late evidence splits or removes only its lane's retained ranges and is fingerprinted without replaying stale semantics. One recovered range or lane leaves the cumulative public episode byte-identical while any range remains; complete cross-lane recovery removes it.
+- `GF-T6-OVERLAY`: Approval and blocked rows form a reducer-owned protected overlay without changing Task 4 `PreferState`. Completed/failed and vanished win first; otherwise any eligible overlay row wins before ordinary nonterminal evidence. Overlay rows fold by authority, positive sequence only for identical complete SourceRef, ReceivedAt, then accepted ordinal.
+- `GF-T6-RELATIONSHIP`: An open protected row is keyed by actor, actor incarnation, complete EventSource lane, and relationship ID. Ordinary state cannot hide it, including a later same-lane event without exact resolution. Resolution closes only the exact row; terminal clears every row for its actor incarnation and no other incarnation.
+- `GF-T6-HEALTH`: First matching nonterminal state seeds one health epoch. Exact-lane heartbeat refreshes it. Freshness is strictly `now < lastHeartbeat + HookFreshness`; equality removes that epoch's nonterminal state and approvals before fallback. A late heartbeat creates a new empty epoch and cannot resurrect deleted evidence.
+- `GF-T6-TERMINAL`: Completed, failed, and vanished are health/semantic-expiry exempt and have zero ValidUntil. Completed/vanished create `GhostExpiresAt = ReceivedAt + SuccessGhostTTL`; failed uses FailureGhostTTL. The terminal transaction changes State and Visibility once. Task 7 advances/fades/removes/pins/cancels this metadata but never recreates its clock.
+- `GF-T6-SWITCH-CLEANUP`: A proven incarnation switch atomically releases the old incarnation's buffered events, missing ranges, state lanes, approval rows, and health epochs with exact history/charge deltas. Stable fingerprints and its retired proof remain. Old state, approval, heartbeat, exit, or sequence events cannot mutate or clear current evidence.
+
+**Boundaries**
+
+- `GF-T6-DEADLINE-BOUND`: `Advance(D-1ns)` is inert and `Advance(D)` detects with `Gap.At == D`, regardless of Apply now or SourceTime. Ready Apply calls precede Reconciler Advance; Store queue/timer scheduling is explicitly deferred to Task 8.
+- `GF-T6-UINT-BOUND`: Applied `math.MaxUint64` enters exhausted mode without `+1`. Every later representable value is stale. A `1..MaxUint64` skip retains uint64 endpoints without enumeration or allocation proportional to hole width.
+- `GF-T6-COUNT-BOUND`: Inclusive range cardinality uses checked uint64 arithmetic and saturates public count at exactly 9007199254740991. Multiple disjoint holes retain separate ranges and add their full cardinalities once.
+- `GF-T6-TRANSITION-BOUND`: The ring retains the last 256 public changes after change 257, in transaction-time/state/source order, and remains charged at full configured capacity. Transition time is nonzero and nondecreasing per node.
+
+**Malformed inputs**
+
+- `GF-T6-ADMISSION-KIND`: `AdmissionSequenceRegime` is a closed valid kind, has fixed safe text, and unwraps to ErrAdmission. Its diagnostic is `(event.Source.Ref.ID,&eventCapability,GapSchema)`. Nil, invalid, and forged kinds remain fatal invariants.
+- `GF-T6-ENDPOINT`: State, approval, heartbeat, exit, and sequenced events require an existing matching actor incarnation. Actorless heartbeat and retired/mismatched incarnation input reject atomically; no Task 6 event establishes or numerically orders an incarnation.
+- `GF-T6-TIME-INPUT`: Apply/Advance transaction now is nonzero and per-node nondecreasing for a public state transition. Zero or decreasing time is an invariant failure with no semantic mutation or diagnostic.
+
+**Concurrency**
+
+- `GF-T6-ADVANCE-TXN`: `prepareAdvance` stages all due range changes, buffer drain, health/approval expiry, fallback, transition rotation, exact history/charges, revisions, epochs, and candidate generation before commit. No apply-then-rollback path is permitted.
+- `GF-T6-ADVANCE-FAILURE`: History, retained-byte, or published-byte rejection may commit exactly `(SourceAITopGapLedger,nil,GapResource)` plus matching Partial and Visibility while sequence buffers/ranges/state remain unchanged. ErrRevisionExhausted and invariant failure commit no mutation or diagnostic. Retry at the same now is deterministic.
+- `GF-T6-STORE-FENCE`: Reconciler tests synchronously Apply every ready event before Advance. They do not claim Store queue/barrier precedence; Task 8 owns `TestStoreDrainsReadyBeforeAdvance`.
+
+**Persistence and replay**
+
+- `GF-T6-WITNESSES`: Applied fingerprints remain lifetime replay truth. Buffered and missing-range history releases only with its exact private owner. Gap resolution never removes applied witnesses, and late missing evidence cannot rewind published semantics.
+- `GF-T6-EPOCH-NO-RESURRECTION`: Health expiry deletes evidence and protected rows from the expired epoch. A later empty epoch owns its own admitted history/charge and does not reconstruct prior state.
+- `GF-T6-GHOST-OWNERSHIP`: Task 6 owns the initial exact receiver-time terminal and ghost clocks. Duplicate/replay does not extend them. Task 7 consumes the frozen metadata for lifecycle work.
+
+**Integration contracts**
+
+- `GF-T6-API`: Public Apply and Advance remain transactional `(ChangeSet,error)` APIs. Task 6 adds `AdmissionSequenceRegime`, generic protocol sequencing, state/approval/health owners, terminal clocks, transition rotation, SourceID sequence gaps, and cleanup through existing Task 5 generations and charge limits.
+- `GF-T6-STATE-PROJECTION`: Published state stores source and since together; ValidUntil appears only on eligible ordinary native/hook nonterminal evidence. Terminal/vanished and approval/blocked never serialize ValidUntil. Fallback transition At equals Advance now.
+- `GF-T6-HEARTBEAT-CONTRACT`: Health identity is actor, actor incarnation, complete SourceRef, and EventSource.Mode. Heartbeats differing in any component refresh nothing else. Task 9, not this reducer, owns native poll heartbeat emission and zero-result silence.
+- `GF-T6-SCOPE`: Task 6 creates initial terminal ghost metadata but performs no ghost advancement/fade/removal/pinning/resume work and no Task 7 edge/message behavior.
+
+**Regression traps, all nine bug-shape prefixes**
+
+- boundary: populated by first sequence 7, first/max sequence, `D-1ns`, exact D, `1..MaxUint64` holes, disjoint inclusive ranges, safe-count saturation, exact six seconds, and 257 state changes.
+- concurrency: populated by generic pre-dispatch ordering, staged Advance, exact retry, prior Snapshot immutability, ready-Apply/Reconciler-Advance fence, and per-node transition-time monotonicity.
+- contract: populated by implicit protocol mode, complete sequence/health/approval identities, sequence-regime diagnostics, expected-admission diagnostic allowance, public-only state revisions, and Task 6/7/8/9 ownership fences.
+- encoding: populated by nil sequence presence, complete SourceRef/EventSource equality, opaque relationship IDs, receiver/source/apply time separation, uint64 endpoints, and JSON-safe public counts.
+- framework: populated by Go map nondeterminism, time equality, nil pointers, errors.Is/errors.As identity, uint64 overflow, slice backing capacity, heap/order behavior, and fixed-capacity transition slices.
+- io: N/A - Reconciler Task 6 performs no filesystem, network, IPC, shell, or device I/O; Store scheduling and collector heartbeat emission are later-task contracts.
+- persistence: populated by lifetime fingerprints, exhausted markers, retained inclusive ranges, cumulative episodes, partial/complete recovery, empty health epochs, retired proofs, and frozen initial ghost clocks.
+- resource: populated by exact base-marker bytes, per-buffer/per-range history, cap-equals-len backing, range representation without enumeration, transition capacity, diagnostic reserve, and retained/published admission.
+- state: populated by unseen/unsequenced/ordered/exhausted lanes, multi-hole drain, protected overlay, relationship resolution, semantic/health expiry, public-only transitions, terminal precedence, and incarnation cleanup.
+
+#### Task 6 exact names, required subrows, and predeclared sabotage pairs
+
+| Exact test and required named subrows | Primary risk rows | Physical production plant | Decisive assertion weakening |
+|---|---|---|---|
+| `TestReconcileSequence132WithinWindow`: `1-3-2-generic-pre-dispatch`, `1-4-6-multi-hole`, `protocol-gap-net-zero-public-delta` | `GF-T6-PREDISPATCH`, `GF-T6-SEQUENCE-ACCOUNTING`, `GF-T6-REORDER`, `GF-T6-COUNT-BOUND`, `GF-T6-GAP-EPISODE` | Sequence only state dispatch, collapse disjoint holes, or retain transient gap flags after net-zero normalization. | Remove the cross-kind order, exact two-range/count, or no-public-gap oracle. |
+| `TestReconcileFirstPositiveSequenceEstablishesBaseline`: `first-seven`, `maxuint-exhausted` | `GF-T6-REORDER`, `GF-T6-UINT-BOUND`, `GF-T6-SEQUENCE-ACCOUNTING` | Assume baseline one or compute `MaxUint64+1`. | Remove no-earlier-gap or exhausted-marker/no-wrap oracle. |
+| `TestReconcileSequenceGapExactDeadline`: `receiver-deadline-origin`, `maxuint-count-saturation` | `GF-T6-DEADLINE-BOUND`, `GF-T6-UINT-BOUND`, `GF-T6-COUNT-BOUND` | Use `>` at D or derive D from Apply now/SourceTime; enumerate the huge hole. | Remove exact D/At or saturated-count/range-endpoint oracle. |
+| `TestReconcileSequenceDeadlineDrainsReadyWork`: `multi-hole-one-transaction`, `history-retained-published-diagnostic`, `revision-invariant-atomic-retry` | `GF-T6-ADVANCE-TXN`, `GF-T6-ADVANCE-FAILURE`, `GF-T6-STORE-FENCE` | Mutate sequence/state before admission and roll back incompletely. | Remove byte-identical private/public/owner pre-post and same-D retry oracle. |
+| `TestReconcileUnsequencedLossNotClaimed`: `nil-never-claims-loss`, `nil-to-positive-schema-diagnostic` | `GF-T6-REGIME`, `GF-T6-ADMISSION-KIND`, `GF-T6-GAP-EPISODE` | Arm loss for nil sequence or retain rejected positive fingerprint. | Remove no-loss or exact diagnostic/no-rejected-owner oracle. |
+| `TestReconcileFinalMissingEventNotClaimed`: `no-later-event-no-loss`, `positive-to-nil-schema-diagnostic` | `GF-T6-REORDER`, `GF-T6-REGIME`, `GF-T6-WITNESSES` | Arm a deadline after the final contiguous event or change the ordered marker on nil rejection. | Remove final no-gap or unchanged-marker/replay oracle. |
+| `TestReconcileRejectsMixedSequenceRegime`: `all-capabilities-both-directions`, `kind-closure-partial-and-replay` | `GF-T6-PREDISPATCH`, `GF-T6-ADMISSION-KIND`, `GF-T6-REGIME` | Permit one capability/direction to mix or map the diagnostic to nil capability. | Skip the affected table row or exact typed diagnostic/Partial/witness oracle. |
+| `TestReconcileLateMissingRangeResolvesGapWithoutRewind`: `split-remove-two-lanes-cumulative` | `GF-T6-RANGE-RECOVERY`, `GF-T6-GAP-EPISODE`, `GF-T6-WITNESSES` | Decrement Count on recovery or resolve after only one lane clears. | Remove cumulative count/first At or all-lanes outstanding-range oracle. |
+| `TestReconcileStateAuthorityAndSemanticTTL`: `receiver-clock-semantic-ttl`, `protected-overlay`, `public-only-revision-transition`, `distinct-mode-terminal-state-tie-uses-accepted-ordinal`, `last-256-ring`, `advance-fallback-transaction-time`, `invalid-transaction-time` | `GF-T6-CLOCKS`, `GF-T6-OVERLAY`, `GF-T6-PUBLIC-STATE`, `GF-T6-TRANSITION-BOUND`, `GF-T6-TIME-INPUT` | Use SourceTime/Apply now, append/increment on a private-only change, or treat distinct modes as one StateEvidence lane at the final tie. | Remove canonical-clock, exact revision/transition, or winner-capability Partial oracle. |
+| `TestReconcileSourceHealthStaleAtSixSeconds`: `exact-six-second-expiry`, `failed-expiry-atomic-retry` | `GF-T6-HEALTH`, `GF-T6-ADVANCE-FAILURE` | Expire only after equality or partially remove evidence before revision failure. | Remove exact-equality or byte-identical failure/same-time retry oracle. |
+| `TestReconcileLateHeartbeatStartsNewEpoch`: `empty-epoch-no-resurrection-accounting` | `GF-T6-HEALTH`, `GF-T6-EPOCH-NO-RESURRECTION` | Retain expired evidence and resurrect it on late heartbeat. | Remove empty-state/approval plus exact new epoch history/charge oracle. |
+| `TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane`: `actor-incarnation-source-mode-isolation`, `actorless-and-mismatched-rejection` | `GF-T6-HEARTBEAT-CONTRACT`, `GF-T6-ENDPOINT` | Key health by SourceID or SourceRef alone. | Remove one identity-dimension expiry or malformed-input atomicity oracle. |
+| `TestReconcileApprovalAndBlockedRelationshipsResolveIndependently`: `ordinary-cannot-hide-overlay`, `exact-full-lane-resolution` | `GF-T6-OVERLAY`, `GF-T6-RELATIONSHIP` | Resolve by relationship ID alone or let later ordinary state hide the row. | Remove remaining protected-row aggregate or full-lane isolation oracle. |
+| `TestReconcileTerminalClearsRelationships`: `three-outcomes-clocks-ghosts`, `actor-incarnation-clear-isolation`, `old-terminal-rejected` | `GF-T6-TERMINAL`, `GF-T6-RELATIONSHIP`, `GF-T6-GHOST-OWNERSHIP` | Delay GhostExpiresAt creation, use Apply now, wrong TTL, or clear another incarnation's rows. | Remove exact terminal/ghost clock and State/Visibility/revision or isolation oracle. |
+| `TestReconcileTerminalExemptFromHeartbeatExpiry`: `terminal-survives-health-and-semantic-time` | `GF-T6-TERMINAL`, `GF-T6-STATE-PROJECTION`, `GF-T6-SCOPE` | Delete terminal evidence at health expiry or assign ValidUntil. | Remove post-six-second terminal/zero-validity/exact-clock oracle. |
+| `TestReconcileRejectsOldIncarnationEvent`: `switch-owner-cleanup`, `old-kinds-cannot-mutate-current` | `GF-T6-SWITCH-CLEANUP`, `GF-T6-ENDPOINT`, `GF-T6-SCOPE` | Leak one sequence/state/approval/health owner across switch or accept old exit. | Remove exact history/charge owner delta or current-node/approval atomicity oracle. |
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.

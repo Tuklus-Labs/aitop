@@ -813,3 +813,89 @@ Specification-review result: four production RED observations, four false-GREEN 
 Quality-review result: two production RED observations, two false-GREEN weakenings, four edits restored. Cumulative Task 5 evidence is 63 valid pairs and 126 restored physical edits.
 
 Quality non-verdict: changing the pending value to cumulative without also forcing a fitting existing episode into fallback survived because deterministic existing-first fitting correctly preserved that episode. It was restored, then QR1 was replanted on the full historical-double-count defect and killed.
+
+## Task 6 ordered sequence, state, health, and terminal reconciliation
+
+Each pair below was physical. The production plant stayed present while the named assertion was weakened, the weakened run went false GREEN, then both edits were restored before the next pair. Predictions were RED for the production plant and GREEN only after the decisive weakening. Observations matched unless listed under non-verdicts.
+
+### Frozen 16-name pairs
+
+| ID / exact test | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T6-01 / `TestReconcileSequence132WithinWindow` | Ignored the transaction metrics overlay while draining seq2 then seq3. RED: `same-lane buffered metrics partial-field preservation`, TokenRate became nil. | Removed only the TokenRate preservation terms; exact test GREEN. | The generic drain must stage against prior transaction overlays. |
+| T6-02 / `TestReconcileFirstPositiveSequenceEstablishesBaseline` | Forced every first ordered marker's next value to one. RED: first-seven marker reported `next:1`, want 8. | Removed only regime/next marker terms; exact test GREEN. | Any positive first sequence establishes the baseline. |
+| T6-03 / `TestReconcileSequenceGapExactDeadline` | Used strict `deadline.Before(now)` instead of detection at equality. RED: both exact-D rows had no sequence gap. | Advanced both D rows by one nanosecond; exact test GREEN. | Detection is inclusive at D; both ordinary and MaxUint rows kill `>`. |
+| T6-04 / `TestReconcileSequenceDeadlineDrainsReadyWork` | Omitted missing-range history units during due drain. RED: history 9, want 11. | Removed only the exact history delta term; exact test GREEN. | Every retained inclusive range owns one history unit. |
+| T6-05 / `TestReconcileUnsequencedLossNotClaimed` | Disabled nil-to-positive regime rejection. RED: typed sequence-regime admission was nil. | Returned only when the expected rejection disappeared; exact test GREEN. | An unsequenced lane cannot become ordered. |
+| T6-06 / `TestReconcileFinalMissingEventNotClaimed` | Silently no-op'd positive-to-nil mismatch instead of emitting the schema admission. RED: typed sequence-regime admission was nil. | Returned only on nil error; exact test GREEN. | An ordered lane cannot become unsequenced, and rejected work remains diagnostic. |
+| T6-07 / `TestReconcileRejectsMixedSequenceRegime` | Removed `AdmissionSequenceRegime` from the closed Valid set. RED: valid/unwrap/error closure failed. | Returned only when the kind was invalid; exact test GREEN. | The new kind is closed, safe, and unwraps to ErrAdmission. |
+| T6-08 / `TestReconcileLateMissingRangeResolvesGapWithoutRewind` | Removed an entire `[2,3]` range when late sequence 2 arrived instead of shrinking to `[3,3]`. RED: empty ranges and history 12, want 13. | Removed only split/cap/history terms; exact test GREEN. | Late evidence edits only its exact inclusive range and owner count. |
+| T6-09 / `TestReconcileStateAuthorityAndSemanticTTL` | Consumed a second accepted ordinal for the state event's health owner. RED: ordinal advanced 1 to 3, want 2. | Expected the doubled ordinal; exact test GREEN. | One accepted event owns one ordering ordinal across all staged owners. |
+| T6-10 / `TestReconcileSourceHealthStaleAtSixSeconds` | Kept an epoch fresh at equality by requiring `now.After(deadline)`. RED: approval remained at exact six seconds. | Added one nanosecond before the expiry assertion and removed only the exact transition-time term; focused row GREEN. | Health freshness is strictly before the deadline. |
+| T6-11 / `TestReconcileLateHeartbeatStartsNewEpoch` | Required a heartbeat to be strictly later than the epoch deadline before rollover. RED: exact-boundary late heartbeat retained the approval. | Shifted only the heartbeat rollover boundary by one nanosecond; focused row GREEN. | Apply-time rollover occurs at equality. |
+| T6-12 / `TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane` | Normalized every heartbeat mode to observation. RED: the immutable-mode heartbeat refreshed actor D's observation state. | Removed only actor D's mode-isolation expiry term; exact test GREEN. | EventSource.Mode participates in actor health identity. |
+| T6-13 / `TestReconcileApprovalAndBlockedRelationshipsResolveIndependently` | Resolved the first matching relationship ID across source lanes. RED: wrong native lane cleared the hook approval. | Disabled only the wrong-lane preservation assertion; exact test GREEN. | Resolution requires the complete approval key, not relationship bytes alone. |
+| T6-14 / `TestReconcileTerminalClearsRelationships` | Used SuccessGhostTTL for a failed winner. RED: failed ghost ended at five minutes, want fifteen. | Changed only the failed-case TTL oracle to SuccessGhostTTL; exact test GREEN. | Failed terminal metadata uses FailureGhostTTL. |
+| T6-15 / `TestReconcileTerminalExemptFromHeartbeatExpiry` | Serialized a one-hour ValidUntil on terminal NodeState. RED: terminal validity was nonzero after Advance. | Removed only the zero-ValidUntil term; exact test GREEN. | Terminal evidence has no semantic validity clock. |
+| T6-16 / `TestReconcileRejectsOldIncarnationEvent` | Skipped old-incarnation health cleanup during a proven switch. RED: one old health epoch remained with exact history/charge otherwise consistent. | Removed only the old-health owner term; exact test GREEN. | Switch cleanup includes health epochs. |
+
+Named result: 16 production RED observations, 16 false-GREEN assertion weakenings, 32 restored edits, zero survivors.
+
+### Audit-fix extra pairs
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T6-X01 / cross-kind transaction overlay | Ignored the transaction node overlay. RED: seq3 Model survived but seq2 ProvenName reverted to `base`. | Disabled only the final Node name/model assertion; focused row GREEN. | Buffered Node events preserve earlier partial fields in the same transaction. |
+| T6-X02 / protocol `GapObserved` dispatch | Routed protocol gaps to a deferred kind. RED: first sequenced GapObserved returned Task6 deferred-kind error. | Returned at the start of only the protocol-gap subrow; focused row GREEN. | Existing Task 5 gap semantics remain reachable behind generic sequencing. |
+| T6-X03 / sequence MaxGaps fallback | Disabled ordinary sequence-gap capacity checking. RED: Advance returned nil instead of AdmissionCountLimit. | Returned only when the expected error disappeared; focused row GREEN. | Sequence gaps obey `MaxGaps-3` and reserved fallback. |
+| T6-X04 / single ordinal | Added a second state-event ordinal. RED: 1 to 3, want 2. | Expected the doubled ordinal; focused row GREEN. | State and health owners share one accepted-event ordinal. |
+| T6-X05 / passive evidence validation | Bypassed post-normalization ValidateStateEvidence. RED: passive approval was privately retained with nil error. | Returned only when the admission disappeared; focused row GREEN. | Invalid passive evidence produces ContributionConflict without a witness. |
+| T6-X06 / late heartbeat rollover | Skipped purge on a due heartbeat rollover. RED: old approval survived in the new epoch. | Retained only the new heartbeat clock assertion; focused row GREEN. | A late heartbeat starts an empty epoch and cannot resurrect rows. |
+| T6-X07 / late state rollover | Refreshed health only for a missing epoch. RED: exact-boundary state became ineligible under the stale old clock. | Returned only on the resulting empty public state; exact test GREEN. | A new state at/after expiry purges then seeds fresh evidence. |
+| T6-X08 / max health clock under reorder | Always replaced health time with the drained event time. RED: buffered seq3 heartbeat rewound 12:00:02 to 12:00:01. | Removed only the max-clock term; focused row GREEN. | Cross-kind ordered drain takes max(existing, event ReceivedAt). |
+| T6-X09 / losing terminal metadata | Reapplied candidate terminal metadata after folding the winning terminal. RED: losing native completion rewrote winning hook failure clocks. | Returned when the winning Node.State remained unchanged, ignoring clock drift; focused row GREEN. | Terminal lifecycle derives from the final winner. |
+| T6-X10 / same-transaction approval clear | Cleared only approvals already committed before the transaction. RED: an approval staged earlier in the same Advance survived terminal. | Disabled only the staged-approval clear assertion; focused row GREEN. | Terminal clearing visits base and transaction overlays. |
+| T6-X11 / terminal `StateObserved` lifecycle | Cleared terminal clocks and Visibility after projecting a terminal-valued state event. RED: completed state had no CompletedAt or GhostExpiresAt. | Returned only when GhostExpiresAt was nil; focused row GREEN. | ExitObserved and terminal StateObserved share lifecycle projection. |
+| T6-X12 / terminal capability Partial | Marked ExitObserved contribution as CapabilityState. RED: a matching terminal gap did not mark the node Partial. | Disabled only the Exit terminal-capability Partial assertion; focused row GREEN. | Winner capability is retained separately from normalized state. |
+| T6-X13 / switch sequence cleanup | Skipped old sequence-record cleanup. RED: one record and its active sequence gap remained after switch. | Returned only when a sequence owner leaked; exact test GREEN. | Switch cleanup and its charge/history arithmetic include sequence owners. |
+| T6-X14 / mixed Advance reserve | Kept the mixed semantic-plus-gap transaction ordinary after semantic preflight. RED: retained-byte admission fell back to GapLedger. | Raised only the final mixed limits and removed ordinary-boundary equality terms; focused row GREEN. | Semantic work proves `limit-reserve`; the staged sequence gap may use the final reserve. |
+| T6-X15 / transition backing capacity | Let cloneNodeRecord collapse transition capacity to length during Partial update. RED: mixed semantic preflight rejected the undercharged final projection. | Used a non-boundary published limit and removed only cap/published-boundary terms; focused row GREEN. | Canonical and published clones preserve the configured transition backing. |
+
+Audit-extra result: 15 production RED observations, 15 false-GREEN assertion weakenings, 30 restored edits, zero survivors. Task 6 cumulative result: 31 valid pairs and 62 restored physical edits.
+
+### Task 6 restored non-verdict attempts
+
+- Strict-D first weakening shifted only the ordinary row; the MaxUint exact-D sibling remained RED. Both edits were restored, then both D oracles were weakened together.
+- The first positive-to-nil plant bypassed the regime guard and dereferenced nil sequence, producing a panic rather than behavioral RED. Restored and replaced with a silent no-op plant.
+- The first passive-validation plant hit Exit validation rather than StateObserved and survived. Restored and replanted after NormalizeValidity.
+- The first state-rollover plant also broke the test function's top-level setup; restored and replaced with an existing-epoch-only refresh defect.
+- The first state-rollover weakening removed only the health clock but missed the resulting empty public state; restored and replaced with the decisive empty-state return.
+- The first losing-terminal plant assigned into nil `txn.nodes` and panicked; restored and replanted with valid map initialization.
+- The first transition-cap weakening removed the cap term but still hit the semantic published preflight; restored and replanted with only that preflight limit relaxed.
+
+Every non-verdict edit was restored before replanning. No compile-only failure or panic counts toward the 31 valid pairs. A final exact-16 run and `git diff --check` passed after the last restoration.
+
+### Task 6 pinned mutation-tool escalation
+
+Report location: this section in `tests/SABOTAGE_LOG.md`. Because the active Go version changed after Task 5, Task 6 did not cite the older run; it installed and reran the exact pin:
+
+```text
+tool: github.com/zimmski/go-mutesting/cmd/go-mutesting
+version: v0.0.0-20210610104036-6d9217011a00
+module checksum: h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+tool build Go: go1.27.0-X:nodwarf5 linux/amd64
+active Go: go1.27.0-X:nodwarf5 linux/amd64
+invocation: go-mutesting --exec-timeout=15 internal/graph/reconcile.go
+exit: 2 before source mutation
+```
+
+The pinned 2019 `golang.org/x/tools` loader panicked while checking `/usr/lib/go/src/internal/goarch/goarch.go:20:2`. The failure signature was `go/types.(*StdSizes).Sizeof` on a nil receiver, reached from `go/types.representableConst` during package loading. No mutant was generated, killed, survived, or timed out, so no automated score exists. The executable was isolated at `/tmp/tmp.DDpwUnnbqS/go-mutesting`; no tool mutation reached or remains in the worktree. The 33 restored physical pairs above and below are the executable mutation evidence.
+
+### Task 6 clean-pass review fixes
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T6-R01 / distinct-mode state tie | Disabled the accepted-ordinal tie for distinct contribution keys. RED: both Exit-last and State-last rows kept the earlier winner capability, so the matching gap did not mark Partial. | Disabled only the final capability-Partial assertion; focused rows GREEN. | Task 4 ordering is preserved, while distinct EventSource.Mode lanes use the later accepted ordinal at the final tie. |
+| T6-R02 / net-zero protocol gap transaction | Disabled final transaction-delta normalization. RED: open+resolve from an absent base returned Gap+Visibility, advanced visibility/gap epoch, and published a new generation despite no final gap. | Returned only when the spurious Gap flag appeared; focused row GREEN. | Final gap overlays normalize against canonical base before revisions, Partial, epochs, and generation publication. |
+
+Clean-pass review result: two production RED observations, two false-GREEN assertion weakenings, four restored edits, zero survivors. Task 6 final cumulative result: 33 valid pairs and 66 restored physical edits. The seven earlier non-verdict attempts remain excluded from this count.

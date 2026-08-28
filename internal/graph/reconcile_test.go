@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"reflect"
@@ -2315,4 +2316,1338 @@ func task5RevisionValue(snapshot *Snapshot, category string) uint64 {
 	default:
 		return 0
 	}
+}
+
+func TestReconcileSequence132WithinWindow(t *testing.T) { // GF-T6-PREDISPATCH, GF-T6-SEQUENCE-ACCOUNTING, GF-T6-REORDER, GF-T6-COUNT-BOUND
+	t.Run("1-3-2-generic-pre-dispatch", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-132", SourceProtocol, AuthorityHook, 101)
+		one := task6ProtocolNode("sequence-132-one", source, "actor", "inc-a", 1, reconcileTestEpoch.Add(time.Second), "one")
+		threeRate := 3.0
+		three := task6ProtocolMetrics("sequence-132-three", source, "actor", "inc-a", 3, reconcileTestEpoch.Add(2*time.Second), Metrics{TokenRate: &threeRate})
+		two := task6ProtocolState("sequence-132-two", source, "actor", "inc-a", 2, reconcileTestEpoch.Add(3*time.Second), StateActive, "", 0)
+
+		task6MustApplyAt(t, r, one, one.ReceivedAt)
+		beforeBufferHistory := r.historyUnits
+		beforeBufferFingerprints := len(r.fingerprints)
+		task6MustApplyAt(t, r, three, three.ReceivedAt)
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		nodeBeforeTwo := task6Node(t, r, "actor", three.ReceivedAt)
+		if nodeBeforeTwo.Metrics.TokenRate != nil || len(record.buffered) != 1 || cap(record.buffered) != 1 || r.historyUnits != beforeBufferHistory+2 || len(r.fingerprints) != beforeBufferFingerprints+1 {
+			t.Fatalf("Task6 generic pre-dispatch buffering/accounting rule violated: metrics=%+v bufferedLenCap=%d/%d history=%d want=%d fingerprints=%d want=%d record=%+v", nodeBeforeTwo.Metrics, len(record.buffered), cap(record.buffered), r.historyUnits, beforeBufferHistory+2, len(r.fingerprints), beforeBufferFingerprints+1, record)
+		}
+
+		task6MustApplyAt(t, r, two, two.ReceivedAt)
+		record = task6Record(t, r, "actor", "inc-a", source.Ref)
+		node := task6Node(t, r, "actor", two.ReceivedAt)
+		stateOrder := task6StateOrder(t, r, "actor", "inc-a", source)
+		metricOrder := task6MetricOrder(t, r, "actor", "inc-a", source)
+		if node.State.Value != StateActive || node.Metrics.TokenRate == nil || *node.Metrics.TokenRate != threeRate || stateOrder.ordinal >= metricOrder.ordinal || len(record.buffered) != 0 || cap(record.buffered) != 0 || len(record.missing) != 0 || cap(record.missing) != 0 || len(r.Snapshot(two.ReceivedAt).Gaps) != 0 || r.historyUnits != beforeBufferHistory+5 {
+			t.Fatalf("Task6 1,3,2 cross-kind ordered drain rule violated: node=%+v stateOrder=%+v metricOrder=%+v bufferedLenCap=%d/%d missingLenCap=%d/%d gaps=%+v history=%d want=%d record=%+v", node, stateOrder, metricOrder, len(record.buffered), cap(record.buffered), len(record.missing), cap(record.missing), r.Snapshot(two.ReceivedAt).Gaps, r.historyUnits, beforeBufferHistory+5, record)
+		}
+	})
+
+	t.Run("1-4-6-multi-hole", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-multi-hole", SourceProtocol, AuthorityHook, 102)
+		one := task6ProtocolState("sequence-hole-one", source, "actor", "inc-a", 1, reconcileTestEpoch, StateActive, "", 0)
+		four := task6ProtocolState("sequence-hole-four", source, "actor", "inc-a", 4, reconcileTestEpoch.Add(time.Second), StateThinking, "", 0)
+		six := task6ProtocolState("sequence-hole-six", source, "actor", "inc-a", 6, reconcileTestEpoch.Add(1500*time.Millisecond), StateWaiting, "", 0)
+		task6MustApplyAt(t, r, one, one.ReceivedAt)
+		task6MustApplyAt(t, r, four, four.ReceivedAt)
+		task6MustApplyAt(t, r, six, six.ReceivedAt)
+		historyBeforeAdvance := r.historyUnits
+		deadline := four.ReceivedAt.Add(r.config.ReorderWindow)
+		task6MustAdvance(t, r, deadline)
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		gap := task5FindGap(t, r.Snapshot(deadline), source.Ref.ID, nil, GapSequence)
+		wantRanges := []missingRange{{first: 2, last: 3}, {first: 5, last: 5}}
+		wantStates := []State{StateActive, StateThinking, StateWaiting}
+		node := task6Node(t, r, "actor", deadline)
+		if gap.Count != 3 || !gap.At.Equal(deadline) || !reflect.DeepEqual(record.missing, wantRanges) || cap(record.missing) != len(wantRanges) || len(record.buffered) != 0 || cap(record.buffered) != 0 || node.State.Value != StateWaiting || !reflect.DeepEqual(task6TransitionStates(node.Transitions), wantStates) || r.historyUnits != historyBeforeAdvance {
+			t.Fatalf("Task6 disjoint multi-hole inference/drain rule violated: deadline=%s gap=%+v ranges=%+v wantRanges=%+v rangeCap=%d bufferedLenCap=%d/%d state=%+v transitions=%v wantTransitions=%v history=%d want=%d", deadline, gap, record.missing, wantRanges, cap(record.missing), len(record.buffered), cap(record.buffered), node.State, task6TransitionStates(node.Transitions), wantStates, r.historyUnits, historyBeforeAdvance)
+		}
+	})
+
+	t.Run("same-lane-partial-field-preservation", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-same-lane", SourceProtocol, AuthorityNative, 500)
+		one := task6ProtocolNode("same-lane-one", source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+		threeCost := 3.0
+		three := task6ProtocolMetrics("same-lane-three", source, "actor", "inc-a", 3, reconcileTestEpoch.Add(time.Second), Metrics{CostUSD: &threeCost, CostSource: "table:user"})
+		twoRate := 2.0
+		two := task6ProtocolMetrics("same-lane-two", source, "actor", "inc-a", 2, reconcileTestEpoch.Add(2*time.Second), Metrics{TokenRate: &twoRate})
+		for _, event := range []Event{one, three, two} {
+			task6MustApplyAt(t, r, event, event.ReceivedAt)
+		}
+		metrics := task6Node(t, r, "actor", two.ReceivedAt).Metrics
+		if metrics.TokenRate == nil || *metrics.TokenRate != twoRate || metrics.CostUSD == nil || *metrics.CostUSD != threeCost || metrics.CostSource != "table:user" {
+			t.Fatalf("Task6 same-lane buffered metrics partial-field preservation rule violated: metrics=%+v wantRate=%g wantCost=%g wantSource=table:user lanes=%d", metrics, twoRate, threeCost, task5CountMetricLanes(r, source.Ref.ID))
+		}
+
+		nodeSource := task6Source("sequence-same-node-lane", SourceProtocol, AuthorityNative, 501)
+		base := task6ProtocolNode("same-node-base", nodeSource, "actor", "inc-a", 1, reconcileTestEpoch.Add(3*time.Second), "base")
+		base.Data = NodeObserved{Runtime: types.RuntimeCodex, Role: types.RolePrimary, ProvenName: "base", Model: "base-model"}
+		third := task6ProtocolNode("same-node-third", nodeSource, "actor", "inc-a", 3, reconcileTestEpoch.Add(4*time.Second), "")
+		third.Data = NodeObserved{Runtime: types.RuntimeCodex, Role: types.RolePrimary, Model: "third-model"}
+		second := task6ProtocolNode("same-node-second", nodeSource, "actor", "inc-a", 2, reconcileTestEpoch.Add(5*time.Second), "second-name")
+		for _, event := range []Event{base, third, second} {
+			task6MustApplyAt(t, r, event, event.ReceivedAt)
+		}
+		node := task6Node(t, r, "actor", second.ReceivedAt)
+		if node.ProvenName != "second-name" || node.Model != "third-model" {
+			t.Fatalf("Task6 same-lane buffered node partial-field preservation rule violated: node=%+v wantName=second-name wantModel=third-model lanes=%d", node, task5CountNodeLanes(r, nodeSource.Ref.ID))
+		}
+	})
+
+	t.Run("protocol-gap-pre-dispatch", func(t *testing.T) {
+		r := task5MustReconciler(t, DefaultReconcileConfig())
+		source := task6Source("sequence-protocol-gap", SourceProtocol, AuthorityNative, 502)
+		one := task6ProtocolGap("protocol-gap-one", source, 1, reconcileTestEpoch, CapabilityState, GapCollector, GapStatusOpen, 1)
+		three := task6ProtocolGap("protocol-gap-three", source, 3, reconcileTestEpoch.Add(time.Second), CapabilityState, GapCollector, GapStatusResolved, 0)
+		two := task6ProtocolGap("protocol-gap-two", source, 2, reconcileTestEpoch.Add(2*time.Second), CapabilityState, GapCollector, GapStatusOpen, 2)
+		task6MustApplyAt(t, r, one, one.ReceivedAt)
+		task6MustApplyAt(t, r, three, three.ReceivedAt)
+		if gap := task5FindGap(t, r.Snapshot(three.ReceivedAt), source.Ref.ID, task5Capability(CapabilityState), GapCollector); gap.Count != 1 {
+			t.Fatalf("Task6 buffered protocol gap invisibility rule violated: gap=%+v record=%+v", gap, task6Record(t, r, "", "", source.Ref))
+		}
+		task6MustApplyAt(t, r, two, two.ReceivedAt)
+		if task5HasGap(r.Snapshot(two.ReceivedAt), source.Ref.ID, task5Capability(CapabilityState), GapCollector) || len(task6Record(t, r, "", "", source.Ref).buffered) != 0 {
+			t.Fatalf("Task6 protocol gap generic ordered dispatch rule violated: gaps=%+v record=%+v", r.Snapshot(two.ReceivedAt).Gaps, task6Record(t, r, "", "", source.Ref))
+		}
+	})
+
+	t.Run("cross-kind-health-clock-never-rewinds", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-health-order", SourceProtocol, AuthorityHook, 503)
+		one := task6ProtocolState("health-order-one", source, "actor", "inc-a", 1, reconcileTestEpoch, StateActive, "", 0)
+		three := task6HeartbeatEvent("health-order-three", source, "actor", "inc-a", task6Uint64Pointer(3), reconcileTestEpoch.Add(time.Second))
+		two := task6ProtocolState("health-order-two", source, "actor", "inc-a", 2, reconcileTestEpoch.Add(2*time.Second), StateThinking, "", 0)
+		for _, event := range []Event{one, three, two} {
+			task6MustApplyAt(t, r, event, event.ReceivedAt)
+		}
+		epoch := task6HealthLane(t, r, "actor", "inc-a", source)
+		if !epoch.lastHeartbeat.Equal(two.ReceivedAt) || task6Node(t, r, "actor", two.ReceivedAt).State.Value != StateThinking {
+			t.Fatalf("Task6 cross-kind ordered health max-clock rule violated: epoch=%+v wantLast=%s state=%+v record=%+v", epoch, two.ReceivedAt, task6Node(t, r, "actor", two.ReceivedAt).State, task6Record(t, r, "actor", "inc-a", source.Ref))
+		}
+	})
+
+	t.Run("protocol-gap-net-zero-public-delta", func(t *testing.T) {
+		r := task5MustReconciler(t, DefaultReconcileConfig())
+		source := task6Source("sequence-gap-net-zero", SourceProtocol, AuthorityNative, 506)
+		one := task6ProtocolGap("gap-net-zero-one", source, 1, reconcileTestEpoch, CapabilityState, GapCollector, GapStatusResolved, 0)
+		three := task6ProtocolGap("gap-net-zero-three", source, 3, reconcileTestEpoch.Add(time.Second), CapabilityState, GapCollector, GapStatusResolved, 0)
+		two := task6ProtocolGap("gap-net-zero-two", source, 2, reconcileTestEpoch.Add(2*time.Second), CapabilityState, GapCollector, GapStatusOpen, 1)
+		task6MustApplyAt(t, r, one, one.ReceivedAt)
+		task6MustApplyAt(t, r, three, three.ReceivedAt)
+		beforeOwners := task6ReducerOwners(r)
+		beforeCurrent, beforePrevious := r.current, r.previous
+		beforeVisibility, beforeGapEpoch := r.visibilityRevision, r.gapEpoch
+		change := task6MustApplyAt(t, r, two, two.ReceivedAt)
+		if change != (ChangeSet{}) || len(r.gaps) != 0 || len(r.Snapshot(two.ReceivedAt).Gaps) != 0 || r.visibilityRevision != beforeVisibility || r.gapEpoch != beforeGapEpoch || r.current != beforeCurrent || r.previous != beforePrevious || r.historyUnits != beforeOwners.history || len(r.fingerprints) != beforeOwners.fingerprints+1 || len(task6Record(t, r, "", "", source.Ref).buffered) != 0 {
+			t.Fatalf("Task6 protocol gap net-zero public delta rule violated: change=%+v gaps=%+v visibility=%d want=%d gapEpoch=%d want=%d currentSame=%t previousSame=%t ownersBefore=%+v ownersAfter=%+v record=%+v", change, r.Snapshot(two.ReceivedAt).Gaps, r.visibilityRevision, beforeVisibility, r.gapEpoch, beforeGapEpoch, r.current == beforeCurrent, r.previous == beforePrevious, beforeOwners, task6ReducerOwners(r), task6Record(t, r, "", "", source.Ref))
+		}
+	})
+}
+
+func TestReconcileFirstPositiveSequenceEstablishesBaseline(t *testing.T) { // GF-T6-REORDER, GF-T6-UINT-BOUND, GF-T6-SEQUENCE-ACCOUNTING
+	t.Run("first-seven", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-first-seven", SourceProtocol, AuthorityNative, 103)
+		event := task6ProtocolNode("sequence-first-seven", source, "actor", "inc-a", 7, reconcileTestEpoch, "seven")
+		beforeHistory := r.historyUnits
+		beforeRetained := r.retainedCharge
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		if r.historyUnits != beforeHistory+2 || r.retainedCharge <= beforeRetained || record.regime != sequenceOrdered || record.next != 8 || len(record.buffered) != 0 || len(record.missing) != 0 {
+			t.Fatalf("Task6 first-positive base-marker ownership rule violated: history=%d want=%d retained=%d beforeRetained=%d record=%+v", r.historyUnits, beforeHistory+2, r.retainedCharge, beforeRetained, record)
+		}
+		task6MustAdvance(t, r, event.ReceivedAt.Add(time.Hour))
+		if gaps := r.Snapshot(event.ReceivedAt.Add(time.Hour)).Gaps; len(gaps) != 0 || task6Node(t, r, "actor", event.ReceivedAt).ProvenName != "seven" {
+			t.Fatalf("Task6 first sequence seven no-earlier-loss rule violated: gaps=%+v node=%+v record=%+v", gaps, task6Node(t, r, "actor", event.ReceivedAt), record)
+		}
+	})
+
+	t.Run("maxuint-exhausted", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-max-baseline", SourceProtocol, AuthorityNative, 104)
+		maximum := task6ProtocolNode("sequence-max-first", source, "actor", "inc-a", math.MaxUint64, reconcileTestEpoch, "maximum")
+		task6MustApplyAt(t, r, maximum, maximum.ReceivedAt)
+		beforeLate := task6ReducerOwners(r)
+		late := task6ProtocolNode("sequence-max-late", source, "actor", "inc-a", math.MaxUint64-1, reconcileTestEpoch.Add(time.Second), "late")
+		task6MustApplyAt(t, r, late, late.ReceivedAt)
+		task6MustAdvance(t, r, late.ReceivedAt.Add(time.Hour))
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		node := task6Node(t, r, "actor", late.ReceivedAt.Add(time.Hour))
+		if node.ProvenName != "maximum" || record.regime != sequenceExhausted || record.next != math.MaxUint64 || len(record.buffered) != 0 || len(record.missing) != 0 || len(r.Snapshot(late.ReceivedAt).Gaps) != 0 || len(r.sequenceRecords) != beforeLate.sequences {
+			t.Fatalf("Task6 MaxUint64 exhausted no-wrap/stale-semantics rule violated: node=%+v buffered=%+v missing=%+v gaps=%+v ownersBefore=%+v ownersAfter=%+v record=%+v", node, record.buffered, record.missing, r.Snapshot(late.ReceivedAt).Gaps, beforeLate, task6ReducerOwners(r), record)
+		}
+	})
+}
+
+func TestReconcileSequenceGapExactDeadline(t *testing.T) { // GF-T6-DEADLINE-BOUND, GF-T6-UINT-BOUND, GF-T6-COUNT-BOUND
+	t.Run("receiver-deadline-origin", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-deadline-origin", SourceProtocol, AuthorityNative, 105)
+		one := task6ProtocolNode("sequence-deadline-one", source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+		three := task6ProtocolNode("sequence-deadline-three", source, "actor", "inc-a", 3, reconcileTestEpoch.Add(time.Second), "three")
+		sourceClock := reconcileTestEpoch.Add(-24 * time.Hour)
+		three.SourceTime = &sourceClock
+		task6MustApplyAt(t, r, one, reconcileTestEpoch.Add(10*time.Hour))
+		task6MustApplyAt(t, r, three, reconcileTestEpoch.Add(20*time.Hour))
+		deadline := three.ReceivedAt.Add(r.config.ReorderWindow)
+		task6MustAdvance(t, r, deadline.Add(-time.Nanosecond))
+		if gaps := r.Snapshot(deadline.Add(-time.Nanosecond)).Gaps; len(gaps) != 0 || task6Node(t, r, "actor", deadline).ProvenName != "one" {
+			t.Fatalf("Task6 receiver deadline D-minus-one rule violated: deadline=%s sourceTime=%s gaps=%+v node=%+v", deadline, sourceClock, gaps, task6Node(t, r, "actor", deadline))
+		}
+		task6MustAdvance(t, r, deadline)
+		gap := task5FindGap(t, r.Snapshot(deadline), source.Ref.ID, nil, GapSequence)
+		if gap.Count != 1 || !gap.At.Equal(deadline) || task6Node(t, r, "actor", deadline).ProvenName != "three" {
+			t.Fatalf("Task6 receiver deadline exact-D origin/drain rule violated: deadline=%s sourceTime=%s gap=%+v node=%+v", deadline, sourceClock, gap, task6Node(t, r, "actor", deadline))
+		}
+	})
+
+	t.Run("maxuint-count-saturation", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-huge-hole", SourceProtocol, AuthorityNative, 106)
+		one := task6ProtocolNode("sequence-huge-one", source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+		maximum := task6ProtocolNode("sequence-huge-maximum", source, "actor", "inc-a", math.MaxUint64, reconcileTestEpoch.Add(time.Second), "maximum")
+		task6MustApplyAt(t, r, one, one.ReceivedAt)
+		task6MustApplyAt(t, r, maximum, maximum.ReceivedAt)
+		deadline := maximum.ReceivedAt.Add(r.config.ReorderWindow)
+		task6MustAdvance(t, r, deadline)
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		gap := task5FindGap(t, r.Snapshot(deadline), source.Ref.ID, nil, GapSequence)
+		wantRange := []missingRange{{first: 2, last: math.MaxUint64 - 1}}
+		if !reflect.DeepEqual(record.missing, wantRange) || cap(record.missing) != 1 || gap.Count != uint64(maxJSONSafeInteger) || !gap.At.Equal(deadline) || task6Node(t, r, "actor", deadline).ProvenName != "maximum" {
+			t.Fatalf("Task6 huge inclusive range/no-enumeration/safe-saturation rule violated: ranges=%+v want=%+v rangeCap=%d gap=%+v deadline=%s node=%+v", record.missing, wantRange, cap(record.missing), gap, deadline, task6Node(t, r, "actor", deadline))
+		}
+	})
+}
+func TestReconcileSequenceDeadlineDrainsReadyWork(t *testing.T) { // GF-T6-ADVANCE-TXN, GF-T6-ADVANCE-FAILURE, GF-T6-STORE-FENCE
+	t.Run("multi-hole-one-transaction", func(t *testing.T) {
+		r, source, deadline := task6AdvanceFixture(t, "advance-transaction", 107)
+		before := task6ReducerOwners(r)
+		beforeStateRevision, beforeVisibilityRevision := r.stateRevision, r.visibilityRevision
+		change := task6MustAdvance(t, r, deadline)
+		record := task6Record(t, r, "actor", "inc-a", source.Ref)
+		wantRanges := []missingRange{{first: 2, last: 3}, {first: 5, last: 5}}
+		gap := task5FindGap(t, r.Snapshot(deadline), source.Ref.ID, nil, GapSequence)
+		if change != (ChangeSet{Visibility: true, State: true, Metrics: true, Gap: true}) || !reflect.DeepEqual(record.missing, wantRanges) || cap(record.missing) != len(wantRanges) || len(record.buffered) != 0 || task6Node(t, r, "actor", deadline).State.Value != StateWaiting || gap.Count != 3 || r.stateRevision != beforeStateRevision+1 || r.visibilityRevision != beforeVisibilityRevision+1 || r.historyUnits != before.history+3 {
+			t.Fatalf("Task6 due multi-hole single-transaction rule violated: change=%+v ranges=%+v want=%+v rangeCap=%d buffered=%+v node=%+v gap=%+v stateRevision=%d want=%d visibilityRevision=%d want=%d history=%d want=%d", change, record.missing, wantRanges, cap(record.missing), record.buffered, task6Node(t, r, "actor", deadline), gap, r.stateRevision, beforeStateRevision+1, r.visibilityRevision, beforeVisibilityRevision+1, r.historyUnits, before.history+3)
+		}
+	})
+
+	for _, tc := range []struct {
+		name  string
+		kind  AdmissionKind
+		clip  func(*Reconciler)
+		relax func(*Reconciler)
+	}{
+		{"history-diagnostic-atomic-retry", AdmissionHistoryLimit, func(r *Reconciler) { r.config.HistoryLimit = r.historyUnits }, func(r *Reconciler) { r.config.HistoryLimit = DefaultReconcileConfig().HistoryLimit }},
+		{"retained-diagnostic-atomic-retry", AdmissionRetainedBytes, func(r *Reconciler) { r.config.RetainedByteLimit = r.retainedCharge + (64 << 10) }, func(r *Reconciler) { r.config.RetainedByteLimit = DefaultReconcileConfig().RetainedByteLimit }},
+		{"published-diagnostic-atomic-retry", AdmissionPublishedBytes, func(r *Reconciler) { r.config.PublishedByteLimit = r.publishedCharge + (64 << 10) }, func(r *Reconciler) { r.config.PublishedByteLimit = DefaultReconcileConfig().PublishedByteLimit }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, source, deadline := task6AdvanceFixture(t, SourceID("advance-"+tc.name), SourceIncarnationID(108+len(tc.name)))
+			beforeOwners := task6ReducerOwners(r)
+			beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+			beforeSnapshot := CloneSnapshot(r.current.snapshot)
+			beforeCurrent := r.current
+			tc.clip(r)
+			change, err := r.Advance(deadline)
+			task5RequireAdmission(t, err, tc.kind)
+			afterRecord := task6Record(t, r, "actor", "inc-a", source.Ref)
+			gap := task5FindGap(t, r.Snapshot(deadline), SourceAITopGapLedger, nil, GapResource)
+			retainedDelta := task5OracleCatchallRetained() - 1088
+			publishedDelta := task5OracleCatchallPublished() - 240
+			if change != (ChangeSet{Visibility: true, Gap: true}) || !reflect.DeepEqual(afterRecord, beforeRecord) || r.historyUnits != beforeOwners.history || r.stateRevision != beforeSnapshot.StateRevision || r.metricsRevision != beforeSnapshot.MetricsRevision || r.retainedCharge != beforeOwners.retained+retainedDelta || r.publishedCharge != beforeOwners.published+publishedDelta || gap.Count != 1 || r.current == beforeCurrent || !reflect.DeepEqual(beforeSnapshot, CloneSnapshot(beforeCurrent.snapshot)) {
+				t.Fatalf("Task6 failed Advance diagnostic-only atomicity rule violated: case=%s kind=%s change=%+v err=%v recordBefore=%+v recordAfter=%+v ownersBefore=%+v ownersAfter=%+v gap=%+v currentChanged=%t borrowedBefore=%+v borrowedAfter=%+v", tc.name, tc.kind, change, err, beforeRecord, afterRecord, beforeOwners, task6ReducerOwners(r), gap, r.current != beforeCurrent, beforeSnapshot, beforeCurrent.snapshot)
+			}
+			tc.relax(r)
+			retryChange := task6MustAdvance(t, r, deadline)
+			if !retryChange.State || task6Node(t, r, "actor", deadline).State.Value != StateWaiting || len(task6Record(t, r, "actor", "inc-a", source.Ref).buffered) != 0 {
+				t.Fatalf("Task6 same-deadline deterministic retry rule violated: case=%s change=%+v node=%+v record=%+v owners=%+v", tc.name, retryChange, task6Node(t, r, "actor", deadline), task6Record(t, r, "actor", "inc-a", source.Ref), task6ReducerOwners(r))
+			}
+		})
+	}
+
+	t.Run("gap-count-admission-atomic-retry", func(t *testing.T) {
+		r, source, deadline := task6AdvanceFixture(t, "advance-gap-count", 150)
+		r.config.MaxGaps = 4
+		ordinarySource := task6Source("advance-existing-gap", SourceImmutable, AuthorityNative, 151)
+		ordinary := task5GapEvent("advance-existing-gap", ordinarySource.Ref, CapabilityIdentity, GapCollector, GapStatusOpen, 1, deadline.Add(-time.Second))
+		task6MustApplyAt(t, r, ordinary, ordinary.ReceivedAt)
+		beforeOwners := task6ReducerOwners(r)
+		beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+		beforeNode := task6Node(t, r, "actor", deadline.Add(-time.Nanosecond))
+		change, err := r.Advance(deadline)
+		task5RequireAdmission(t, err, AdmissionCountLimit)
+		if change != (ChangeSet{Visibility: true, Gap: true}) || !task5HasGap(r.Snapshot(deadline), SourceAITopGapLedger, nil, GapResource) || task5HasGap(r.Snapshot(deadline), source.Ref.ID, nil, GapSequence) || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), beforeRecord) || task6Node(t, r, "actor", deadline).State != beforeNode.State || r.historyUnits != beforeOwners.history {
+			t.Fatalf("Task6 sequence-gap count admission diagnostic-only atomicity rule violated: change=%+v err=%v gaps=%+v recordBefore=%+v recordAfter=%+v nodeBefore=%+v nodeAfter=%+v ownersBefore=%+v ownersAfter=%+v", change, err, r.Snapshot(deadline).Gaps, beforeRecord, task6Record(t, r, "actor", "inc-a", source.Ref), beforeNode, task6Node(t, r, "actor", deadline), beforeOwners, task6ReducerOwners(r))
+		}
+		r.config.MaxGaps = DefaultReconcileConfig().MaxGaps
+		retry := task6MustAdvance(t, r, deadline)
+		if !retry.State || !task5HasGap(r.Snapshot(deadline), source.Ref.ID, nil, GapSequence) {
+			t.Fatalf("Task6 sequence-gap count admission same-time retry rule violated: change=%+v gaps=%+v node=%+v", retry, r.Snapshot(deadline).Gaps, task6Node(t, r, "actor", deadline))
+		}
+	})
+
+	t.Run("semantic-at-ordinary-limit-gap-uses-final-reserve", func(t *testing.T) {
+		probe, probeSource, probeDeadline := task6AdvanceFixture(t, "advance-mixed-reserve", 152)
+		task6MustAdvance(t, probe, probeDeadline)
+		probeGap := task5FindGap(t, probe.Snapshot(probeDeadline), probeSource.Ref.ID, nil, GapSequence)
+		probeGapKey := gapKey{source: probeSource.Ref.ID, kind: GapSequence}
+		gapRetained := chargeActiveGapEntry(probeGapKey, probeGap).bytes
+		gapPublished := chargeGap(probeGap).bytes
+		semanticRetained := probe.retainedCharge - gapRetained
+		semanticPublished := probe.publishedCharge - gapPublished
+
+		r, source, deadline := task6AdvanceFixture(t, "advance-mixed-reserve", 152)
+		const reserve = uint64(64 << 10)
+		r.config.RetainedByteLimit = semanticRetained + reserve
+		r.config.PublishedByteLimit = semanticPublished + reserve
+		change, err := r.Advance(deadline)
+		if err != nil {
+			t.Fatalf("Task6 mixed semantic-plus-gap reserve admission rule violated: err=%v change=%+v semanticRetained=%d semanticPublished=%d gapRetained=%d gapPublished=%d probeRetained=%d probePublished=%d probeNode=%+v retainedLimit=%d publishedLimit=%d owners=%+v gaps=%+v", err, change, semanticRetained, semanticPublished, gapRetained, gapPublished, probe.retainedCharge, probe.publishedCharge, task6Node(t, probe, "actor", probeDeadline), r.config.RetainedByteLimit, r.config.PublishedByteLimit, task6ReducerOwners(r), r.Snapshot(deadline).Gaps)
+		}
+		gap := task5FindGap(t, r.Snapshot(deadline), source.Ref.ID, nil, GapSequence)
+		if change != (ChangeSet{Visibility: true, State: true, Metrics: true, Gap: true}) || task5HasGap(r.Snapshot(deadline), SourceAITopGapLedger, nil, GapResource) || gap.Count != 3 || cap(task6Node(t, r, "actor", deadline).Transitions) != r.config.TransitionLimit || r.retainedCharge != probe.retainedCharge || r.publishedCharge != probe.publishedCharge || semanticRetained != r.config.RetainedByteLimit-reserve || semanticPublished != r.config.PublishedByteLimit-reserve {
+			t.Fatalf("Task6 mixed reserve preserves sequence-gap identity/flags/charges rule violated: change=%+v gap=%+v gaps=%+v retained=%d want=%d published=%d want=%d semanticRetained=%d ordinaryLimit=%d semanticPublished=%d ordinaryPublishedLimit=%d", change, gap, r.Snapshot(deadline).Gaps, r.retainedCharge, probe.retainedCharge, r.publishedCharge, probe.publishedCharge, semanticRetained, r.config.RetainedByteLimit-reserve, semanticPublished, r.config.PublishedByteLimit-reserve)
+		}
+	})
+
+	t.Run("revision-invariant-atomic-retry", func(t *testing.T) {
+		t.Run("revision-exhaustion", func(t *testing.T) {
+			r, source, deadline := task6AdvanceFixture(t, "advance-revision", 140)
+			task5SeedRevision(t, r, "state", uint64(maxJSONSafeInteger), deadline.Add(-time.Nanosecond))
+			beforeOwners := task6ReducerOwners(r)
+			beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+			beforeSnapshot := CloneSnapshot(r.current.snapshot)
+			beforeCurrent, beforePrevious := r.current, r.previous
+			change, err := r.Advance(deadline)
+			if !errors.Is(err, ErrRevisionExhausted) || change != (ChangeSet{}) || task6ReducerOwners(r) != beforeOwners || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), beforeRecord) || r.current != beforeCurrent || r.previous != beforePrevious || !reflect.DeepEqual(CloneSnapshot(r.current.snapshot), beforeSnapshot) {
+				t.Fatalf("Task6 Advance revision-exhaustion no-diagnostic atomicity rule violated: change=%+v err=%v ownersBefore=%+v ownersAfter=%+v recordBefore=%+v recordAfter=%+v currentSame=%t previousSame=%t snapshotBefore=%+v snapshotAfter=%+v", change, err, beforeOwners, task6ReducerOwners(r), beforeRecord, task6Record(t, r, "actor", "inc-a", source.Ref), r.current == beforeCurrent, r.previous == beforePrevious, beforeSnapshot, r.current.snapshot)
+			}
+		})
+	})
+}
+func TestReconcileUnsequencedLossNotClaimed(t *testing.T) { // GF-T6-REGIME, GF-T6-ADMISSION-KIND, GF-T6-GAP-EPISODE
+	t.Run("nil-never-claims-loss", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-unsequenced", SourceProtocol, AuthorityNative, 142)
+		event := task6ProtocolNodeOptional("sequence-unsequenced", source, "actor", "inc-a", nil, reconcileTestEpoch, "unsequenced")
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+		before := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+		task6MustAdvance(t, r, event.ReceivedAt.Add(24*time.Hour))
+		if gaps := r.Snapshot(event.ReceivedAt.Add(24 * time.Hour)).Gaps; len(gaps) != 0 || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), before) {
+			t.Fatalf("Task6 nil-sequence unknowable-loss rule violated: gaps=%+v recordBefore=%+v recordAfter=%+v", gaps, before, task6Record(t, r, "actor", "inc-a", source.Ref))
+		}
+	})
+
+	t.Run("nil-to-positive-schema-diagnostic", func(t *testing.T) {
+		r := task6SeedActors(t, []struct {
+			actor       NodeID
+			incarnation IncarnationID
+		}{{"actor-a", "inc-a"}, {"actor-b", "inc-b"}})
+		source := task6Source("sequence-nil-positive", SourceProtocol, AuthorityNative, 143)
+		rate, rejectedRate := 1.0, 2.0
+		first := task6ProtocolMetricsOptional("sequence-nil-metrics", source, "actor-a", "inc-a", nil, reconcileTestEpoch, Metrics{TokenRate: &rate})
+		task6MustApplyAt(t, r, first, first.ReceivedAt)
+		beforeOwners := task6ReducerOwners(r)
+		beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor-a", "inc-a", source.Ref))
+		beforeStateRevision := r.stateRevision
+		one := uint64(1)
+		rejected := task6ProtocolMetricsOptional("sequence-positive-rejected", source, "actor-a", "inc-a", &one, reconcileTestEpoch.Add(time.Second), Metrics{TokenRate: &rejectedRate})
+		change, err := r.Apply(rejected, rejected.ReceivedAt)
+		task6RequireRegimeAdmission(t, err)
+		gap := task5FindGap(t, r.Snapshot(rejected.ReceivedAt), source.Ref.ID, task5Capability(CapabilityMetrics), GapSchema)
+		nodeA := task6Node(t, r, "actor-a", rejected.ReceivedAt)
+		nodeB := task6Node(t, r, "actor-b", rejected.ReceivedAt)
+		if change != (ChangeSet{Visibility: true, Gap: true}) || gap.Count != 1 || !nodeA.Partial || nodeB.Partial || nodeA.Metrics.TokenRate == nil || *nodeA.Metrics.TokenRate != rate || len(r.fingerprints) != beforeOwners.fingerprints || r.historyUnits != beforeOwners.history || r.stateRevision != beforeStateRevision || !reflect.DeepEqual(task6Record(t, r, "actor-a", "inc-a", source.Ref), beforeRecord) {
+			t.Fatalf("Task6 nil-to-positive exact diagnostic/no-rejected-owner rule violated: change=%+v err=%v gap=%+v actorA=%+v actorB=%+v ownersBefore=%+v ownersAfter=%+v recordBefore=%+v recordAfter=%+v stateRevision=%d want=%d", change, err, gap, nodeA, nodeB, beforeOwners, task6ReducerOwners(r), beforeRecord, task6Record(t, r, "actor-a", "inc-a", source.Ref), r.stateRevision, beforeStateRevision)
+		}
+	})
+}
+
+func TestReconcileFinalMissingEventNotClaimed(t *testing.T) { // GF-T6-REORDER, GF-T6-REGIME, GF-T6-WITNESSES
+	t.Run("no-later-event-no-loss", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-final", SourceProtocol, AuthorityNative, 144)
+		event := task6ProtocolNode("sequence-final-one", source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+		before := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+		task6MustAdvance(t, r, event.ReceivedAt.Add(24*time.Hour))
+		if gaps := r.Snapshot(event.ReceivedAt.Add(24 * time.Hour)).Gaps; len(gaps) != 0 || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), before) {
+			t.Fatalf("Task6 final-without-later-event no-loss rule violated: gaps=%+v recordBefore=%+v recordAfter=%+v", gaps, before, task6Record(t, r, "actor", "inc-a", source.Ref))
+		}
+	})
+
+	t.Run("positive-to-nil-schema-diagnostic", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("sequence-positive-nil", SourceProtocol, AuthorityNative, 145)
+		first := task6ProtocolNode("sequence-positive-first", source, "actor", "inc-a", 1, reconcileTestEpoch, "ordered")
+		task6MustApplyAt(t, r, first, first.ReceivedAt)
+		beforeOwners := task6ReducerOwners(r)
+		beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+		rejected := task6ProtocolNodeOptional("sequence-nil-rejected", source, "actor", "inc-a", nil, reconcileTestEpoch.Add(time.Second), "rejected")
+		change, err := r.Apply(rejected, rejected.ReceivedAt)
+		task6RequireRegimeAdmission(t, err)
+		gap := task5FindGap(t, r.Snapshot(rejected.ReceivedAt), source.Ref.ID, task5Capability(CapabilityIdentity), GapSchema)
+		if !change.Gap || gap.Count != 1 || task6Node(t, r, "actor", rejected.ReceivedAt).ProvenName != "ordered" || len(r.fingerprints) != beforeOwners.fingerprints || r.historyUnits != beforeOwners.history || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), beforeRecord) {
+			t.Fatalf("Task6 positive-to-nil exact diagnostic/marker preservation rule violated: change=%+v err=%v gap=%+v node=%+v ownersBefore=%+v ownersAfter=%+v recordBefore=%+v recordAfter=%+v", change, err, gap, task6Node(t, r, "actor", rejected.ReceivedAt), beforeOwners, task6ReducerOwners(r), beforeRecord, task6Record(t, r, "actor", "inc-a", source.Ref))
+		}
+	})
+}
+func TestReconcileRejectsMixedSequenceRegime(t *testing.T) {
+	kind := AdmissionKind("sequence-regime")
+	if !kind.Valid() || !errors.Is(&AdmissionError{Kind: kind}, ErrAdmission) || (&AdmissionError{Kind: kind}).Error() != "graph admission rejected: sequence-regime" {
+		t.Fatalf("Task6 sequence-regime closed admission kind rule violated: kind=%q valid=%t unwraps=%t error=%q", kind, kind.Valid(), errors.Is(&AdmissionError{Kind: kind}, ErrAdmission), (&AdmissionError{Kind: kind}).Error())
+	}
+
+	for _, direction := range []struct {
+		name        string
+		first, next *uint64
+	}{{"nil-to-positive", nil, task6Uint64Pointer(1)}, {"positive-to-nil", task6Uint64Pointer(1), nil}} {
+		for _, row := range task6MixedCapabilityEvents(reconcileTestEpoch.Add(time.Second)) {
+			t.Run(direction.name+"/"+row.name, func(t *testing.T) {
+				r := task6SeedActors(t, []struct {
+					actor       NodeID
+					incarnation IncarnationID
+				}{{"actor", "inc-a"}, {"target", "inc-t"}})
+				source := task6Source(SourceID("mixed-"+direction.name+"-"+row.name), SourceProtocol, AuthorityNative, SourceIncarnationID(200+len(row.name)+len(direction.name)))
+				first := task6ProtocolNodeOptional("mixed-first-"+direction.name+"-"+row.name, source, "actor", "inc-a", direction.first, reconcileTestEpoch, "first")
+				task6MustApplyAt(t, r, first, first.ReceivedAt)
+				before := task6ReducerOwners(r)
+				beforeRecord := task6CloneRecord(t, task6Record(t, r, "actor", "inc-a", source.Ref))
+				event := row.make(source, direction.next)
+				change, err := r.Apply(event, event.ReceivedAt)
+				task6RequireRegimeAdmission(t, err)
+				gap := task5FindGap(t, r.Snapshot(event.ReceivedAt), source.Ref.ID, task5Capability(row.capability), GapSchema)
+				wantPartial := row.capability == CapabilityIdentity
+				node := task6Node(t, r, "actor", event.ReceivedAt)
+				if !change.Gap || gap.Count != 1 || node.Partial != wantPartial || len(r.fingerprints) != before.fingerprints || r.historyUnits != before.history || !reflect.DeepEqual(task6Record(t, r, "actor", "inc-a", source.Ref), beforeRecord) {
+					t.Fatalf("Task6 all-capability mixed-regime exact diagnostic rule violated: direction=%s row=%s capability=%s change=%+v err=%v gap=%+v nodePartial=%t wantPartial=%t ownersBefore=%+v ownersAfter=%+v recordBefore=%+v recordAfter=%+v", direction.name, row.name, row.capability, change, err, gap, node.Partial, wantPartial, before, task6ReducerOwners(r), beforeRecord, task6Record(t, r, "actor", "inc-a", source.Ref))
+				}
+			})
+		}
+	}
+}
+func TestReconcileLateMissingRangeResolvesGapWithoutRewind(t *testing.T) {
+	r := task6SeedActors(t, []struct {
+		actor       NodeID
+		incarnation IncarnationID
+	}{{"actor-a", "inc-a"}, {"actor-b", "inc-b"}})
+	sourceA := task6Source("shared-late-range", SourceProtocol, AuthorityNative, 300)
+	sourceB := task6Source("shared-late-range", SourceProtocol, AuthorityNative, 301)
+	oneA := task6ProtocolNode("late-a-one", sourceA, "actor-a", "inc-a", 1, reconcileTestEpoch, "a-one")
+	fourA := task6ProtocolNode("late-a-four", sourceA, "actor-a", "inc-a", 4, reconcileTestEpoch.Add(time.Second), "a-four")
+	tenB := task6ProtocolNode("late-b-ten", sourceB, "actor-b", "inc-b", 10, reconcileTestEpoch.Add(250*time.Millisecond), "b-ten")
+	twelveB := task6ProtocolNode("late-b-twelve", sourceB, "actor-b", "inc-b", 12, reconcileTestEpoch.Add(1500*time.Millisecond), "b-twelve")
+	for _, event := range []Event{oneA, fourA, tenB, twelveB} {
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+	}
+	deadlineA := fourA.ReceivedAt.Add(r.config.ReorderWindow)
+	deadlineB := twelveB.ReceivedAt.Add(r.config.ReorderWindow)
+	task6MustAdvance(t, r, deadlineA)
+	firstGap := task5FindGap(t, r.Snapshot(deadlineA), sourceA.Ref.ID, nil, GapSequence)
+	if firstGap.Count != 2 || !firstGap.At.Equal(deadlineA) || len(r.Snapshot(deadlineA).Gaps) != 1 {
+		t.Fatalf("Task6 first lane cumulative sequence episode rule violated: gap=%+v gaps=%+v deadline=%s", firstGap, r.Snapshot(deadlineA).Gaps, deadlineA)
+	}
+	task6MustAdvance(t, r, deadlineB)
+	aggregate := task5FindGap(t, r.Snapshot(deadlineB), sourceA.Ref.ID, nil, GapSequence)
+	if aggregate.Count != 3 || !aggregate.At.Equal(deadlineA) || len(r.Snapshot(deadlineB).Gaps) != 1 || !task6Node(t, r, "actor-a", deadlineB).Partial || !task6Node(t, r, "actor-b", deadlineB).Partial {
+		t.Fatalf("Task6 two-lane SourceID cumulative aggregation rule violated: aggregate=%+v gaps=%+v actorA=%+v actorB=%+v firstAt=%s", aggregate, r.Snapshot(deadlineB).Gaps, task6Node(t, r, "actor-a", deadlineB), task6Node(t, r, "actor-b", deadlineB), deadlineA)
+	}
+	historyBeforeLate := r.historyUnits
+	fingerprintsBeforeLate := len(r.fingerprints)
+
+	twoA := task6ProtocolNode("late-a-two", sourceA, "actor-a", "inc-a", 2, deadlineB.Add(time.Second), "a-two-late")
+	changeTwo := task6MustApplyAt(t, r, twoA, twoA.ReceivedAt)
+	recordA := task6Record(t, r, "actor-a", "inc-a", sourceA.Ref)
+	wantSplit := []missingRange{{first: 3, last: 3}}
+	gapAfterTwo := task5FindGap(t, r.Snapshot(twoA.ReceivedAt), sourceA.Ref.ID, nil, GapSequence)
+	if changeTwo != (ChangeSet{}) || !reflect.DeepEqual(recordA.missing, wantSplit) || cap(recordA.missing) != 1 || gapAfterTwo.Count != 3 || !gapAfterTwo.At.Equal(deadlineA) || task6Node(t, r, "actor-a", twoA.ReceivedAt).ProvenName != "a-four" || r.historyUnits != historyBeforeLate+1 {
+		t.Fatalf("Task6 late member range-split/no-rewind rule violated: change=%+v ranges=%+v want=%+v rangeCap=%d gap=%+v node=%+v history=%d want=%d", changeTwo, recordA.missing, wantSplit, cap(recordA.missing), gapAfterTwo, task6Node(t, r, "actor-a", twoA.ReceivedAt), r.historyUnits, historyBeforeLate+1)
+	}
+
+	threeA := task6ProtocolNode("late-a-three", sourceA, "actor-a", "inc-a", 3, deadlineB.Add(2*time.Second), "a-three-late")
+	changeThree := task6MustApplyAt(t, r, threeA, threeA.ReceivedAt)
+	gapAfterThree := task5FindGap(t, r.Snapshot(threeA.ReceivedAt), sourceA.Ref.ID, nil, GapSequence)
+	if changeThree != (ChangeSet{}) || len(task6Record(t, r, "actor-a", "inc-a", sourceA.Ref).missing) != 0 || gapAfterThree.Count != 3 || !gapAfterThree.At.Equal(deadlineA) || task6Node(t, r, "actor-a", threeA.ReceivedAt).ProvenName != "a-four" || r.historyUnits != historyBeforeLate+1 {
+		t.Fatalf("Task6 one-lane complete recovery retains aggregate episode rule violated: change=%+v ranges=%+v gap=%+v node=%+v history=%d want=%d", changeThree, task6Record(t, r, "actor-a", "inc-a", sourceA.Ref).missing, gapAfterThree, task6Node(t, r, "actor-a", threeA.ReceivedAt), r.historyUnits, historyBeforeLate+1)
+	}
+
+	elevenB := task6ProtocolNode("late-b-eleven", sourceB, "actor-b", "inc-b", 11, deadlineB.Add(3*time.Second), "b-eleven-late")
+	changeEleven := task6MustApplyAt(t, r, elevenB, elevenB.ReceivedAt)
+	finalSnapshot := r.Snapshot(elevenB.ReceivedAt)
+	if changeEleven != (ChangeSet{Visibility: true, Gap: true}) || task5HasGap(finalSnapshot, sourceA.Ref.ID, nil, GapSequence) || len(task6Record(t, r, "actor-b", "inc-b", sourceB.Ref).missing) != 0 || task6Node(t, r, "actor-b", elevenB.ReceivedAt).ProvenName != "b-twelve" || task6Node(t, r, "actor-a", elevenB.ReceivedAt).Partial || task6Node(t, r, "actor-b", elevenB.ReceivedAt).Partial || r.historyUnits != historyBeforeLate+1 || len(r.fingerprints) != fingerprintsBeforeLate+3 {
+		t.Fatalf("Task6 all-lane recovery removes episode without rewind rule violated: change=%+v gaps=%+v actorARanges=%+v actorBRanges=%+v actorA=%+v actorB=%+v history=%d want=%d fingerprints=%d want=%d", changeEleven, finalSnapshot.Gaps, task6Record(t, r, "actor-a", "inc-a", sourceA.Ref).missing, task6Record(t, r, "actor-b", "inc-b", sourceB.Ref).missing, task6Node(t, r, "actor-a", elevenB.ReceivedAt), task6Node(t, r, "actor-b", elevenB.ReceivedAt), r.historyUnits, historyBeforeLate+1, len(r.fingerprints), fingerprintsBeforeLate+3)
+	}
+}
+func TestReconcileStateAuthorityAndSemanticTTL(t *testing.T) {
+	t.Run("receiver-clock-semantic-ttl", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		passiveSource := task6Source("state-passive", SourceOccupancy, AuthorityPassive, 400)
+		nativeSource := task6Source("state-native", SourceImmutable, AuthorityNative, 401)
+		hookSource := task6Source("state-hook", SourceProtocol, AuthorityHook, 402)
+		passive := task6StateEvent("state-passive", passiveSource, "actor", "inc-a", reconcileTestEpoch, StateActive, "", 0)
+		native := task6StateEvent("state-native", nativeSource, "actor", "inc-a", reconcileTestEpoch.Add(time.Second), StateIdle, "", 0)
+		hook := task6ProtocolStateOptional("state-hook", hookSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(2*time.Second), StateThinking, "", 2*time.Second)
+		sourceClock := reconcileTestEpoch.Add(-24 * time.Hour)
+		hook.SourceTime = &sourceClock
+		task6MustApplyAt(t, r, passive, passive.ReceivedAt.Add(100*time.Millisecond))
+		task6MustApplyAt(t, r, native, native.ReceivedAt.Add(100*time.Millisecond))
+		applyNow := hook.ReceivedAt.Add(100 * time.Millisecond)
+		task6MustApplyAt(t, r, hook, applyNow)
+		node := task6Node(t, r, "actor", applyNow)
+		wantValidUntil := hook.ReceivedAt.Add(2 * time.Second)
+		if node.State.Value != StateThinking || node.State.Source != hookSource.Ref || !node.State.Since.Equal(hook.ReceivedAt) || !node.State.ValidUntil.Equal(wantValidUntil) {
+			t.Fatalf("Task6 receiver-owned state/validity clock rule violated: node=%+v receivedAt=%s applyNow=%s sourceTime=%s wantValidUntil=%s", node, hook.ReceivedAt, applyNow, sourceClock, wantValidUntil)
+		}
+		task6MustAdvance(t, r, wantValidUntil)
+		fallback := task6Node(t, r, "actor", wantValidUntil)
+		if fallback.State.Value != StateIdle || fallback.State.Source != nativeSource.Ref || !fallback.State.Since.Equal(native.ReceivedAt) || fallback.State.ValidUntil != (time.Time{}) || fallback.Transitions[len(fallback.Transitions)-1].At != wantValidUntil {
+			t.Fatalf("Task6 semantic TTL before health/Advance-time fallback rule violated: fallback=%+v nativeReceivedAt=%s advanceNow=%s", fallback, native.ReceivedAt, wantValidUntil)
+		}
+	})
+
+	t.Run("protected-overlay", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		nativeSource := task6Source("overlay-native", SourceProtocol, AuthorityNative, 403)
+		hookSource := task6Source("overlay-hook", SourceProtocol, AuthorityHook, 404)
+		approval := task6ProtocolStateOptional("overlay-approval", nativeSource, "actor", "inc-a", nil, reconcileTestEpoch, StateApproval, "approval-a", 0)
+		blocked := task6ProtocolStateOptional("overlay-blocked", hookSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(time.Second), StateBlocked, "blocked-b", 0)
+		ordinary := task6ProtocolStateOptional("overlay-ordinary", hookSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(2*time.Second), StateActive, "", 0)
+		task6MustApplyAt(t, r, approval, approval.ReceivedAt)
+		task6MustApplyAt(t, r, blocked, blocked.ReceivedAt)
+		task6MustApplyAt(t, r, ordinary, ordinary.ReceivedAt)
+		node := task6Node(t, r, "actor", ordinary.ReceivedAt)
+		if len(r.approvalRelationships) != 2 || node.State.Value != StateBlocked || node.State.Source != hookSource.Ref {
+			t.Fatalf("Task6 protected overlay precedence/fold rule violated: approvals=%s node=%+v ordinary=%+v", task6ApprovalImage(r), node, ordinary)
+		}
+	})
+
+	t.Run("public-only-revision-transition", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		nativeSource := task6Source("public-state-native", SourceImmutable, AuthorityNative, 405)
+		passiveSource := task6Source("public-state-passive", SourceOccupancy, AuthorityPassive, 406)
+		winner := task6StateEvent("public-state-winner", nativeSource, "actor", "inc-a", reconcileTestEpoch, StateActive, "", 0)
+		beforeWinnerOrdinal := r.acceptedOrdinal
+		task6MustApplyAt(t, r, winner, winner.ReceivedAt)
+		if r.acceptedOrdinal != beforeWinnerOrdinal+1 {
+			t.Fatalf("Task6 one-state-event one-accepted-ordinal rule violated: before=%d after=%d want=%d stateLanes=%d health=%d", beforeWinnerOrdinal, r.acceptedOrdinal, beforeWinnerOrdinal+1, len(r.stateContributions), len(r.healthEpochs))
+		}
+		beforeRevision := r.stateRevision
+		beforeTransitions := append([]Transition(nil), task6Node(t, r, "actor", winner.ReceivedAt).Transitions...)
+		loser := task6StateEvent("public-state-loser", passiveSource, "actor", "inc-a", reconcileTestEpoch.Add(time.Second), StateActive, "", 0)
+		change := task6MustApplyAt(t, r, loser, loser.ReceivedAt)
+		after := task6Node(t, r, "actor", loser.ReceivedAt)
+		if change.State || r.stateRevision != beforeRevision || !reflect.DeepEqual(after.Transitions, beforeTransitions) || after.State.Source != nativeSource.Ref || len(r.stateContributions) != 2 {
+			t.Fatalf("Task6 private-only losing contribution revision/transition rule violated: change=%+v revision=%d want=%d transitions=%+v wantTransitions=%+v node=%+v stateLanes=%d", change, r.stateRevision, beforeRevision, after.Transitions, beforeTransitions, after, len(r.stateContributions))
+		}
+	})
+
+	t.Run("passive-protected-evidence-rejected", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			source EventSource
+			event  func(EventSource) Event
+		}{
+			{"passive-approval", task6Source("passive-protected", SourceOccupancy, AuthorityPassive, 437), func(source EventSource) Event {
+				return task6StateEvent("passive-protected-approval", source, "actor", "inc-a", reconcileTestEpoch, StateApproval, "passive-approval", 0)
+			}},
+			{"terminal-positive-validity", task6Source("terminal-validity", SourceImmutable, AuthorityNative, 438), func(source EventSource) Event {
+				return task6StateEvent("terminal-positive-validity", source, "actor", "inc-a", reconcileTestEpoch, StateCompleted, "", time.Second)
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				r := task6SeedActor(t, "actor", "inc-a")
+				event := tc.event(tc.source)
+				before := task6ReducerOwners(r)
+				change, err := r.Apply(event, event.ReceivedAt)
+				task5RequireAdmission(t, err, AdmissionContributionConflict)
+				gap := task5FindGap(t, r.Snapshot(event.ReceivedAt), tc.source.Ref.ID, task5Capability(CapabilityState), GapCollision)
+				after := task6ReducerOwners(r)
+				if change != (ChangeSet{Visibility: true, Gap: true}) || gap.Count != 1 || after.fingerprints != before.fingerprints || after.history != before.history || after.states != before.states || after.approvals != before.approvals || after.health != before.health {
+					t.Fatalf("Task6 invalid normalized state expected diagnostic/no-witness rule violated: case=%s change=%+v err=%v gap=%+v ownersBefore=%+v ownersAfter=%+v", tc.name, change, err, gap, before, after)
+				}
+			})
+		}
+	})
+
+	t.Run("distinct-mode-terminal-state-tie-uses-accepted-ordinal", func(t *testing.T) {
+		for _, stateLast := range []bool{false, true} {
+			name := "exit-last"
+			if stateLast {
+				name = "state-last"
+			}
+			t.Run(name, func(t *testing.T) {
+				r := task6SeedActor(t, "actor", "inc-a")
+				ref := SourceRef{ID: SourceID("mode-tie-" + name), Runtime: types.RuntimeCodex, Incarnation: 507, Authority: AuthorityNative}
+				exitSource := EventSource{Ref: ref, Mode: SourceImmutable}
+				stateSource := EventSource{Ref: ref, Mode: SourceSidecar}
+				exit := task6ExitEvent("mode-tie-exit-"+name, exitSource, "actor", "inc-a", nil, reconcileTestEpoch, OutcomeCompleted)
+				state := task6StateEvent("mode-tie-state-"+name, stateSource, "actor", "inc-a", reconcileTestEpoch, StateCompleted, "mode-tie-relationship", 0)
+				first, second := state, exit
+				wantCapability := CapabilityTerminal
+				if stateLast {
+					first, second = exit, state
+					wantCapability = CapabilityState
+				}
+				task6MustApplyAt(t, r, first, first.ReceivedAt)
+				beforeRevision := r.stateRevision
+				task6MustApplyAt(t, r, second, second.ReceivedAt)
+				if r.stateRevision != beforeRevision {
+					t.Fatalf("Task6 distinct-mode identical public state private-only revision rule violated: case=%s revision=%d want=%d node=%+v", name, r.stateRevision, beforeRevision, task6Node(t, r, "actor", second.ReceivedAt))
+				}
+				gap := task5GapEvent("mode-tie-gap-"+name, ref, wantCapability, GapCollector, GapStatusOpen, 1, reconcileTestEpoch.Add(time.Second))
+				task6MustApplyAt(t, r, gap, gap.ReceivedAt)
+				if !task6Node(t, r, "actor", gap.ReceivedAt).Partial {
+					t.Fatalf("Task6 distinct-mode accepted-ordinal winner capability rule violated: case=%s wantCapability=%s node=%+v gaps=%+v", name, wantCapability, task6Node(t, r, "actor", gap.ReceivedAt), r.Snapshot(gap.ReceivedAt).Gaps)
+				}
+			})
+		}
+	})
+
+	t.Run("last-256-ring", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("transition-ring", SourceImmutable, AuthorityNative, 407)
+		baseRevision := r.stateRevision
+		want := make([]Transition, 0, 257)
+		for index := 0; index < 257; index++ {
+			state := StateActive
+			if index%2 == 1 {
+				state = StateIdle
+			}
+			receivedAt := reconcileTestEpoch.Add(time.Duration(index) * time.Millisecond)
+			now := receivedAt.Add(time.Microsecond)
+			event := task6StateEvent(fmt.Sprintf("transition-ring-%03d", index), source, "actor", "inc-a", receivedAt, state, "", 0)
+			task6MustApplyAt(t, r, event, now)
+			want = append(want, Transition{At: now, State: state, Source: source.Ref})
+		}
+		node := task6Node(t, r, "actor", reconcileTestEpoch.Add(time.Second))
+		want = want[1:]
+		if len(node.Transitions) != 256 || cap(node.Transitions) != 256 || !reflect.DeepEqual(node.Transitions, want) || r.stateRevision != baseRevision+257 || r.retainedCharge != chargeRetainedRoot(r, nil).bytes {
+			t.Fatalf("Task6 257-change last-256 ring/order/full-charge rule violated: lenCap=%d/%d transitions=%+v want=%+v revision=%d wantRevision=%d retained=%d recomputed=%+v", len(node.Transitions), cap(node.Transitions), node.Transitions, want, r.stateRevision, baseRevision+257, r.retainedCharge, chargeRetainedRoot(r, nil))
+		}
+	})
+
+	t.Run("invalid-transaction-time", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("transition-time", SourceImmutable, AuthorityNative, 408)
+		first := task6StateEvent("transition-time-first", source, "actor", "inc-a", reconcileTestEpoch, StateActive, "", 0)
+		firstNow := reconcileTestEpoch
+		task6MustApplyAt(t, r, first, firstNow)
+		for _, tc := range []struct {
+			name string
+			now  time.Time
+		}{
+			{"zero", time.Time{}},
+			{"decreasing", firstNow.Add(-time.Nanosecond)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				beforeOwners := task6ReducerOwners(r)
+				beforeSnapshot := CloneSnapshot(r.current.snapshot)
+				beforeCurrent, beforePrevious := r.current, r.previous
+				event := task6StateEvent("transition-time-"+tc.name, source, "actor", "inc-a", reconcileTestEpoch.Add(20*time.Second), StateIdle, "", 0)
+				change, err := r.Apply(event, tc.now)
+				if err == nil || errors.Is(err, ErrAdmission) || change != (ChangeSet{}) || task6ReducerOwners(r) != beforeOwners || r.current != beforeCurrent || r.previous != beforePrevious || !reflect.DeepEqual(CloneSnapshot(r.current.snapshot), beforeSnapshot) {
+					t.Fatalf("Task6 invalid transaction-time invariant atomicity rule violated: case=%s now=%s change=%+v err=%v isAdmission=%t ownersBefore=%+v ownersAfter=%+v currentSame=%t previousSame=%t snapshotBefore=%+v snapshotAfter=%+v", tc.name, tc.now, change, err, errors.Is(err, ErrAdmission), beforeOwners, task6ReducerOwners(r), r.current == beforeCurrent, r.previous == beforePrevious, beforeSnapshot, r.current.snapshot)
+				}
+			})
+		}
+	})
+}
+func TestReconcileSourceHealthStaleAtSixSeconds(t *testing.T) {
+	t.Run("exact-six-second-expiry", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		passiveSource := task6Source("health-passive", SourceOccupancy, AuthorityPassive, 409)
+		hookSource := task6Source("health-hook", SourceProtocol, AuthorityHook, 410)
+		passive := task6StateEvent("health-passive", passiveSource, "actor", "inc-a", reconcileTestEpoch.Add(-time.Second), StateActive, "", 0)
+		hook := task6ProtocolStateOptional("health-hook-approval", hookSource, "actor", "inc-a", nil, reconcileTestEpoch, StateApproval, "approval-health", 0)
+		task6MustApplyAt(t, r, passive, passive.ReceivedAt)
+		task6MustApplyAt(t, r, hook, hook.ReceivedAt)
+		deadline := hook.ReceivedAt.Add(r.config.HookFreshness)
+		task6MustAdvance(t, r, deadline.Add(-time.Nanosecond))
+		if node := task6Node(t, r, "actor", deadline.Add(-time.Nanosecond)); node.State.Value != StateApproval || len(r.approvalRelationships) != 1 {
+			t.Fatalf("Task6 health D-minus-one protected freshness rule violated: deadline=%s node=%+v approvals=%s health=%s", deadline, node, task6ApprovalImage(r), task6HealthImage(r))
+		}
+		task6MustAdvance(t, r, deadline)
+		node := task6Node(t, r, "actor", deadline)
+		if node.State.Value != StateActive || node.State.Source != passiveSource.Ref || len(r.approvalRelationships) != 0 || task6HasHealthLane(r, "actor", "inc-a", hookSource) || node.Transitions[len(node.Transitions)-1].At != deadline {
+			t.Fatalf("Task6 health exact-six-second removal-before-fallback rule violated: deadline=%s node=%+v approvals=%s health=%s", deadline, node, task6ApprovalImage(r), task6HealthImage(r))
+		}
+	})
+
+	t.Run("failed-expiry-atomic-retry", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("health-revision", SourceProtocol, AuthorityHook, 411)
+		state := task6ProtocolStateOptional("health-revision-state", source, "actor", "inc-a", nil, reconcileTestEpoch, StateActive, "", 0)
+		task6MustApplyAt(t, r, state, state.ReceivedAt)
+		deadline := state.ReceivedAt.Add(r.config.HookFreshness)
+		task5SeedRevision(t, r, "state", uint64(maxJSONSafeInteger), deadline.Add(-time.Nanosecond))
+		beforeOwners := task6ReducerOwners(r)
+		beforeSnapshot := CloneSnapshot(r.current.snapshot)
+		beforeCurrent, beforePrevious := r.current, r.previous
+		change, err := r.Advance(deadline)
+		if !errors.Is(err, ErrRevisionExhausted) || change != (ChangeSet{}) || task6ReducerOwners(r) != beforeOwners || r.current != beforeCurrent || r.previous != beforePrevious || !reflect.DeepEqual(CloneSnapshot(r.current.snapshot), beforeSnapshot) {
+			t.Fatalf("Task6 failed health expiry revision atomicity rule violated: change=%+v err=%v ownersBefore=%+v ownersAfter=%+v currentSame=%t previousSame=%t snapshotBefore=%+v snapshotAfter=%+v", change, err, beforeOwners, task6ReducerOwners(r), r.current == beforeCurrent, r.previous == beforePrevious, beforeSnapshot, r.current.snapshot)
+		}
+		task5SeedRevision(t, r, "state", 1, deadline.Add(-time.Nanosecond))
+		retry := task6MustAdvance(t, r, deadline)
+		if !retry.State || task6Node(t, r, "actor", deadline).State != (NodeState{}) || task6HasHealthLane(r, "actor", "inc-a", source) {
+			t.Fatalf("Task6 failed health expiry same-time retry rule violated: change=%+v node=%+v health=%s", retry, task6Node(t, r, "actor", deadline), task6HealthImage(r))
+		}
+	})
+}
+func TestReconcileLateHeartbeatStartsNewEpoch(t *testing.T) {
+	r := task6SeedActor(t, "actor", "inc-a")
+	source := task6Source("late-heartbeat", SourceProtocol, AuthorityHook, 412)
+	approval := task6ProtocolStateOptional("late-heartbeat-approval", source, "actor", "inc-a", nil, reconcileTestEpoch, StateApproval, "late-approval", 0)
+	task6MustApplyAt(t, r, approval, approval.ReceivedAt)
+	expiry := approval.ReceivedAt.Add(r.config.HookFreshness)
+	task6MustAdvance(t, r, expiry)
+	before := task6ReducerOwners(r)
+	heartbeat := task6HeartbeatEvent("late-heartbeat-empty-epoch", source, "actor", "inc-a", nil, expiry.Add(time.Second))
+	change := task6MustApplyAt(t, r, heartbeat, heartbeat.ReceivedAt)
+	after := task6ReducerOwners(r)
+	epoch := task6HealthLane(t, r, "actor", "inc-a", source)
+	if change != (ChangeSet{}) || task6Node(t, r, "actor", heartbeat.ReceivedAt).State != (NodeState{}) || len(r.approvalRelationships) != 0 || len(r.stateContributions) != 0 || !epoch.lastHeartbeat.Equal(heartbeat.ReceivedAt) || after.history != before.history+2 || after.retained <= before.retained {
+		t.Fatalf("Task6 late heartbeat empty-epoch/no-resurrection accounting rule violated: change=%+v node=%+v approvals=%s stateLanes=%d epoch=%+v before=%+v after=%+v", change, task6Node(t, r, "actor", heartbeat.ReceivedAt), task6ApprovalImage(r), len(r.stateContributions), epoch, before, after)
+	}
+	newState := task6ProtocolStateOptional("late-heartbeat-new-state", source, "actor", "inc-a", nil, heartbeat.ReceivedAt.Add(time.Second), StateThinking, "", 0)
+	task6MustApplyAt(t, r, newState, newState.ReceivedAt)
+	if node := task6Node(t, r, "actor", newState.ReceivedAt); node.State.Value != StateThinking {
+		t.Fatalf("Task6 late heartbeat new evidence requirement rule violated: node=%+v epoch=%+v", node, task6HealthLane(t, r, "actor", "inc-a", source))
+	}
+
+	t.Run("apply-time-heartbeat-rollover-without-advance", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("heartbeat-rollover", SourceProtocol, AuthorityHook, 504)
+		approval := task6ProtocolStateOptional("heartbeat-rollover-approval", source, "actor", "inc-a", nil, reconcileTestEpoch, StateApproval, "rollover-approval", 0)
+		task6MustApplyAt(t, r, approval, approval.ReceivedAt)
+		lateAt := approval.ReceivedAt.Add(r.config.HookFreshness)
+		heartbeat := task6HeartbeatEvent("heartbeat-rollover-late", source, "actor", "inc-a", nil, lateAt)
+		task6MustApplyAt(t, r, heartbeat, heartbeat.ReceivedAt)
+		if task6Node(t, r, "actor", lateAt).State != (NodeState{}) || len(r.approvalRelationships) != 0 || len(r.stateContributions) != 0 || !task6HealthLane(t, r, "actor", "inc-a", source).lastHeartbeat.Equal(lateAt) {
+			t.Fatalf("Task6 heartbeat Apply-time epoch rollover purge/no-resurrection rule violated: node=%+v approvals=%s stateLanes=%d epoch=%+v", task6Node(t, r, "actor", lateAt), task6ApprovalImage(r), len(r.stateContributions), task6HealthLane(t, r, "actor", "inc-a", source))
+		}
+	})
+
+	t.Run("apply-time-state-rollover-without-advance", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("state-rollover", SourceProtocol, AuthorityHook, 505)
+		oldState := task6ProtocolStateOptional("state-rollover-old", source, "actor", "inc-a", nil, reconcileTestEpoch, StateActive, "", 0)
+		task6MustApplyAt(t, r, oldState, oldState.ReceivedAt)
+		newAt := oldState.ReceivedAt.Add(r.config.HookFreshness)
+		newState := task6ProtocolStateOptional("state-rollover-new", source, "actor", "inc-a", nil, newAt, StateThinking, "", 0)
+		task6MustApplyAt(t, r, newState, newState.ReceivedAt)
+		node := task6Node(t, r, "actor", newAt)
+		if node.State.Value != StateThinking || !node.State.Since.Equal(newAt) || len(r.stateContributions) != 1 || !task6HealthLane(t, r, "actor", "inc-a", source).lastHeartbeat.Equal(newAt) {
+			t.Fatalf("Task6 state Apply-time epoch rollover fresh-evidence rule violated: node=%+v stateLanes=%d epoch=%+v", node, len(r.stateContributions), task6HealthLane(t, r, "actor", "inc-a", source))
+		}
+	})
+}
+func TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane(t *testing.T) {
+	r := task6SeedActors(t, []struct {
+		actor       NodeID
+		incarnation IncarnationID
+	}{{"actor-a", "inc-a"}, {"actor-b", "inc-b"}, {"actor-c", "inc-c"}, {"actor-d", "inc-d"}})
+	base := task6Source("native-health", SourceObservation, AuthorityNative, 413)
+	for _, actor := range []struct {
+		id          NodeID
+		incarnation IncarnationID
+	}{{"actor-a", "inc-a"}, {"actor-b", "inc-b"}, {"actor-c", "inc-c"}, {"actor-d", "inc-d"}} {
+		event := task6StateEvent("native-health-state-"+string(actor.id), base, actor.id, actor.incarnation, reconcileTestEpoch, StateActive, "", 0)
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+	}
+	refreshAt := reconcileTestEpoch.Add(4 * time.Second)
+	matching := task6HeartbeatEvent("native-health-match", base, "actor-a", "inc-a", nil, refreshAt)
+	wrongIncarnationSource := base
+	wrongIncarnationSource.Ref.Incarnation++
+	wrongSource := task6HeartbeatEvent("native-health-source-incarnation", wrongIncarnationSource, "actor-c", "inc-c", nil, refreshAt)
+	wrongModeSource := base
+	wrongModeSource.Mode = SourceImmutable
+	wrongMode := task6HeartbeatEvent("native-health-mode", wrongModeSource, "actor-d", "inc-d", nil, refreshAt)
+	for _, event := range []Event{matching, wrongSource, wrongMode} {
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+	}
+	deadline := reconcileTestEpoch.Add(r.config.HookFreshness)
+	task6MustAdvance(t, r, deadline)
+	if task6Node(t, r, "actor-a", deadline).State.Value != StateActive || task6Node(t, r, "actor-b", deadline).State != (NodeState{}) || task6Node(t, r, "actor-c", deadline).State != (NodeState{}) || task6Node(t, r, "actor-d", deadline).State != (NodeState{}) {
+		t.Fatalf("Task6 actor/incarnation/source/mode heartbeat isolation rule violated: actorA=%+v actorB=%+v actorC=%+v actorD=%+v health=%s", task6Node(t, r, "actor-a", deadline), task6Node(t, r, "actor-b", deadline), task6Node(t, r, "actor-c", deadline), task6Node(t, r, "actor-d", deadline), task6HealthImage(r))
+	}
+	mismatched := task6HeartbeatEvent("native-health-old-actor-incarnation", base, "actor-a", "old-inc-a", nil, deadline.Add(time.Second))
+	beforeMismatch := task6ReducerOwners(r)
+	mismatchChange, mismatchErr := r.Apply(mismatched, mismatched.ReceivedAt)
+	task5RequireAdmission(t, mismatchErr, AdmissionEndpointIdentity)
+	mismatchGap := task5FindGap(t, r.Snapshot(mismatched.ReceivedAt), base.Ref.ID, task5Capability(CapabilityState), GapCollision)
+	afterMismatch := task6ReducerOwners(r)
+	if mismatchChange != (ChangeSet{Visibility: true, Gap: true}) || mismatchGap.Count != 1 || afterMismatch.fingerprints != beforeMismatch.fingerprints || afterMismatch.states != beforeMismatch.states || afterMismatch.health != beforeMismatch.health {
+		t.Fatalf("Task6 mismatched heartbeat expected diagnostic/no-semantic-owner rule violated: event=%+v change=%+v err=%v gap=%+v ownersBefore=%+v ownersAfter=%+v", mismatched, mismatchChange, mismatchErr, mismatchGap, beforeMismatch, afterMismatch)
+	}
+	actorless := Event{Schema: 1, Source: base, ID: ImmutableEventID(types.RuntimeCodex, "native-health-actorless", "task6"), ReceivedAt: deadline.Add(2 * time.Second), Kind: EventHeartbeatObserved, Data: HeartbeatObserved{}}
+	beforeActorless := task6ReducerOwners(r)
+	actorlessChange, actorlessErr := r.Apply(actorless, actorless.ReceivedAt)
+	if actorlessErr == nil || errors.Is(actorlessErr, ErrAdmission) || actorlessChange != (ChangeSet{}) || task6ReducerOwners(r) != beforeActorless {
+		t.Fatalf("Task6 actorless heartbeat validation atomicity rule violated: event=%+v change=%+v err=%v isAdmission=%t ownersBefore=%+v ownersAfter=%+v", actorless, actorlessChange, actorlessErr, errors.Is(actorlessErr, ErrAdmission), beforeActorless, task6ReducerOwners(r))
+	}
+}
+func TestReconcileApprovalAndBlockedRelationshipsResolveIndependently(t *testing.T) {
+	r := task6SeedActor(t, "actor", "inc-a")
+	hookSource := task6Source("approval-hook", SourceProtocol, AuthorityHook, 414)
+	nativeSource := task6Source("approval-native", SourceProtocol, AuthorityNative, 415)
+	approval := task6ProtocolStateOptional("approval-open-a", hookSource, "actor", "inc-a", nil, reconcileTestEpoch, StateApproval, "approval-a", 0)
+	blocked := task6ProtocolStateOptional("approval-open-b", nativeSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(time.Second), StateBlocked, "blocked-b", 0)
+	ordinary := task6ProtocolStateOptional("approval-ordinary-no-resolution", hookSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(2*time.Second), StateActive, "", 0)
+	for _, event := range []Event{approval, blocked, ordinary} {
+		task6MustApplyAt(t, r, event, event.ReceivedAt)
+	}
+	if len(r.approvalRelationships) != 2 || task6Node(t, r, "actor", ordinary.ReceivedAt).State.Value != StateApproval {
+		t.Fatalf("Task6 ordinary state cannot hide protected overlay rule violated: approvals=%s node=%+v", task6ApprovalImage(r), task6Node(t, r, "actor", ordinary.ReceivedAt))
+	}
+	wrongLane := task6ProtocolStateOptional("approval-wrong-lane-resolution", nativeSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(3*time.Second), StateIdle, "approval-a", 0)
+	task6MustApplyAt(t, r, wrongLane, wrongLane.ReceivedAt)
+	if len(r.approvalRelationships) != 2 || !task6HasApproval(t, r, hookSource, "actor", "inc-a", "approval-a") {
+		t.Fatalf("Task6 relationship resolution full-lane mismatch rule violated: approvals=%s wrongLane=%+v", task6ApprovalImage(r), wrongLane)
+	}
+	resolveA := task6ProtocolStateOptional("approval-exact-a", hookSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(4*time.Second), StateActive, "approval-a", 0)
+	task6MustApplyAt(t, r, resolveA, resolveA.ReceivedAt)
+	if len(r.approvalRelationships) != 1 || task6HasApproval(t, r, hookSource, "actor", "inc-a", "approval-a") || !task6HasApproval(t, r, nativeSource, "actor", "inc-a", "blocked-b") || task6Node(t, r, "actor", resolveA.ReceivedAt).State.Value != StateBlocked {
+		t.Fatalf("Task6 exact one-row resolution/remaining overlay fold rule violated: approvals=%s node=%+v", task6ApprovalImage(r), task6Node(t, r, "actor", resolveA.ReceivedAt))
+	}
+	resolveB := task6ProtocolStateOptional("approval-exact-b", nativeSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(5*time.Second), StateIdle, "blocked-b", 0)
+	task6MustApplyAt(t, r, resolveB, resolveB.ReceivedAt)
+	if len(r.approvalRelationships) != 0 || task6Node(t, r, "actor", resolveB.ReceivedAt).State.Value != StateActive {
+		t.Fatalf("Task6 final protected-row resolution ordinary fallback rule violated: approvals=%s node=%+v", task6ApprovalImage(r), task6Node(t, r, "actor", resolveB.ReceivedAt))
+	}
+}
+func TestReconcileTerminalClearsRelationships(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		outcome   ExitOutcome
+		state     State
+		ghostTTL  time.Duration
+		completed bool
+		failed    bool
+	}{
+		{"completed", OutcomeCompleted, StateCompleted, DefaultReconcileConfig().SuccessGhostTTL, true, false},
+		{"failed", OutcomeFailed, StateFailed, DefaultReconcileConfig().FailureGhostTTL, false, true},
+		{"vanished", OutcomeVanished, StateVanished, DefaultReconcileConfig().SuccessGhostTTL, false, false},
+	} {
+		t.Run("three-outcomes-clocks-ghosts/"+tc.name, func(t *testing.T) {
+			r := task6SeedActor(t, "actor", "inc-a")
+			source := task6Source(SourceID("terminal-"+tc.name), SourceImmutable, AuthorityNative, SourceIncarnationID(420+len(tc.name)))
+			approval := task6StateEvent("terminal-approval-"+tc.name, source, "actor", "inc-a", reconcileTestEpoch, StateApproval, "terminal-approval", 0)
+			task6MustApplyAt(t, r, approval, approval.ReceivedAt)
+			exitAt := reconcileTestEpoch.Add(time.Second)
+			applyNow := exitAt.Add(10 * time.Second)
+			exit := task6ExitEvent("terminal-exit-"+tc.name, source, "actor", "inc-a", nil, exitAt, tc.outcome)
+			beforeStateRevision, beforeVisibilityRevision := r.stateRevision, r.visibilityRevision
+			change := task6MustApplyAt(t, r, exit, applyNow)
+			node := task6Node(t, r, "actor", applyNow)
+			wantGhost := exitAt.Add(tc.ghostTTL)
+			if change != (ChangeSet{Visibility: true, State: true}) || node.State.Value != tc.state || node.State.Source != source.Ref || !node.State.Since.Equal(exitAt) || node.State.ValidUntil != (time.Time{}) || (node.CompletedAt != nil) != tc.completed || (node.FailedAt != nil) != tc.failed || tc.completed && !node.CompletedAt.Equal(exitAt) || tc.failed && !node.FailedAt.Equal(exitAt) || node.GhostExpiresAt == nil || !node.GhostExpiresAt.Equal(wantGhost) || len(r.approvalRelationships) != 0 || r.stateRevision != beforeStateRevision+1 || r.visibilityRevision != beforeVisibilityRevision+1 || node.Transitions[len(node.Transitions)-1].At != applyNow {
+				t.Fatalf("Task6 terminal receiver clocks/initial ghost transaction rule violated: case=%s change=%+v node=%+v exitAt=%s applyNow=%s wantGhost=%s approvals=%s stateRevision=%d want=%d visibilityRevision=%d want=%d", tc.name, change, node, exitAt, applyNow, wantGhost, task6ApprovalImage(r), r.stateRevision, beforeStateRevision+1, r.visibilityRevision, beforeVisibilityRevision+1)
+			}
+		})
+	}
+
+	t.Run("actor-incarnation-clear-isolation", func(t *testing.T) {
+		r := task6SeedActors(t, []struct {
+			actor       NodeID
+			incarnation IncarnationID
+		}{{"actor-a", "inc-a"}, {"actor-b", "inc-b"}})
+		source := task6Source("terminal-isolation", SourceImmutable, AuthorityNative, 430)
+		for _, actor := range []struct {
+			id           NodeID
+			incarnation  IncarnationID
+			relationship RelationshipID
+		}{{"actor-a", "inc-a", "approval-a"}, {"actor-b", "inc-b", "approval-b"}} {
+			event := task6StateEvent("terminal-isolation-"+string(actor.id), source, actor.id, actor.incarnation, reconcileTestEpoch, StateApproval, actor.relationship, 0)
+			task6MustApplyAt(t, r, event, event.ReceivedAt)
+		}
+		exit := task6ExitEvent("terminal-isolation-exit", source, "actor-a", "inc-a", nil, reconcileTestEpoch.Add(time.Second), OutcomeCompleted)
+		task6MustApplyAt(t, r, exit, exit.ReceivedAt)
+		if task6HasApproval(t, r, source, "actor-a", "inc-a", "approval-a") || !task6HasApproval(t, r, source, "actor-b", "inc-b", "approval-b") || task6Node(t, r, "actor-b", exit.ReceivedAt).State.Value != StateApproval {
+			t.Fatalf("Task6 terminal actor-incarnation relationship clear isolation rule violated: approvals=%s actorA=%+v actorB=%+v", task6ApprovalImage(r), task6Node(t, r, "actor-a", exit.ReceivedAt), task6Node(t, r, "actor-b", exit.ReceivedAt))
+		}
+	})
+
+	t.Run("losing-terminal-does-not-rewrite-clocks", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		hookSource := task6Source("terminal-winning-hook", SourceImmutable, AuthorityHook, 433)
+		nativeSource := task6Source("terminal-losing-native", SourceImmutable, AuthorityNative, 434)
+		winner := task6ExitEvent("terminal-winning-failed", hookSource, "actor", "inc-a", nil, reconcileTestEpoch, OutcomeFailed)
+		task6MustApplyAt(t, r, winner, winner.ReceivedAt)
+		beforeNode := task6Node(t, r, "actor", winner.ReceivedAt)
+		beforeRevision := r.stateRevision
+		beforeTransitions := append([]Transition(nil), beforeNode.Transitions...)
+		loser := task6ExitEvent("terminal-losing-completed", nativeSource, "actor", "inc-a", nil, reconcileTestEpoch.Add(time.Second), OutcomeCompleted)
+		change := task6MustApplyAt(t, r, loser, loser.ReceivedAt)
+		afterNode := task6Node(t, r, "actor", loser.ReceivedAt)
+		if change != (ChangeSet{}) || afterNode.State != beforeNode.State || !timePointerEqual(afterNode.CompletedAt, beforeNode.CompletedAt) || !timePointerEqual(afterNode.FailedAt, beforeNode.FailedAt) || !timePointerEqual(afterNode.GhostExpiresAt, beforeNode.GhostExpiresAt) || !reflect.DeepEqual(afterNode.Transitions, beforeTransitions) || r.stateRevision != beforeRevision {
+			t.Fatalf("Task6 losing terminal private-only clock/revision rule violated: change=%+v winnerNode=%+v afterNode=%+v transitionsBefore=%+v transitionsAfter=%+v stateRevision=%d want=%d", change, beforeNode, afterNode, beforeTransitions, afterNode.Transitions, r.stateRevision, beforeRevision)
+		}
+	})
+
+	t.Run("same-advance-terminal-clears-staged-approval", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("terminal-staged-approval", SourceProtocol, AuthorityHook, 435)
+		one := task6ProtocolNode("terminal-staged-one", source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+		four := task6ProtocolState("terminal-staged-four", source, "actor", "inc-a", 4, reconcileTestEpoch.Add(time.Second), StateApproval, "staged-approval", 0)
+		six := task6ExitEvent("terminal-staged-six", source, "actor", "inc-a", task6Uint64Pointer(6), reconcileTestEpoch.Add(1500*time.Millisecond), OutcomeCompleted)
+		for _, event := range []Event{one, four, six} {
+			task6MustApplyAt(t, r, event, event.ReceivedAt)
+		}
+		deadline := four.ReceivedAt.Add(r.config.ReorderWindow)
+		task6MustAdvance(t, r, deadline)
+		if len(r.approvalRelationships) != 0 || task6Node(t, r, "actor", deadline).State.Value != StateCompleted {
+			t.Fatalf("Task6 same-Advance terminal clears staged approval rule violated: approvals=%s node=%+v record=%+v", task6ApprovalImage(r), task6Node(t, r, "actor", deadline), task6Record(t, r, "actor", "inc-a", source.Ref))
+		}
+	})
+
+	t.Run("terminal-valued-state-creates-initial-ghost", func(t *testing.T) {
+		r := task6SeedActor(t, "actor", "inc-a")
+		source := task6Source("terminal-state-event", SourceImmutable, AuthorityNative, 436)
+		event := task6StateEvent("terminal-state-completed", source, "actor", "inc-a", reconcileTestEpoch, StateCompleted, "", 0)
+		applyNow := reconcileTestEpoch.Add(time.Second)
+		change := task6MustApplyAt(t, r, event, applyNow)
+		node := task6Node(t, r, "actor", applyNow)
+		wantGhost := event.ReceivedAt.Add(r.config.SuccessGhostTTL)
+		if change != (ChangeSet{Visibility: true, State: true}) || node.State.Value != StateCompleted || node.CompletedAt == nil || !node.CompletedAt.Equal(event.ReceivedAt) || node.GhostExpiresAt == nil || !node.GhostExpiresAt.Equal(wantGhost) {
+			t.Fatalf("Task6 terminal-valued state initial terminal/ghost metadata rule violated: change=%+v node=%+v receivedAt=%s applyNow=%s wantGhost=%s", change, node, event.ReceivedAt, applyNow, wantGhost)
+		}
+	})
+
+	t.Run("winning-terminal-capability-partial", func(t *testing.T) {
+		t.Run("exit-owns-terminal", func(t *testing.T) {
+			r := task6SeedActor(t, "actor", "inc-a")
+			source := task6Source("terminal-capability-exit", SourceImmutable, AuthorityNative, 439)
+			exit := task6ExitEvent("terminal-capability-exit", source, "actor", "inc-a", nil, reconcileTestEpoch, OutcomeCompleted)
+			task6MustApplyAt(t, r, exit, exit.ReceivedAt)
+			gap := task5GapEvent("terminal-capability-gap", source.Ref, CapabilityTerminal, GapCollector, GapStatusOpen, 1, reconcileTestEpoch.Add(time.Second))
+			task6MustApplyAt(t, r, gap, gap.ReceivedAt)
+			if !task6Node(t, r, "actor", gap.ReceivedAt).Partial {
+				t.Fatalf("Task6 Exit winner terminal-capability Partial rule violated: node=%+v gaps=%+v", task6Node(t, r, "actor", gap.ReceivedAt), r.Snapshot(gap.ReceivedAt).Gaps)
+			}
+		})
+		t.Run("state-terminal-owns-state", func(t *testing.T) {
+			r := task6SeedActor(t, "actor", "inc-a")
+			source := task6Source("terminal-capability-state", SourceImmutable, AuthorityNative, 440)
+			state := task6StateEvent("terminal-capability-state", source, "actor", "inc-a", reconcileTestEpoch, StateCompleted, "", 0)
+			task6MustApplyAt(t, r, state, state.ReceivedAt)
+			terminalGap := task5GapEvent("terminal-capability-wrong-gap", source.Ref, CapabilityTerminal, GapCollector, GapStatusOpen, 1, reconcileTestEpoch.Add(time.Second))
+			task6MustApplyAt(t, r, terminalGap, terminalGap.ReceivedAt)
+			if task6Node(t, r, "actor", terminalGap.ReceivedAt).Partial {
+				t.Fatalf("Task6 terminal StateObserved excludes terminal-capability Partial rule violated: node=%+v gaps=%+v", task6Node(t, r, "actor", terminalGap.ReceivedAt), r.Snapshot(terminalGap.ReceivedAt).Gaps)
+			}
+			stateGap := task5GapEvent("terminal-capability-state-gap", source.Ref, CapabilityState, GapSchema, GapStatusOpen, 1, reconcileTestEpoch.Add(2*time.Second))
+			task6MustApplyAt(t, r, stateGap, stateGap.ReceivedAt)
+			if !task6Node(t, r, "actor", stateGap.ReceivedAt).Partial {
+				t.Fatalf("Task6 terminal StateObserved state-capability Partial rule violated: node=%+v gaps=%+v", task6Node(t, r, "actor", stateGap.ReceivedAt), r.Snapshot(stateGap.ReceivedAt).Gaps)
+			}
+		})
+	})
+}
+func TestReconcileTerminalExemptFromHeartbeatExpiry(t *testing.T) {
+	r := task6SeedActor(t, "actor", "inc-a")
+	source := task6Source("terminal-exempt", SourceProtocol, AuthorityHook, 431)
+	exitAt := reconcileTestEpoch
+	exit := task6ExitEvent("terminal-exempt-exit", source, "actor", "inc-a", nil, exitAt, OutcomeFailed)
+	task6MustApplyAt(t, r, exit, exitAt)
+	wantGhost := exitAt.Add(r.config.FailureGhostTTL)
+	after := exitAt.Add(10 * r.config.HookFreshness)
+	task6MustAdvance(t, r, after)
+	node := task6Node(t, r, "actor", after)
+	if node.State.Value != StateFailed || node.State.ValidUntil != (time.Time{}) || !node.State.Since.Equal(exitAt) || node.FailedAt == nil || !node.FailedAt.Equal(exitAt) || node.GhostExpiresAt == nil || !node.GhostExpiresAt.Equal(wantGhost) {
+		t.Fatalf("Task6 terminal semantic/health exemption and exact-clock rule violated: node=%+v exitAt=%s after=%s wantGhost=%s health=%s", node, exitAt, after, wantGhost, task6HealthImage(r))
+	}
+}
+func TestReconcileRejectsOldIncarnationEvent(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	startedA := reconcileTestEpoch.Add(-time.Minute)
+	oldNode := task5NodeEvent("task6-switch-old", "actor", "inc-a", reconcileTestEpoch.Add(-time.Second))
+	oldNode.Data = task5NodeData("old", &startedA, nil)
+	task5MustApply(t, r, oldNode, oldNode.ReceivedAt)
+	source := task6Source("switch-source", SourceProtocol, AuthorityHook, 432)
+	approval := task6ProtocolState("switch-approval", source, "actor", "inc-a", 1, reconcileTestEpoch, StateApproval, "switch-approval", 0)
+	buffered := task6ProtocolState("switch-buffered", source, "actor", "inc-a", 3, reconcileTestEpoch.Add(time.Second), StateWaiting, "", 0)
+	task6MustApplyAt(t, r, approval, approval.ReceivedAt)
+	task6MustApplyAt(t, r, buffered, buffered.ReceivedAt)
+	deadline := buffered.ReceivedAt.Add(r.config.ReorderWindow)
+	task6MustAdvance(t, r, deadline)
+	if len(task6Record(t, r, "actor", "inc-a", source.Ref).missing) != 1 || len(r.stateContributions) == 0 || len(r.approvalRelationships) == 0 || len(r.healthEpochs) == 0 {
+		t.Fatalf("Task6 incarnation switch cleanup fixture ownership rule violated: record=%+v stateLanes=%d approvals=%s health=%s", task6Record(t, r, "actor", "inc-a", source.Ref), len(r.stateContributions), task6ApprovalImage(r), task6HealthImage(r))
+	}
+	startedB := startedA.Add(time.Second)
+	newNode := task5NodeEvent("task6-switch-new", "actor", "inc-b", deadline.Add(time.Second))
+	newNode.Data = task5NodeData("new", &startedB, nil)
+	task6MustApplyAt(t, r, newNode, newNode.ReceivedAt)
+	if len(r.sequenceRecords) != 0 || task6CountActorStateLanes(r, "actor", "inc-a") != 0 || task6CountActorApprovals(r, "actor", "inc-a") != 0 || task6CountActorHealth(r, "actor", "inc-a") != 0 || task6ComputedHistory(r) != r.historyUnits || r.retainedCharge != chargeRetainedRoot(r, nil).bytes || len(r.retiredIncarnations) != 1 {
+		t.Fatalf("Task6 proven switch exact old-owner cleanup rule violated: sequences=%d stateLanes=%d approvals=%d health=%d history=%d computedHistory=%d retained=%d recomputed=%+v retired=%d owners=%+v", len(r.sequenceRecords), task6CountActorStateLanes(r, "actor", "inc-a"), task6CountActorApprovals(r, "actor", "inc-a"), task6CountActorHealth(r, "actor", "inc-a"), r.historyUnits, task6ComputedHistory(r), r.retainedCharge, chargeRetainedRoot(r, nil), len(r.retiredIncarnations), task6ReducerOwners(r))
+	}
+	currentBefore := task6Node(t, r, "actor", newNode.ReceivedAt)
+	for index, event := range []Event{
+		task6ProtocolState("switch-old-state", source, "actor", "inc-a", 4, newNode.ReceivedAt.Add(time.Second), StateActive, "", 0),
+		task6ProtocolState("switch-old-approval", source, "actor", "inc-a", 5, newNode.ReceivedAt.Add(2*time.Second), StateApproval, "old-approval", 0),
+		task6HeartbeatEvent("switch-old-heartbeat", source, "actor", "inc-a", task6Uint64Pointer(6), newNode.ReceivedAt.Add(3*time.Second)),
+		task6ExitEvent("switch-old-exit", source, "actor", "inc-a", task6Uint64Pointer(7), newNode.ReceivedAt.Add(4*time.Second), OutcomeCompleted),
+	} {
+		before := task6ReducerOwners(r)
+		change, err := r.Apply(event, event.ReceivedAt)
+		if err == nil || change.State || change.Topology || task6Node(t, r, "actor", event.ReceivedAt).Incarnation != "inc-b" || task6Node(t, r, "actor", event.ReceivedAt).State != currentBefore.State || len(r.sequenceRecords) != 0 || len(r.fingerprints) != before.fingerprints {
+			t.Fatalf("Task6 old-incarnation kind rejection/current preservation rule violated: index=%d kind=%s change=%+v err=%v currentBefore=%+v currentAfter=%+v sequences=%d fingerprints=%d want=%d", index, event.Kind, change, err, currentBefore, task6Node(t, r, "actor", event.ReceivedAt), len(r.sequenceRecords), len(r.fingerprints), before.fingerprints)
+		}
+	}
+}
+
+func task6Source(id SourceID, mode SourceMode, authority Authority, incarnation SourceIncarnationID) EventSource {
+	return EventSource{Ref: SourceRef{ID: id, Runtime: types.RuntimeCodex, Incarnation: incarnation, Authority: authority}, Mode: mode}
+}
+
+func task6SeedActor(t *testing.T, actor NodeID, incarnation IncarnationID) *Reconciler {
+	t.Helper()
+	return task6SeedActors(t, []struct {
+		actor       NodeID
+		incarnation IncarnationID
+	}{{actor, incarnation}})
+}
+
+func task6SeedActors(t *testing.T, actors []struct {
+	actor       NodeID
+	incarnation IncarnationID
+}) *Reconciler {
+	t.Helper()
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	for index, actor := range actors {
+		event := task5NodeEvent(fmt.Sprintf("task6-seed-%d-%s", index, actor.actor), actor.actor, actor.incarnation, reconcileTestEpoch.Add(-time.Duration(len(actors)-index)*time.Second))
+		task5MustApply(t, r, event, event.ReceivedAt)
+	}
+	return r
+}
+
+func task6ProtocolNode(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence uint64, receivedAt time.Time, name string) Event {
+	return task6ProtocolNodeOptional(record, source, actor, incarnation, &sequence, receivedAt, name)
+}
+
+func task6ProtocolNodeOptional(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence *uint64, receivedAt time.Time, name string) Event {
+	event := task5NodeEventFromSource(record, source, actor, incarnation, receivedAt)
+	event.Sequence = clonePointer(sequence)
+	event.Data = NodeObserved{Runtime: types.RuntimeCodex, Role: types.RolePrimary, ProvenName: name}
+	return event
+}
+
+func task6ProtocolMetrics(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence uint64, receivedAt time.Time, metrics Metrics) Event {
+	return task6ProtocolMetricsOptional(record, source, actor, incarnation, &sequence, receivedAt, metrics)
+}
+
+func task6ProtocolMetricsOptional(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence *uint64, receivedAt time.Time, metrics Metrics) Event {
+	event := task5MetricsEvent(record, source, actor, incarnation, receivedAt, metrics)
+	event.Sequence = clonePointer(sequence)
+	return event
+}
+
+func task6ProtocolState(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence uint64, receivedAt time.Time, state State, relationship RelationshipID, validFor time.Duration) Event {
+	return task6ProtocolStateOptional(record, source, actor, incarnation, &sequence, receivedAt, state, relationship, validFor)
+}
+
+func task6ProtocolStateOptional(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence *uint64, receivedAt time.Time, state State, relationship RelationshipID, validFor time.Duration) Event {
+	return Event{
+		Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, record, "task6-state"), ReceivedAt: receivedAt,
+		Kind: EventStateObserved, Actor: actor, ActorIncarnation: incarnation,
+		Data: StateObserved{State: state, Relationship: relationship, ValidFor: validFor},
+	}
+}
+
+func task6StateEvent(record string, source EventSource, actor NodeID, incarnation IncarnationID, receivedAt time.Time, state State, relationship RelationshipID, validFor time.Duration) Event {
+	event := Event{
+		Schema: 1, Source: source, ID: ImmutableEventID(types.RuntimeCodex, record, "task6-state"), ReceivedAt: receivedAt,
+		Kind: EventStateObserved, Actor: actor, ActorIncarnation: incarnation,
+		Data: StateObserved{State: state, Relationship: relationship, ValidFor: validFor},
+	}
+	if source.Mode == SourceObservation {
+		event.Observation = task6Observation(record, receivedAt)
+	}
+	return event
+}
+
+func task6HeartbeatEvent(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence *uint64, receivedAt time.Time) Event {
+	event := Event{
+		Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, record, "task6-heartbeat"), ReceivedAt: receivedAt,
+		Kind: EventHeartbeatObserved, Actor: actor, ActorIncarnation: incarnation, Data: HeartbeatObserved{},
+	}
+	if source.Mode == SourceObservation {
+		event.Observation = task6Observation(record, receivedAt)
+	}
+	return event
+}
+
+func task6ExitEvent(record string, source EventSource, actor NodeID, incarnation IncarnationID, sequence *uint64, receivedAt time.Time, outcome ExitOutcome) Event {
+	event := Event{
+		Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, record, "task6-exit"), ReceivedAt: receivedAt,
+		Kind: EventExitObserved, Actor: actor, ActorIncarnation: incarnation, Data: ExitObserved{Outcome: outcome},
+	}
+	if source.Mode == SourceObservation {
+		event.Observation = task6Observation(record, receivedAt)
+	}
+	return event
+}
+
+func task6ProtocolGap(record string, source EventSource, sequence uint64, receivedAt time.Time, capability Capability, kind GapKind, status GapStatus, count uint64) Event {
+	return Event{
+		Schema: 1, Source: source, Sequence: clonePointer(&sequence), ID: ImmutableEventID(types.RuntimeCodex, record, "task6-gap"), ReceivedAt: receivedAt,
+		Kind: EventGapObserved, Data: GapObserved{Capability: capability, Kind: kind, Status: status, Count: count},
+	}
+}
+
+func task6Observation(record string, at time.Time) *ObservationRevision {
+	id := ImmutableEventID(types.RuntimeCodex, record, "task6-observation")
+	var digest RevisionDigest
+	copy(digest[:], id[:])
+	return &ObservationRevision{Key: ObservationKey(record), At: at, Digest: digest}
+}
+
+func task6MustApplyAt(t *testing.T, r *Reconciler, event Event, now time.Time) ChangeSet {
+	t.Helper()
+	change, err := r.Apply(event, now)
+	if err != nil {
+		t.Fatalf("Task6 event application rule violated: kind=%s actor=%s incarnation=%s source=%+v sequence=%v receivedAt=%s now=%s change=%+v err=%v", event.Kind, event.Actor, event.ActorIncarnation, event.Source, event.Sequence, event.ReceivedAt, now, change, err)
+	}
+	return change
+}
+
+func task6MustAdvance(t *testing.T, r *Reconciler, now time.Time) ChangeSet {
+	t.Helper()
+	change, err := r.Advance(now)
+	if err != nil {
+		t.Fatalf("Task6 Advance rule violated: now=%s change=%+v err=%v owners=%+v", now, change, err, task6ReducerOwners(r))
+	}
+	return change
+}
+
+func task6Record(t *testing.T, r *Reconciler, actor NodeID, incarnation IncarnationID, source SourceRef) *sequenceRecord {
+	t.Helper()
+	key := sequenceKey{actor: actor, incarnation: incarnation, source: source}
+	record := r.sequenceRecords[key]
+	if record == nil {
+		t.Fatalf("Task6 sequence marker ownership rule violated: key=%+v records=%d owners=%+v", key, len(r.sequenceRecords), task6ReducerOwners(r))
+	}
+	return record
+}
+
+func task6Node(t *testing.T, r *Reconciler, actor NodeID, now time.Time) Node {
+	t.Helper()
+	snapshot := r.Snapshot(now)
+	for _, node := range snapshot.Nodes {
+		if node.ID == actor {
+			return node
+		}
+	}
+	t.Fatalf("Task6 node lookup rule violated: actor=%s now=%s nodes=%+v", actor, now, snapshot.Nodes)
+	return Node{}
+}
+
+func task6StateOrder(t *testing.T, r *Reconciler, actor NodeID, incarnation IncarnationID, source EventSource) contributionOrder {
+	t.Helper()
+	key := contributionKey{actor: actor, incarnation: incarnation, source: source}
+	value := r.stateContributions[key]
+	if value == nil {
+		t.Fatalf("Task6 state contribution ownership rule violated: key=%+v stateLanes=%d", key, len(r.stateContributions))
+	}
+	return value.order
+}
+
+func task6MetricOrder(t *testing.T, r *Reconciler, actor NodeID, incarnation IncarnationID, source EventSource) contributionOrder {
+	t.Helper()
+	key := contributionKey{actor: actor, incarnation: incarnation, source: source}
+	value := r.metricContributions[key]
+	if value == nil {
+		t.Fatalf("Task6 metric contribution ownership rule violated: key=%+v metricLanes=%d", key, len(r.metricContributions))
+	}
+	return value.order
+}
+
+func task6TransitionStates(transitions []Transition) []State {
+	states := make([]State, len(transitions))
+	for index := range transitions {
+		states[index] = transitions[index].State
+	}
+	return states
+}
+
+type task6OwnerCounts struct {
+	fingerprints, sequences, states, approvals, health, gaps, history int
+	retained, published                                               uint64
+}
+
+func task6ReducerOwners(r *Reconciler) task6OwnerCounts {
+	return task6OwnerCounts{
+		fingerprints: len(r.fingerprints), sequences: len(r.sequenceRecords), states: len(r.stateContributions),
+		approvals: len(r.approvalRelationships), health: len(r.healthEpochs), gaps: len(r.gaps), history: r.historyUnits,
+		retained: r.retainedCharge, published: r.publishedCharge,
+	}
+}
+
+func task6ApprovalImage(r *Reconciler) string {
+	parts := make([]string, 0, len(r.approvalRelationships))
+	for key, value := range r.approvalRelationships {
+		parts = append(parts, fmt.Sprintf("%s:%s:%s:%d:%s:%s=%+v", key.actor, key.incarnation, key.source.Ref.ID, key.source.Ref.Incarnation, key.source.Mode, key.relationship, value.evidence))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "|")
+}
+
+func task6HealthImage(r *Reconciler) string {
+	parts := make([]string, 0, len(r.healthEpochs))
+	for key, value := range r.healthEpochs {
+		parts = append(parts, fmt.Sprintf("%s:%s:%s:%d:%s=%s/%d", key.actor, key.incarnation, key.source.Ref.ID, key.source.Ref.Incarnation, key.source.Mode, value.lastHeartbeat, value.ordinal))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "|")
+}
+
+func task6HasHealthLane(r *Reconciler, actor NodeID, incarnation IncarnationID, source EventSource) bool {
+	return r.healthEpochs[contributionKey{actor: actor, incarnation: incarnation, source: source}] != nil
+}
+
+func task6HealthLane(t *testing.T, r *Reconciler, actor NodeID, incarnation IncarnationID, source EventSource) *healthEpoch {
+	t.Helper()
+	key := contributionKey{actor: actor, incarnation: incarnation, source: source}
+	value := r.healthEpochs[key]
+	if value == nil {
+		t.Fatalf("Task6 health epoch lookup rule violated: key=%+v health=%s", key, task6HealthImage(r))
+	}
+	return value
+}
+
+func task6HasApproval(t *testing.T, r *Reconciler, source EventSource, actor NodeID, incarnation IncarnationID, relationship RelationshipID) bool {
+	t.Helper()
+	_, exists := r.approvalRelationships[approvalKey{actor: actor, incarnation: incarnation, source: source, relationship: relationship}]
+	return exists
+}
+
+func task6CountActorStateLanes(r *Reconciler, actor NodeID, incarnation IncarnationID) int {
+	count := 0
+	for key := range r.stateContributions {
+		if key.actor == actor && key.incarnation == incarnation {
+			count++
+		}
+	}
+	return count
+}
+
+func task6CountActorApprovals(r *Reconciler, actor NodeID, incarnation IncarnationID) int {
+	count := 0
+	for key := range r.approvalRelationships {
+		if key.actor == actor && key.incarnation == incarnation {
+			count++
+		}
+	}
+	return count
+}
+
+func task6CountActorHealth(r *Reconciler, actor NodeID, incarnation IncarnationID) int {
+	count := 0
+	for key := range r.healthEpochs {
+		if key.actor == actor && key.incarnation == incarnation {
+			count++
+		}
+	}
+	return count
+}
+
+func task6ComputedHistory(r *Reconciler) int {
+	count := len(r.fingerprints) + len(r.observationCursors) + len(r.retiredIncarnations) + len(r.nodeContributions) + len(r.metricContributions) + len(r.stateContributions) + len(r.approvalRelationships) + len(r.healthEpochs)
+	for _, record := range r.sequenceRecords {
+		count += len(record.buffered) + len(record.missing)
+	}
+	for _, edge := range r.edges {
+		count += len(edge.relationships) + len(edge.messages)
+	}
+	return count
+}
+
+func task6AdvanceFixture(t *testing.T, sourceID SourceID, sourceIncarnation SourceIncarnationID) (*Reconciler, EventSource, time.Time) {
+	t.Helper()
+	r := task6SeedActor(t, "actor", "inc-a")
+	source := task6Source(sourceID, SourceProtocol, AuthorityHook, sourceIncarnation)
+	one := task6ProtocolNode("advance-one-"+string(sourceID), source, "actor", "inc-a", 1, reconcileTestEpoch, "one")
+	four := task6ProtocolMetrics("advance-four-"+string(sourceID), source, "actor", "inc-a", 4, reconcileTestEpoch.Add(time.Second), Metrics{TokenRate: clonePointer(task6Float64(4))})
+	six := task6ProtocolState("advance-six-"+string(sourceID), source, "actor", "inc-a", 6, reconcileTestEpoch.Add(1500*time.Millisecond), StateWaiting, "", 0)
+	task6MustApplyAt(t, r, one, one.ReceivedAt)
+	task6MustApplyAt(t, r, four, four.ReceivedAt)
+	task6MustApplyAt(t, r, six, six.ReceivedAt)
+	return r, source, four.ReceivedAt.Add(r.config.ReorderWindow)
+}
+
+func task6CloneRecord(t *testing.T, input *sequenceRecord) *sequenceRecord {
+	t.Helper()
+	if input == nil {
+		return nil
+	}
+	result := *input
+	result.buffered = nil
+	if len(input.buffered) != 0 {
+		result.buffered = make([]Event, len(input.buffered))
+	}
+	for index := range input.buffered {
+		cloned, err := cloneEvent(input.buffered[index])
+		if err != nil {
+			t.Fatalf("Task6 sequence record clone rule violated: index=%d event=%+v err=%v", index, input.buffered[index], err)
+		}
+		result.buffered[index] = cloned
+	}
+	result.missing = nil
+	if len(input.missing) != 0 {
+		result.missing = append([]missingRange(nil), input.missing...)
+	}
+	return &result
+}
+
+func task6Float64(value float64) *float64 { return &value }
+
+func task6Uint64Pointer(value uint64) *uint64 { return &value }
+
+type task6MixedCapabilityRow struct {
+	name       string
+	capability Capability
+	make       func(EventSource, *uint64) Event
+}
+
+func task6MixedCapabilityEvents(at time.Time) []task6MixedCapabilityRow {
+	return []task6MixedCapabilityRow{
+		{"identity", CapabilityIdentity, func(source EventSource, sequence *uint64) Event {
+			return task6ProtocolNodeOptional("mixed-identity", source, "actor", "inc-a", sequence, at, "identity")
+		}},
+		{"metrics", CapabilityMetrics, func(source EventSource, sequence *uint64) Event {
+			return task6ProtocolMetricsOptional("mixed-metrics", source, "actor", "inc-a", sequence, at, Metrics{TokenRate: task6Float64(2)})
+		}},
+		{"state", CapabilityState, func(source EventSource, sequence *uint64) Event {
+			return task6ProtocolStateOptional("mixed-state", source, "actor", "inc-a", sequence, at, StateActive, "", 0)
+		}},
+		{"terminal", CapabilityTerminal, func(source EventSource, sequence *uint64) Event {
+			return Event{Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, "mixed-terminal", "task6"), ReceivedAt: at, Kind: EventExitObserved, Actor: "actor", ActorIncarnation: "inc-a", Data: ExitObserved{Outcome: OutcomeCompleted}}
+		}},
+		{"spawn", CapabilitySpawn, func(source EventSource, sequence *uint64) Event {
+			return Event{Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, "mixed-spawn", "task6"), ReceivedAt: at, Kind: EventRelationshipObserved, Actor: "actor", ActorIncarnation: "inc-a", Target: "target", TargetIncarnation: "inc-t", Data: RelationshipObserved{Type: EdgeSpawn, Provenance: ProvenanceNative, Relationship: "mixed-spawn"}}
+		}},
+		{"service", CapabilityService, func(source EventSource, sequence *uint64) Event {
+			return Event{Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, "mixed-service", "task6"), ReceivedAt: at, Kind: EventRelationshipObserved, Actor: "actor", ActorIncarnation: "inc-a", Target: "target", TargetIncarnation: "inc-t", Data: RelationshipObserved{Type: EdgeService, Provenance: ProvenanceNative, Relationship: "mixed-service"}}
+		}},
+		{"message", CapabilityMessage, func(source EventSource, sequence *uint64) Event {
+			return Event{Schema: 1, Source: source, Sequence: clonePointer(sequence), ID: ImmutableEventID(types.RuntimeCodex, "mixed-message", "task6"), ReceivedAt: at, Kind: EventMessageObserved, Actor: "actor", ActorIncarnation: "inc-a", Target: "target", TargetIncarnation: "inc-t", Data: MessageObserved{Kind: MessageDirect, Delivery: DeliveryEmitted, Relationship: "mixed-message"}}
+		}},
+	}
+}
+
+func task6RequireRegimeAdmission(t *testing.T, err error) *AdmissionError {
+	t.Helper()
+	want := AdmissionKind("sequence-regime")
+	var admission *AdmissionError
+	if !errors.Is(err, ErrAdmission) || !errors.As(err, &admission) || admission == nil || admission.Kind != want || !admission.Kind.Valid() {
+		t.Fatalf("Task6 sequence-regime typed admission rule violated: err=%v errorsIs=%t typed=%+v want=%q valid=%t", err, errors.Is(err, ErrAdmission), admission, want, admission != nil && admission.Kind.Valid())
+	}
+	return admission
 }
