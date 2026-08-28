@@ -179,6 +179,17 @@ children use the runtime's invocation ID. Resuming a stable session creates a ne
 incarnation on the same node, cancels ghost expiry, and keeps the prior terminal
 transition in the short activity ring.
 
+Fade is derived, not stored. The exported pure
+`GhostFadeProgress(Node, at) float64` uses the caller's Snapshot time. Let D be
+GhostExpiresAt and T be CompletedAt for completed, FailedAt for failed, or
+State.Since for vanished. With `F=max(T,D-1m)`, progress is 0 through F, linear
+from F to D, and 1 at and after D, clamped to `[0,1]`. Positive configured TTLs
+shorter than one minute therefore fade from T. A nonterminal node or missing/zero
+D or T returns 0. A malformed `D <= T` returns 0 before D and 1 at or after D
+without division. Zero means full opacity and one means fully faded. Pinning does
+not reset the deadline or progress; a pinned overdue ghost remains retained at
+progress one.
+
 ### Edge
 
 An edge contains a stable edge key, source and target node IDs, type, provenance,
@@ -203,18 +214,35 @@ also rejects `message`; `MessageObserved` is the only message owner.
 
 Internally every retained edge also owns its source and target incarnation IDs.
 Those fields are private reconciliation guards and never appear on the public
-snapshot Edge. An old or mismatched endpoint incarnation cannot create or mutate
-an edge; resume removes or ghosts prior-incarnation edges through normal endpoint
-lifecycle before new relationships appear.
+snapshot Edge. Both endpoint Node records must exist in the final transaction
+overlay, their stable IDs must differ, and their current-incarnation guards must
+match the event before it can create or mutate an edge. A retained incarnation
+tombstone without a public node is not an endpoint. An old, missing, or mismatched
+endpoint is `AdmissionEndpointIdentity` with the exact family collision gap and
+no rejected witness or semantic owner. A same-transaction proven resume may
+supply the visible node and guard through the overlay.
 
 Relationship edges retain contributions keyed by full SourceRef and provenance;
 each contribution stores capability, creation/activity times, and safe event
 count. Message edges retain contributions by fixed internal dedup digest with
 SourceRef, delivery, receive time, and expiry. Exactly one contribution map is
-nonempty. Public timestamps, counts, provenance, delivery, and partial state are
-derived from contributions. Every matching active source gap with nil or exact
-capability keeps the edge partial; resolving one source cannot clear another.
-Contribution admission consumes history and retained-byte budget.
+nonempty. An accepted relationship update folds minimum creation, maximum
+activity, and checked count into its selected contribution. Public relationship
+timestamps are the min/max over all contributions, EventCount is their checked
+sum, and native provenance wins sidecar corroboration. Public counters never
+clamp: per-contribution or aggregate overflow is atomic `AdmissionCountLimit`.
+Contribution admission consumes history and retained-byte budget through the
+generic final-owner charger; no edge-specific admission bypass exists.
+
+Every gap mutation path recomputes edge Partial from the final transaction
+overlay, including external gap events, admission diagnostics, Store diagnostic
+batches, and sequence gaps opened or resolved by Advance. Every live relationship
+contribution feeds its stored family and every live message contribution feeds
+message. A matching active source gap with nil or exact capability keeps the edge
+partial; resolving one source cannot clear another. An expected edge rejection
+retains no rejected witness, contribution, index, or semantic edge, but its exact
+diagnostic may legitimately update matching derived Partial and Visibility on a
+pre-existing edge.
 
 Spawn, launch, and service edge keys are
 `(type, source, target, native-relationship-id)`. Message edges aggregate by
@@ -235,7 +263,23 @@ When a runtime cannot correlate send and receipt IDs, delivery remains `unknown`
 The 60-second edge aggregate stores separate emitted, received, failed, and
 unknown counts plus the latest proven outcome; it never compresses mixed outcomes
 into one delivery state. The UI never upgrades `emitted` to `received` from
-elapsed time.
+elapsed time. Public message provenance is native, lifecycle is active,
+relationship and trace are absent, and MessageKind is exact. An aggregate never
+exposes an individual native message ID. CreatedAt is the minimum live ReceivedAt,
+LastActivity the maximum, EventCount the checked live cardinality, and each
+contribution owns one bucket. Latest uses greatest ReceivedAt and then the
+lexicographically greatest fixed `[32]byte` digest in unsigned byte order. Message
+cardinality and bucket overflow are atomic `AdmissionCountLimit`, never
+saturation.
+
+Each unique message owns one expiry-index row at
+`ReceivedAt+MessageWindow`. Expiry is inclusive, removes the contribution,
+index row, history unit, and charge, then rebuilds the aggregate; the stable
+fingerprint remains for the Reconciler lifetime. Replay reaches the universal
+dedup gate first and cannot increment, add an index, replace Latest, or extend a
+deadline. A message edge never ghosts and uses its independent window while both
+endpoint nodes exist. Endpoint removal eagerly deletes any still-live incident
+message owners and index rows to preserve the public referential invariant.
 
 ### Event
 
@@ -674,13 +718,40 @@ backing equals their len-based charge.
 fallback, history and byte deltas, revisions, collection epochs, and the candidate
 generation as one transaction. History, retained-byte, published-byte, charge,
 or revision failure cannot partly advance that state or mutate an earlier
-Snapshot. History or byte admission may commit only
+Snapshot. A final global history, byte, or count admission failure may commit only
 `(SourceAITopGapLedger,nil,GapResource)` plus affected Partial and Visibility;
-sequence buffers, ranges, and state remain unchanged. Revision exhaustion and
+sequence buffers, ranges, and state remain unchanged. Event-level expected
+semantic errors use the child/savepoint rule below. Revision exhaustion and
 invariant failure commit no mutation or diagnostic. Calling `Advance`
 again at the same time is deterministic. Reconciler tests call `Apply` for ready
 events before `Advance`; Store queue drain and timer precedence belong to the
 bounded Store scheduler.
+
+Each due buffered semantic event is prepared in an isolated child/savepoint
+overlay of the parent transaction. A valid expected semantic `AdmissionError`
+discards only that event's rejected lane changes, retains its sequence buffer and
+deadline without a fingerprint, and defers the child rather than diagnosing a
+resource or endpoint error before later equal-D cleanup or a transaction-local
+endpoint resume can make it legal. The parent continues other sequence keys and
+every state, health, message, and ghost action due at or before `now`. After parent
+progress, deferred children
+retry in canonical order at a bounded deterministic fixed point, at most one
+success per bounded iteration/event count; successes merge and advance only their
+own lanes. When no deferred child can succeed, the parent stages each remaining
+child's exact diagnostic and records the deterministic first final typed error.
+Independent due work and diagnostics commit atomically, and `Advance` returns
+that first typed error after commit. The final global history, retained-byte,
+published-byte, and count check still follows the
+diagnostic-only/no-semantic rule, but its
+candidate projection includes all due deletion credits. If that check fails, the
+entire resource-blocked due group remains for retry; before Store advances past D,
+every independent equal-D owner is consumed or remains in that group. A tied
+cleanup cannot starve behind a rejected buffered event.
+
+The exact resource-failure case remains global: if the final admission check
+fails, sequence buffers, ranges, and all semantic due work stay unchanged and
+only the permitted resource diagnostic plus matching Partial/Visibility may
+commit. Child savepoints do not weaken that Task 6 result.
 
 Only a node observation may establish a different current actor incarnation. It
 must provide at least one strictly newer comparable start timestamp or process
@@ -757,6 +828,27 @@ remain. Old-incarnation state, heartbeat, approval, sequence, and terminal event
 cannot mutate or clear current evidence. Edge, message, ghost advancement/fade/
 removal, pin, and resume lifecycle is unchanged until the following task.
 
+That following lifecycle keeps the current-incarnation record as a tombstone
+after the public ghost node is removed. Exact stable replay remains a no-op;
+changed payload under the same key is collision; a distinct same/older-
+incarnation NodeObserved is incarnation-proof admission, and a distinct edge
+event is endpoint-identity admission. Neither can recreate a node, edge, or
+message index. Only strictly newer proven NodeObserved may switch a tombstone and
+recreate the stable Node ID. It checks `MaxNodes` against the final visible
+candidate count, not tombstone count. A visible count of `MaxNodes-1` may become
+`MaxNodes`; at visible `MaxNodes`, a further insertion returns typed
+`AdmissionCountLimit` and leaves the tombstone and node absence unchanged
+atomically. It retains the old proof and all stable witnesses and preserves the
+Task 6 transition ring. The same rule applies to resume before expiry.
+
+On a proven in-place resume, prior-incarnation spawn, launch, and service edges
+are removed. A still-live message aggregate may span the resume: its private
+endpoint guard advances to the proven current incarnation without a public
+delta, old contributions remain immutable, and new-current contributions may
+join until each digest expires. Old-incarnation new-key events still fail the
+current endpoint check. On actual endpoint removal, all incident relationship
+and message owners are removed so no public edge dangles.
+
 Serialized state source and since appear together. Valid-until implies that pair
 and is allowed only for nonterminal states other than approval/blocked with native
 or hook authority. Terminal state requires source/since. Passive, approval,
@@ -785,7 +877,10 @@ backward. An exact stable replay changes no contribution or TelemetryAt. A prove
 incarnation switch resets identity and state only; metrics and winning provenance
 remain frozen until current-incarnation metrics replace them. Retired-incarnation
 events cannot mutate them. Sequence and health behavior belongs to the next phase;
-ghosts do not participate here.
+ghosts do not participate here. Task 7 extends this switch after Task 6 terminal
+metadata exists: it clears `Pinned` and `GhostExpiresAt`, preserves the Task 6
+transition ring, retains metrics, and increments only the exact applicable public
+revision categories.
 
 Partial derives from active gaps, never from a global flag. The capability mapping
 is identity for node observation; metrics for metrics; state for state and
@@ -795,6 +890,23 @@ node source feeds a family only when it owns a currently published winning field
 or group in that family; a losing retained lane does not. Every retained live edge
 contribution feeds its edge family. A matching source gap with nil or exact
 capability marks Partial; resolution recomputes against all remaining gaps.
+
+Relationship and message events use the same staged replay, cursor,
+incarnation, and protocol-sequence pipeline as every prior event kind. A buffered
+edge event reaches semantic dispatch only when its sequence drains. Semantic edge
+dispatch reads candidate nodes, current incarnations, gaps, edges, and staged nil
+deletions before canonical maps, then writes to the same transaction. The private
+representative-fleet batch fixture loops this generic event pipeline; it is not a
+second reducer and cannot bypass sequence, replay, history, charge, or final
+projection checks. Two edge events drained or batched together therefore fold
+against the preceding candidate overlay.
+
+Public RelationshipObserved launch is a valid expected
+`AdmissionContributionConflict` with exactly
+`(SourceID,&CapabilitySpawn,GapCollision)`. Replay/collision precedes this rule;
+the ownership rejection precedes self-cycle and general cycle checks. It retains
+no rejected semantic owner. Only the later private Phase 3 trace verifier may
+insert a trace-handshake launch.
 
 Replay first compares Fingerprint whenever DedupKey is equal: equal fingerprints
 are duplicates and different fingerprints are collisions, including observations
@@ -866,6 +978,19 @@ changes, using the reserved catchall only when the ordinary source-scoped
 diagnostic cannot fit, so later replay may apply. Unknown invariant failure
 commits nothing.
 
+Before those checks, edge/lifecycle work normalizes the complete final node,
+edge, gap, contribution, and expiry-index overlay. An empty contribution map is a
+staged edge deletion; an owner absent in both base and final views leaves no nil
+overlay row. Create-plus-expire and terminal-plus-remove compare as their final
+public result, not their transient stage flags. Revisions, node/edge/gap epochs,
+generation contents, retained charge, published charge, and history derive from
+that normalized final candidate. A byte-identical or net-zero public result has
+no public revision or collection epoch even when private witnesses, indexes,
+history, or guards change. A private-only message endpoint-guard rewrite across
+resume has no generation, epoch, or revision. A buffered message created and
+expired in one Advance has no edge-origin Topology or Visibility; its required
+sequence diagnostic may still set Gap/Visibility.
+
 Store submits the full sorted normal, critical, collision, and catchall diagnostic
 set to one batch prepare. That prepare validates every item, safe count and
 revision headroom, gap/history bounds, retained/published charge, and the complete
@@ -881,8 +1006,8 @@ change returns fatal revision-exhausted with zero ChangeSet, mutation, or gap.
 Adding a gap would itself require visibility revision and recurse. Store aborts,
 keeps the last snapshot, and accounts accepted/unapplied work separately from
 context cancellation.
-Package graph exports `ErrRevisionExhausted` and `ErrEventTooLarge`; wrapped
-outcomes preserve `errors.Is` identity.
+Package graph exports `ErrRevisionExhausted`, `ErrEventTooLarge`, and
+`ErrGhostExpired`; wrapped outcomes preserve `errors.Is` identity.
 
 ### Normalized state
 
@@ -930,6 +1055,12 @@ updates remain legal only when the fully staged retained-byte, published-byte,
 and history totals have zero or net-nonpositive growth. Positive growth may
 reject. Rotation of the declared 256-transition ring is expected
 retention behavior and does not itself create a gap.
+
+The normalized public relationship-plus-message edge map admits exactly `MaxEdges`
+owners and rejects `MaxEdges+1` without mutation. A legal delete followed by an
+insert at the exact limit remains admissible because final ownership, not transient
+staging, is charged. A large existing contribution map is rejected during
+preflight before cloning or replacing its canonical pointer.
 
 Deterministic logical limits supplement count ceilings: 24 MiB retained, 24 MiB
 published, and 8 MiB queued by default. Retained and published budgets reserve
@@ -991,6 +1122,13 @@ also reachable from previous. Diagnostic preparation requires its previous
 argument to be pointer-identical to current; nil or stale is invariant failure.
 COW tests compare canonical record pointers and old Snapshot bytes. Public slice
 backing identity is asserted only when the entire collection epoch is unchanged.
+The test-only private-state image covers all fifteen root-map identities and
+entries, canonical node and edge record values including endpoint guards and
+nested contributions, history, accepted ordinals, revisions, retained/published
+charges, collection epochs, and current/previous generation identity plus encoded
+Snapshot bytes. A guard-only
+canonical record replacement must leave public edge backing, `edgeEpoch`,
+generation identity, and the earlier borrowed Snapshot unchanged.
 
 The heap assertion runs in a subprocess. After baseline GC/read it admits 512
 actors and 2048 valid relationships with present endpoints through staged reducer
@@ -1043,8 +1181,15 @@ saturate safely. Existing coalescing work wakes Run; diagnostics create no wakeu
 channel.
 
 Store has open, running, stopping, and stopped states, one Run, never-closed
-channels, and a deterministic injected clock with one-shot timers. Cancellation
-stops acceptance, discards queued semantics with accounting, commits pending
+channels, and a deterministic injected clock with one-shot timers. Reconciler
+deadline discovery uses the exclusive `nextDeadline(after time.Time)` cursor.
+After ready work drains, when `Advance(D)` returns an expected typed admission
+error and commits its permitted diagnostic, Store publishes that diagnostic,
+remembers `D`, and schedules the next distinct deadline with `nextDeadline(D)`;
+it never retries equal `D` in a busy loop. New event ingress resets the cursor
+after insertion, so a later expiry can release credit and the previously rejected
+work can be reconsidered. On cancellation, Store stops acceptance, discards queued
+semantics with accounting, commits pending
 diagnostics as one prevalidated batch, and publishes its candidate snapshot when
 that prepare succeeds. Fatal
 revision exhaustion during cancellation follows invariant abort and returns the
@@ -1052,6 +1197,16 @@ error. Expected admission diagnostics do not stop Run. Unknown invariant abort
 preserves last Reconciler state and generation, discards pending diagnostics and
 queued semantics, and accounts them separately as aborted. Duplicate and
 collision outcomes have separate dispositions and counters.
+
+Store exposes `SetPinned(id NodeID, pinned bool) error` and takes exclusive
+mutation ownership of the Reconciler when `NewStore` succeeds. Callers do not
+invoke Reconciler `Apply`, `Advance`, or `SetPinned` directly afterward. One
+mutation mutex covers Run's Apply/Advance and Store.SetPinned. Pinning is legal
+while Store is open or running and uses `Clock.Now`; stopping or stopped rejects
+it. A successful generation change commits and publishes before return, resets
+the deadline cursor, and sends a nonblocking wake token for one-shot timer
+recomputation. An idempotent no-generation change does not publish. Any error,
+including `ErrGhostExpired`, changes and publishes nothing.
 
 An individually oversized or charge-overflow event is rejected with
 event-too-large and no gap. Aggregate shortage drops otherwise admissible work and records
@@ -1084,6 +1239,12 @@ Spawn and launch edges determine rank. Service and message edges are non-ranking
 cross-links and therefore may contain cycles. A shared backend never fuses or
 reparents two agent execution components.
 
+No public edge is a self-edge. After the replay gate and public-launch ownership
+check, a spawn self-edge is `AdmissionTopologyCycle`; a future private launch
+self-edge follows the same ranking-cycle path. Service and message self-edges are
+`AdmissionEndpointIdentity` with their exact service/message collision gap.
+Multi-node service and message cycles remain legal.
+
 The layout is deterministic and layered. It uses stable previous ordering,
 orthogonal edge routes, and separate root components. Late binding interpolates
 a node from its old root position into the proven hierarchy. Metric and message
@@ -1099,7 +1260,12 @@ If bad provenance would create a ranking cycle, no edge or held pseudo-edge is
 retained and no node, rank, or topology revision changes. Reconciliation consumes
 only the active `(event source, spawn capability, collision)` gap episode,
 incrementing its count without changing first detection time. The resulting
-change marks gap and visibility only.
+change marks gap and visibility only. Reachability is a deterministic bounded
+scan of the final staged-plus-base spawn/launch edge overlay plus the candidate.
+There is no retained rank map, reachability cache, or new charged owner. A
+diagnostic may recompute Partial on an unrelated pre-existing contributor from
+the same source/capability; the byte-identical cycle fixture therefore uses a
+rejecting source that feeds no retained edge.
 
 ### Paint
 
@@ -1318,12 +1484,58 @@ minutes, fades during minute five, and expires at five minutes. A failed ghost
 holds for fourteen minutes, fades during minute fifteen, and expires at fifteen
 minutes. Task 7 advances, fades, removes, pins, or cancels that metadata without
 resetting its deadline. Spawn, launch, and service edges fade with their ghost
-endpoint; message edges retain their independent 60-second lifetime.
+endpoint; message edges retain their independent 60-second upper bound while both
+endpoints remain published.
 
 A ghost is pinned only while selected, marked, or while its inspector is open.
 If its deadline passes while pinned, it disappears when selection, marks, and
 inspector leave it. Restarting `aitop` rebuilds live topology and durable link
 evidence but does not restore expired ghost timers.
+
+Terminal staging immediately marks each incident spawn, launch, or service edge
+whose private endpoint guard matches as ghost. Message edges remain active. At
+`D-1ns`, an unpinned ghost and all its incident owners remain. At the exact
+deadline `D`, an unpinned node and its incident relationship edges are removed.
+Any still-live incident message contribution and expiry-index row is
+also removed early because every public edge endpoint must remain present. A
+proven-newer in-place resume removes prior-incarnation relationship edges; a live
+message aggregate may keep its independent window while its private guard moves
+to the proven current incarnation.
+
+Pin equality is exact. Before D, a pin changes only visibility and never D. A new
+pin on a currently unpinned ghost at or after D returns `ErrGhostExpired` through
+`errors.Is`, opens no telemetry gap, and is atomic. Repeating true on an already-
+pinned overdue ghost is idempotent. False at or after D performs full removal,
+even if the stored bit was already false. Public removal releases current node,
+state, metric, health, sequence, approval, relationship, live message, and index
+owners with exact history and charge deltas. Stable fingerprints, retired proofs,
+the current-incarnation tombstone, observation cursors, and the transition ring
+remain.
+
+Final public deltas alone classify revisions. Pin and relationship-edge ghost
+lifecycle are Visibility; derived fade and Snapshot.At are none; node/edge
+membership and node incarnation are Topology; terminal state/timestamp clearing
+on a retained-node resume is State; ghost/pin clearing is Visibility. Node
+insertion from a tombstone or removal with any number of incident edges is one
+Topology change, with initial/removed payload covered by membership. A private
+guard, tombstone, witness, expiry index, history, or charge-only change has no
+public revision.
+
+The private scheduling handoff `nextDeadline(after time.Time) (time.Time, bool)`
+returns the minimum nonzero sequence, semantic-validity, source-health,
+message-expiry, or unpinned-ghost deadline strictly greater than the exclusive
+`after` cursor, and `(time.Time{}, false)` when none exists. It orders and
+deduplicates by time instant with `After`/`Equal`, never `time.Time` struct
+equality. A zero cursor requests the global earliest deadline. All pinned ghost
+deadlines are omitted, whether future or overdue. A terminal or message drained
+from a protocol buffer during `Advance` either expires within that same `Advance`
+when already due or becomes visible to the next deadline query immediately after
+commit. Task 8 owns the
+exclusive cursor and one-shot timer arbitration: after an expected admission at
+`D` commits its permitted diagnostic, it remembers `D` and asks `nextDeadline(D)`;
+new event ingress resets the cursor after insertion. This avoids a busy loop at a
+due `D` while allowing a later expiry to provide admission credit. Task 7 owns
+deadline discovery.
 
 ## Privacy and trust boundaries
 
@@ -1385,6 +1597,17 @@ semantic validation, atomic all-diagnostic batch publication, rooted test-only
 schema dependency closure, closed diagnostic precedence, and bounded redaction
 for every command stderr branch. All timing and concurrency tests use manual
 clocks and barriers, not sleeps.
+
+Task 7 timing subrows cover automatic unpinned retention at `Advance(D-1ns)` and
+full cleanup at `Advance(D)`, same-`D` deferred edge retry alongside message and
+ghost cleanup, observation-cursor retention during ghost cleanup,
+tombstone resume at `MaxNodes-1` and `MaxNodes`, exact `MaxEdges` plus-one
+rejection for relationship and message owners, delete-then-insert at the exact
+edge limit, and
+large existing-contribution rejection before clone or pointer replacement. Task
+8 pin subrows cover before-Run and running serialization, borrowed Snapshot
+immutability, one-shot timer cancellation/rearm, overdue unpin cleanup, and the
+race between pinning and reader publication.
 
 Negative tests require an unverified relationship to remain separate. Privacy
 tests feed content-bearing fields and require rejection or omission.

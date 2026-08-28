@@ -502,6 +502,7 @@ pointer, typed-nil, or unknown payloads without panicking.
 var ErrRevisionExhausted = errors.New("graph revision exhausted")
 var ErrEventTooLarge = errors.New("event exceeds queued byte limit")
 var ErrAdmission = errors.New("graph admission rejected")
+var ErrGhostExpired = errors.New("graph ghost deadline passed")
 
 type AdmissionKind string
 
@@ -548,6 +549,10 @@ func (r *Reconciler) Apply(e Event, now time.Time) (ChangeSet, error)
 func (r *Reconciler) Advance(now time.Time) (ChangeSet, error)
 func (r *Reconciler) SetPinned(id NodeID, pinned bool, now time.Time) error
 func (r *Reconciler) Snapshot(now time.Time) *Snapshot
+func GhostFadeProgress(Node, time.Time) float64
+
+// Task 7 private scheduling handoff. `after` is exclusive.
+func (r *Reconciler) nextDeadline(after time.Time) (time.Time, bool)
 
 type StoreConfig struct {
 	EventQueue      int
@@ -598,6 +603,7 @@ func DefaultStoreConfig() StoreConfig
 func NewStore(StoreConfig, *Reconciler) (*Store, error)
 func (s *Store) Publish(Event) (PublishDisposition, error)
 func (s *Store) Run(context.Context) error
+func (s *Store) SetPinned(id NodeID, pinned bool) error
 func (s *Store) Snapshot() *Snapshot
 func (s *Store) Stats() StoreStats
 ```
@@ -624,11 +630,22 @@ one byte less is invalid. Construction computes baselines from the frozen
 logical owner schedule without allocating from configured maxima.
 
 These sentinels live in package graph, which imports `errors`. Every wrapped
-revision-exhausted or event-too-large outcome preserves `errors.Is` identity.
+revision-exhausted, event-too-large, or ghost-expired outcome preserves
+`errors.Is` identity.
 
 `Advance` returns the diagnostic error produced by staged expiry or deadline
-admission. `SetPinned` retains its error-only signature. The Reconciler increments
-internal revisions on real changes, and Store publishes after a successful pin.
+admission. `SetPinned` retains its error-only signature. A new pin at or after an
+unpinned ghost's exact deadline returns `ErrGhostExpired` directly or wrapped,
+opens no diagnostic, and changes no canonical or published state. The Reconciler
+increments internal revisions on real changes, and Store publishes after a
+successful pin or unpin. After `NewStore` succeeds, Store owns all Reconciler
+mutation; callers do not call `Apply`, `Advance`, or Reconciler `SetPinned`
+directly. `Store.SetPinned` uses the injected receiver clock, serializes with
+Run, and publishes a successful generation before returning. It resets the
+deadline cursor and sends a nonblocking wake token for timer recomputation. An
+idempotent no-generation change does not publish; any error, including
+`ErrGhostExpired`, changes and publishes nothing. `GhostFadeProgress` is a pure
+public projection helper; it never mutates the Reconciler or revisions.
 
 ```go
 type InputSchema struct {
@@ -1332,7 +1349,12 @@ addition to public Snapshot output. The field-merge tests cover every node field
 all five metrics winner units, missing-field preservation, known zero, invalid
 merged context rejection, SourceMode-distinct complete-lane keying, equal-authority ReceivedAt and
 ordinal ties, TelemetryAt monotonicity, stable replay no-op, exact revision rows,
-and metrics preservation across a proven incarnation switch. The observation
+and metrics preservation across a proven incarnation switch. The inherited
+`TestReconcileAcceptsStrictlyNewerIncarnation` is the pre-Task-7 baseline: it
+retains metrics, clears only incarnation-scoped identity/state, and asserts the
+exact resulting Topology/State/Visibility/Metrics revisions. Task 5 does not own
+ghost or pin lifecycle; Task 7 revises this existing test after Task 6 terminal
+metadata exists. The observation
 table covers collector-restart cursor sharing, the universal DedupKey/Fingerprint
 gate, and every ordered/structural transition above. Gap tests cover every event-to-capability Partial mapping,
 unrelated sources, two matching gaps with one resolution, first At, cumulative
@@ -1361,8 +1383,20 @@ committing through the normal transaction seam; tests never assign a revision
 scalar or generation field directly. COW
 tests compare canonical record pointers, old borrowed Snapshot bytes, whole-slice
 reuse for unchanged epochs, exactly current plus previous ownership, candidate-
-current charge once, and stale diagnostic-generation rejection. The heap test uses
-the subprocess protocol and real admitted topology frozen below.
+current charge once, and stale diagnostic-generation rejection. The test-only
+`task5PrivateState` helper captures all fifteen root maps (nodes, node-field
+lanes, metric lanes, state lanes, edges, fingerprints, observation cursors,
+current incarnations, retired proofs, sequences, approval relationships,
+message-expiry index, gaps, transitions, and health epochs), their map identities,
+canonical NodeRecord and edgeRecord values including endpoint guards and nested
+contributions, history units, accepted ordinals, four revisions, retained/published
+charges, and four collection epochs. Its `task5OwnerImage` also records
+current/previous generation identity and encoded Snapshot bytes. COW assertions
+require a guard-only rewrite
+to replace the affected canonical record pointer while leaving public edge slice
+backing, `edgeEpoch`, generation identity, and the earlier borrowed Snapshot bytes
+unchanged. The heap test uses the subprocess protocol and real admitted topology
+frozen below.
 
 - [ ] **Step 3: Verify RED**
 
@@ -1905,6 +1939,9 @@ winning contribution provenance survive a proven incarnation switch; retired-
 incarnation events cannot mutate those frozen contributions, and new current-
 incarnation metrics may replace them by the normal winner rules. Sequence and
 source-health epochs are Task 6, while ghosts and resume cancellation are Task 7.
+This Task 5 historical contract leaves ghost and pin lifecycle to Task 7; the
+existing test fixture and its expectations are revised by Task 7 after Task 6
+terminal metadata exists.
 A proven switch that retires incarnation A retains both A's retired proof and
 stable dedup witness. Reusing A's stable key with a changed semantic payload
 opens the collision gap atomically and cannot mutate the current incarnation.
@@ -1962,7 +1999,7 @@ Budget and copy-on-write plants are exact:
 | `TestReconcileEqualOrSmallerExistingUpdateAtLimit` | Reject every update at the limit. | Remove equal/smaller acceptance row. |
 | `TestReconcileAdmissionFailureCanReplayLater` | Retain dedup key for rejected semantics. | Remove successful replay assertion. |
 | `TestReconcileCopyOnWriteSharesUnchangedBacking` | Deep-copy every record. | Remove backing-identity assertion. |
-| `TestReconcileCopyOnWriteReplacesOnlyAffectedRecords` | Mutate one shared record. | Remove unaffected-record identity assertion. |
+| `TestReconcileCopyOnWriteReplacesOnlyAffectedRecords` | Mutate one shared record or reuse the affected canonical record for a guard-only rewrite. | Remove unaffected-record identity, affected-pointer replacement, or unchanged public edge backing/edge-epoch/generation/borrow assertion. |
 | `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` | Ignore a candidate-generation charge mismatch and commit. | Remove only the pre-commit rejection and byte-identical canonical-state assertions. |
 | `TestReconcileGapOnlyPublicationReusesNodeAndEdgeBacking` | Copy node and edge backing for a gap. | Remove both backing assertions. |
 | `TestReconcilePublishedSnapshotEpochRetentionBounded` | Retain three prior generations. | Remove exact retained-generation count. |
@@ -2077,6 +2114,13 @@ The case rows are exact:
 | `TestReconcileTerminalExemptFromHeartbeatExpiry` | Terminal evidence has no semantic or health expiry, never serializes `ValidUntil`, survives Advance beyond six seconds, and retains its exact `ReceivedAt` terminal and ghost clocks. Task 7 advances, fades, removes, pins, or cancels the already-created ghost metadata. |
 | `TestReconcileRejectsOldIncarnationEvent` | After a proven switch, old-incarnation state, approval, heartbeat, exit, and sequence events cannot mutate the current node. The switch atomically releases the old incarnation's sequence buffers/ranges, state lanes, approval rows, and health epochs with exact history/charge deltas; stable fingerprints and the retired proof remain. It performs no Task 7 edge, message, ghost, or resume behavior. |
 
+`TestReconcileSequenceDeadlineDrainsReadyWork` retains its global resource-failure
+oracle: when final history, retained-byte, or published-byte admission fails, the
+whole semantic due set remains unchanged and only the permitted diagnostic may
+commit. The child/savepoint behavior below applies to valid event-level semantic
+admission errors before that final global check; it does not weaken the exact
+Task 6 resource-failure row.
+
 - [ ] **Step 2: Write the exact failing sequence and state tests**
 
 Implement every frozen test above with manual clocks and barriers, no sleeps, and
@@ -2133,12 +2177,31 @@ All retained buffered-event and missing-range slices are rebuilt with
 `prepareAdvance` stages due range creation/removal,
 buffer drain, health expiry, approval cleanup, fallback, exact history and byte
 deltas, revisions, collection epochs, and candidate generation before commit.
-Expected admission failure must not advance sequence or health state. For
-history or either byte limit, it may commit exactly
-`(SourceAITopGapLedger,nil,GapResource)` plus affected `Partial` and
-Visibility, with no sequence buffer/range/state mutation. `ErrRevisionExhausted`
-and invariant errors commit no mutation or diagnostic. A retry at the same time
-sees the original state.
+Each due buffered semantic event stages in an isolated child/savepoint overlay of
+the parent transaction. A valid expected semantic `AdmissionError` discards only
+that child's rejected event/lane changes, retains its sequence buffer and deadline
+without a fingerprint, and defers the child rather than diagnosing a resource or
+endpoint error before later equal-`D` cleanup or a transaction-local endpoint
+resume can make it legal.
+The parent continues every other sequence key and all state, health, message, and
+ghost work due at or before `now`. After parent progress, deferred children retry
+in canonical order at a bounded deterministic fixed point, at most one success
+per bounded iteration/event count; successes merge and advance only their own
+lanes. When no deferred child can succeed, the parent stages each remaining
+child's exact diagnostic and records the deterministic first final typed error.
+Independent due work and diagnostics commit atomically, and `Advance` returns
+that first typed error after commit.
+
+The final global history, retained-byte, published-byte, and count admission still
+uses the Task 6 diagnostic-only/no-semantic rule, but its candidate projection
+includes all due deletion credits before checking the limits. If that global check fails,
+only `(SourceAITopGapLedger,nil,GapResource)` plus affected `Partial` and
+Visibility may commit; every semantic due change, including child-success work,
+remains unchanged. Before Store advances its cursor past `D`, each independent
+equal-`D` owner is consumed or the entire resource-blocked group remains for
+retry at a later deadline or new ingress. `ErrRevisionExhausted` and invariant
+errors commit no mutation or diagnostic. A retry at the same time sees the
+original state.
 Reconciler owns buffered sequence drain and semantic expiry; Task 8 alone owns
 Store ready-queue drain, timer selection, and scheduler precedence.
 
@@ -2291,6 +2354,30 @@ partial propagation, pin before/after deadline, overdue unpin, and
 proven-incarnation resume cancellation. Task 7 does not recreate or reset the
 terminal clocks frozen in Task 6.
 
+Task 7 concurrency coverage is transaction atomicity across same-transaction
+events, protocol drain, and `Advance`. The Reconciler remains single-writer.
+Classify goroutine concurrency as N/A in the Task 7 risk rows; Task 8, not Task 7,
+owns concurrent Store readers. Do not retain a future-Store `GF-T7-RACE` claim
+without an exact in-scope Task 7 test mapping.
+
+Step 1 must rewrite the held `tests/RISK_MODEL.md` rows before test code. Set
+`GF-T7-RACE` to N/A for this single-writer reducer. Map `GF-T7-API` to the
+existing API-bearing tests for `Advance`, `GhostFadeProgress`, `ErrGhostExpired`,
+the exclusive `nextDeadline` handoff, endpoint guards, and the public Edge shape:
+`TestReconcileSuccessVanishedAndFailedGhostDeadlines`,
+`TestReconcileGhostFadeWindows`, `TestReconcileGhostPinAfterDeadline`,
+`TestReconcileEndpointIncarnationMismatchRejected`, and
+`TestEdgePublicShapeOmitsEndpointIncarnations`.
+Remove any message equal-size-update acceptance oracle; a new message digest
+adds a witness, contribution, and expiry index, while an equal digest is replay
+or collision. State in `GF-T7-PIN` that a new overdue pin returns
+`ErrGhostExpired` and leaves the node, owners, revisions, generation, and
+diagnostic state unchanged atomically. Amend inherited `GF-T5-INCARNATION`
+to keep metrics and exact revision categories, while deferring cleared
+`Pinned`/`GhostExpiresAt` and preserved Task 6 transition-ring assertions to the
+Task 7 resume extension. The held file remains outside this documentation-only
+amendment.
+
 Freeze these exact names and map every one to a risk row and per-test sabotage
 pair before implementation:
 
@@ -2327,22 +2414,122 @@ TestEdgePublicShapeOmitsEndpointIncarnations
 - [ ] **Step 2: Write the exact failing relationship and lifecycle tests**
 
 Implement every frozen test above with rule-naming failures and no production
-changes. `TestReconcileSuccessVanishedAndFailedGhostDeadlines` must seed the
-terminal metadata through Task 6 and prove Task 7 consumes, never recreates or
-resets, those deadlines.
+changes. These rows are the complete Task 7 top-level test set; strengthen a row
+with subtests instead of adding another top-level name:
+
+Task 7 also revises the existing `TestReconcileAcceptsStrictlyNewerIncarnation`
+fixture rather than adding a new top-level test. Seed Task 6 terminal metadata,
+pin the ghost, and retain its transition ring and metrics; a strictly newer
+proven `NodeObserved` must clear `Pinned` and `GhostExpiresAt`, preserve the ring
+and metrics, and assert the exact Topology/State/Visibility/Metrics revisions
+with no private-only revision. Its
+`task5PrivateState`/`task5OwnerImage` capture must include all fifteen root maps
+(nodes, node-field lanes, metric lanes, state lanes, edges, fingerprints,
+observation cursors, current incarnations, retired proofs, sequences, approval
+relationships, message-expiry index, gaps, transitions, and health epochs), map
+identities and canonical NodeRecord/edgeRecord values including guards and
+contributions, history units, ordinals, revisions, retained/published charges,
+epochs, and current/previous generation identities plus encoded Snapshot bytes.
+The guard-only assertion replaces the affected canonical pointer while public
+edge backing, `edgeEpoch`, generation identity, and the earlier borrowed Snapshot
+bytes remain unchanged.
+
+| Exact test | Required assertions |
+|---|---|
+| `TestReconcileNativeSpawn` | A public native spawn passes through `Apply`, including protocol buffering/drain, and stages its edge from transaction-local endpoint and edge overlays. A second same-transaction contribution folds into the staged record rather than reading stale canonical state. |
+| `TestReconcileSidecarSpawn` | Sidecar spawn is verified, remains distinct by contribution key, and folds with native corroboration without inventing trace provenance. |
+| `TestReconcileRelationshipProvenanceMatrix` | Spawn/service accept only native or sidecar; each existing contribution folds minimum creation, maximum activity, and checked count; the public edge folds all contributions, with native winning sidecar. Equal or reverse timestamps cannot rewind either public clock. Per-contribution or aggregate EventCount overflow is atomic `AdmissionCountLimit`, never saturation. Public relationship edges admit exactly at `MaxEdges` and reject `MaxEdges+1` without mutation. |
+| `TestReconcilePublicLaunchRejected` | Every public launch is a valid `AdmissionContributionConflict`, opens exactly `(SourceID,&CapabilitySpawn,GapCollision)`, satisfies `errors.Is(ErrAdmission)`, and retains no rejected fingerprint, relationship contribution, or new edge. Only that diagnostic and matching derived Partial/Visibility may publish. |
+| `TestReconcileServiceCrossLink` | Service is a non-ranking cross-link, accepts native/sidecar contributions through public `Apply`, and cannot change spawn/launch reachability or rank. A service self-edge is `AdmissionEndpointIdentity` with the exact service collision gap and no rejected witness or owner. |
+| `TestReconcileRankingCycleOnlyOpensGap` | Candidate-overlay reachability over retained spawn/launch edges catches a cycle, including one completed within a transaction. A spawn or private launch self-edge is the same `AdmissionTopologyCycle`. Use a rejecting SourceID that feeds no retained contribution, so the rejection creates only the exact cumulative spawn collision gap and Visibility delta; nodes, edges, edge epoch, TopologyRevision, and every non-gap semantic owner remain byte-identical, the diagnostic's exact retained/published charge delta is asserted, and no rank owner exists. |
+| `TestReconcileMessageDuplicateReplayNoop` | A duplicate is stopped by the universal replay gate before message staging. It changes no count, delivery bucket, Latest, expiry, index row, history, charge, or revision. |
+| `TestReconcileMessageDeliveryCountsMixed` | Live unique contributions populate all four buckets, `EventCount` equals their checked sum, and Latest selects greatest `ReceivedAt` then lexicographically greatest `[32]byte` digest on an exact tie. The public fold has native provenance, active lifecycle, empty Relationship/Trace, the exact MessageKind, and never leaks a native message ID. Cardinality, EventCount, or bucket overflow is atomic `AdmissionCountLimit`, never clamp or saturation. Public message edges admit exactly at `MaxEdges` and reject `MaxEdges+1` without mutation. A message self-edge is `AdmissionEndpointIdentity` with the exact message collision gap and no rejected witness or owner. |
+| `TestReconcileMessageSlidingWindowExpiry` | Each digest expires inclusively at its own `ReceivedAt+MessageWindow`; expiry removes its index row and live-contribution history/charge, rebuilds the aggregate, and retains its fingerprint. Creating and expiring an edge in one `Advance` normalizes to no public edge, edge epoch, Topology, or edge-origin Visibility; only the exact sequence-gap Gap/Visibility may change. A legal delete then insert at exact `MaxEdges` remains admissible, while `MaxEdges+1` rejects before a new edge owner appears. |
+| `TestReconcileSuccessVanishedAndFailedGhostDeadlines` | Seed terminal metadata through Task 6. Completed and vanished retain the exact five-minute receiver deadline and failed the exact fifteen-minute deadline; Task 7 consumes but never recreates, rounds, or extends them. An unpinned ghost is retained at `D-1ns` and receives full cleanup at `D`, including incident owners. A terminal drained during `Advance` immediately participates in the same transaction's deadline handoff. `nextDeadline(after)` enumerates distinct sequence/state/health/message/unpinned-ghost deadlines in strict order, excludes equality, and returns false after the last. |
+| `TestReconcileGhostFadeWindows` | `GhostFadeProgress` derives terminal time from CompletedAt, FailedAt, or vanished State.Since; uses `fadeStart=max(terminalAt,D-1m)`; is 0 through fadeStart, linear until D, and 1 at and after D. It covers positive TTLs shorter than one minute, uses the supplied Snapshot time, is clamped, avoids a nonpositive divisor, has no stored fade field, does not mutate revisions, and pinning does not reset it. |
+| `TestReconcileEdgePartialFromNilCapabilityGap` | Nil-capability gaps mark every retained relationship contribution from the matching source and every matching message contribution (`CapabilityMessage`) partial, including external, diagnostic, and sequence-gap paths. |
+| `TestReconcileEdgePartialFromExactCapabilityGap` | Exact spawn, service, and message capabilities mark only edges fed by that source and family, using the transaction-local gap overlay. |
+| `TestReconcileResolvingOneSourceKeepsOtherEdgePartial` | Resolving one source or capability recomputes from all live contributions and all remaining gaps; a second matching source keeps the edge partial. |
+| `TestReconcileUnrelatedGapDoesNotMarkEdgePartial` | A different source or capability never marks a relationship or message edge partial, even when another transaction-local gap changes in the same commit. |
+| `TestReconcileRelationshipContributionHistoryLimitFailsClosed` | A new relationship contribution and replay witness are staged together; positive net history rejects atomically, while a final zero/net-negative update after legal removals is admissible. |
+| `TestReconcileRelationshipContributionByteLimitFailsClosed` | Existing-edge contribution insert/growth uses the generic final-owner charger and rejects without any private or public edge delta. A large existing contribution map is rejected during preflight before clone or canonical-pointer replacement. Because a new Apply replay key adds a fingerprint/history unit, an equal/smaller contribution update needs explicit witness headroom or a same-transaction legal deletion credit and remains legal only when all retained, published, and history inequalities pass. |
+| `TestReconcileMessageContributionByteLimitFailsClosed` | Message contribution plus expiry index uses the generic charger. Rejection leaves fingerprint, contribution, index, aggregate, history, charge, and revisions unchanged; same-transaction legal expiry credits are included before admission. |
+| `TestReconcileGhostPinBeforeDeadline` | Pin before D changes only Pinned/Visibility, keeps D byte-identical, removes that ghost deadline from every `nextDeadline(after)` query, and an already-pinned repeat is idempotent. |
+| `TestReconcileGhostPinAfterDeadline` | A new pin at exact D and after D returns `ErrGhostExpired` through `errors.Is`, opens no diagnostic, and is atomic. Repeating true for an already-pinned overdue ghost is idempotent nil. |
+| `TestReconcileGhostUnpinAfterDeadlineRemoves` | False at or after D removes the ghost even when the bit is already false, eagerly removes incident relationship and message owners/index rows, releases exact history/charge, retains fingerprints, observation cursors, current-incarnation tombstone, and transitions, and applies final-public revision normalization. |
+| `TestReconcileResumeCancelsGhost` | Strictly newer proven `NodeObserved` resumes both a retained ghost and a node absent behind its current-incarnation tombstone. A visible count of `MaxNodes-1` may become `MaxNodes`; at visible `MaxNodes`, a further insertion returns typed `AdmissionCountLimit` and leaves tombstone/node absence atomic. The resume clears the old deadline/pin without resetting it, preserves the Task 6 transition ring, retains metrics, and emits only the exact applicable public revision categories. |
+| `TestReconcileOldIncarnationEdgeIsolation` | Old-incarnation relationship or message events cannot mutate an edge after resume. Exact old edge-event replay after its owner was removed is a lifetime-witness no-op; changed payload under that key is `AdmissionCollision`; a distinct old-incarnation key is endpoint/proof admission and cannot recreate an edge or index. A live message aggregate may keep old immutable contributions while its private endpoint guard advances to the proven current incarnation for new-current contributions. |
+| `TestReconcileEndpointIncarnationMismatchRejected` | Both endpoint Node records must exist in the transaction overlay, differ from each other, and both current-incarnation guards must match. Missing, tombstoned-but-absent, old, mismatched, service-self, or message-self endpoints are `AdmissionEndpointIdentity` with the event family's exact collision gap and no rejected fingerprint, contribution, index, or new edge. Transaction-local endpoint switches are honored; only the diagnostic and matching derived Partial/Visibility may publish. |
+| `TestReconcileResumeRemovesOrGhostsPriorEdges` | Terminal makes each incident spawn/launch/service edge ghost. Proven-newer resume or endpoint ghost removal deletes prior-incarnation relationship edges; messages never ghost, retain their independent upper-bound window across an in-place resume, and are removed early only when endpoint deletion requires referential integrity. A legal relationship/message delete followed by insert at exact `MaxEdges` succeeds, while an additional owner rejects atomically. |
+| `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop` | After real ghost and incident-edge removal, exact stable node/relationship/message replays are no-ops; changed payload under a retained key is `AdmissionCollision`; a different key for the same/older tombstoned incarnation is `AdmissionIncarnationProof` for NodeObserved or `AdmissionEndpointIdentity` for an edge event; only strictly newer node proof may recreate the node. Revisions and retained witnesses are exact in each row. |
+| `TestEdgePublicShapeOmitsEndpointIncarnations` | Public `Edge` has no endpoint-incarnation fields. Private guards exist, every published endpoint exists at commit, and endpoint removal cannot leave even a live message edge dangling. |
+
+The deadline assertions are subrows of
+`TestReconcileSuccessVanishedAndFailedGhostDeadlines`, not additional top-level
+tests:
+
+| Deadline subrow | Required assertion |
+|---|---|
+| Exclusive cursor | A zero cursor returns the earliest eligible deadline; a later query accepts only a deadline for which `deadline.After(after)` is true, returns each distinct deadline once in order, skips equal instants, and returns `(time.Time{}, false)` after the final one. |
+| Instant equality | Ordering and deduplication use time instants with `After`/`Equal`, not `time.Time` struct equality; equal instants with different locations or monotonic representations are one deadline and are excluded by the exclusive cursor. |
+| Advance fixed point | A terminal or message event drained from a protocol buffer during `Advance` contributes its deadline in that same transaction; a due deadline is consumed before commit, while a future one appears in the next query. |
+| Same-`D` savepoints | A buffered edge that initially returns an expected semantic admission error is deferred with its sequence buffer and deadline unchanged and no fingerprint; message and ghost expiry owners due at the same `D` still clean up, then deferred children retry in bounded canonical-order savepoints so tied cleanup is not starved. |
+| Ghost filter | An unpinned overdue ghost is eligible, a pinned ghost is omitted even when overdue, and pinning does not move its deadline. |
 
 - [ ] **Step 3: Verify RED**
+
+First prove the executable manifest contains exactly the 27 frozen names:
+
+```bash
+test "$(go test ./internal/graph -list '^(TestReconcile(NativeSpawn|SidecarSpawn|RelationshipProvenanceMatrix|PublicLaunchRejected|ServiceCrossLink|RankingCycleOnlyOpensGap|MessageDuplicateReplayNoop|MessageDeliveryCountsMixed|MessageSlidingWindowExpiry|SuccessVanishedAndFailedGhostDeadlines|GhostFadeWindows|EdgePartialFromNilCapabilityGap|EdgePartialFromExactCapabilityGap|ResolvingOneSourceKeepsOtherEdgePartial|UnrelatedGapDoesNotMarkEdgePartial|RelationshipContributionHistoryLimitFailsClosed|RelationshipContributionByteLimitFailsClosed|MessageContributionByteLimitFailsClosed|GhostPinBeforeDeadline|GhostPinAfterDeadline|GhostUnpinAfterDeadlineRemoves|ResumeCancelsGhost|OldIncarnationEdgeIsolation|EndpointIncarnationMismatchRejected|ResumeRemovesOrGhostsPriorEdges|ImmutableReplayAfterGhostExpiryRemainsNoop)|TestEdgePublicShapeOmitsEndpointIncarnations)$' | rg -c '^(TestReconcile|TestEdgePublicShape)')" -eq 27
+```
 
 Run: `go test ./internal/graph -run '^(TestReconcile(NativeSpawn|SidecarSpawn|RelationshipProvenanceMatrix|PublicLaunchRejected|ServiceCrossLink|RankingCycleOnlyOpensGap|MessageDuplicateReplayNoop|MessageDeliveryCountsMixed|MessageSlidingWindowExpiry|SuccessVanishedAndFailedGhostDeadlines|GhostFadeWindows|EdgePartialFromNilCapabilityGap|EdgePartialFromExactCapabilityGap|ResolvingOneSourceKeepsOtherEdgePartial|UnrelatedGapDoesNotMarkEdgePartial|RelationshipContributionHistoryLimitFailsClosed|RelationshipContributionByteLimitFailsClosed|MessageContributionByteLimitFailsClosed|GhostPinBeforeDeadline|GhostPinAfterDeadline|GhostUnpinAfterDeadlineRemoves|ResumeCancelsGhost|OldIncarnationEdgeIsolation|EndpointIncarnationMismatchRejected|ResumeRemovesOrGhostsPriorEdges|ImmutableReplayAfterGhostExpiryRemainsNoop)|TestEdgePublicShapeOmitsEndpointIncarnations)$' -count=1`
 
 The anchored alternatives enumerate every frozen Task 7 test name above.
+`TestEdgePublicShapeOmitsEndpointIncarnations` may begin GREEN as an established
+API-shape baseline, but it still requires a decisive physical production plant
+that exposes a private endpoint field and an assertion plant that removes only
+that rejection. Every behavior Task 7 changes must record its own rule-specific
+RED; a compile failure, zero-match run, or the established baseline is not a RED
+for another row.
 
 - [ ] **Step 4: Implement relationships and lifecycle**
 
+Relationship and message semantics enter through the generic Task 5/6 staged
+event pipeline, not through a second edge reducer. `prepareApply` and the private
+representative-fleet batch seam both run the universal replay, cursor,
+incarnation, and protocol-sequence gate before semantic dispatch. A buffered edge
+event reaches edge dispatch only when its sequence drains. Edge dispatch reads
+nodes, current incarnations, gaps, and edges through transaction-overlay helpers:
+a staged replacement, including a staged nil deletion, wins over the canonical
+map. It writes back into that same transaction. It never commits, opens a
+diagnostic, charges, or publishes independently. Thus two events in one batch,
+events drained together by `Advance`, and a semantic event plus a gap change all
+see the preceding staged result.
+
+The inherited `task5BuildFleet` fixture must therefore remain valid under the
+same cycle checks. Change its 2048 spawn relationships to an acyclic 512-node
+multigraph while preserving cardinality and bounded identifier lengths, for
+example source `i%511` to `source+1` with unique relationship IDs. Revalidate the
+independent charge literals `retained=3761216` and `published=1532144`; change a
+literal only if the independently calculated dynamic bytes genuinely change.
+The private batch may not bypass cycle detection to preserve the old cyclic
+fixture.
+
 Use relationship keys for spawn/service and message keys for messages. Spawn and
-service accept native or aitop-sidecar provenance. Public launch is rejected; only
-a later unexported Phase 3 verifier creates trace-handshake launch. Rank includes
-spawn/launch only.
+service accept native or aitop-sidecar provenance. Every public launch returns a
+valid `AdmissionContributionConflict` and opens exactly
+`(event.Source.Ref.ID,&CapabilitySpawn,GapCollision)`; it retains no rejected
+semantic state. Only the later private Phase 3 trace verifier may create a
+trace-handshake launch. Rank includes spawn/launch only.
+
+All expected edge admissions are atomic with respect to the rejected replay
+witness, contribution, expiry index, and semantic edge. Their exact diagnostic
+gap may still change an already-published edge's `Partial` when the rejecting
+SourceID/capability feeds one of its retained contributions; that matching
+Partial and Visibility delta is permitted and must be derived from the final gap
+overlay.
 
 Every retained edge uses this private ownership record; endpoint incarnations
 never appear in the public Snapshot Edge:
@@ -2389,50 +2576,191 @@ contribution with equal or smaller charge remains legal at the limit only when
 the fully staged retained, published, and history totals have zero or net-
 nonpositive growth; positive growth may reject.
 
-Public relationship timestamps derive as minimum CreatedAt and maximum
-LastActivity. EventCount is the JSON-safe sum of contribution counts. Native
-provenance wins over aitop-sidecar when both corroborate one spawn or service;
-launch remains trace-handshake and message remains native. For every contribution,
-Edge.Partial is true when any active gap has the same Source ID and nil capability
-or that contribution's exact capability. Resolving one source gap cannot clear a
+An accepted relationship event updates the contribution selected by complete
+`SourceRef` and provenance. Its CreatedAt becomes the earlier of its prior value
+and `ReceivedAt`, LastActivity becomes the later, and EventCount adds one only
+after the checked JSON-safe addition succeeds. A new key adds one relationship-
+contribution history unit; updating a key does not. The event's replay witness is
+accounted independently. Public relationship timestamps are the minimum
+CreatedAt and maximum LastActivity over every retained contribution. Public
+EventCount is their checked JSON-safe sum. Overflow in a contribution or the
+aggregate returns `AdmissionCountLimit` atomically; semantic public counters never
+saturate. Native provenance wins over aitop-
+sidecar when both corroborate one spawn or service; launch remains trace-
+handshake and message remains native. Fold order is canonical and independent of
+map iteration.
+
+Every gap mutation path recomputes edge `Partial` from the final transaction
+overlay. These paths include external gap open/resolution, Apply-generated
+admission diagnostics, Store diagnostic batches, and sequence gaps created or
+resolved by `Advance`. Every retained relationship contribution feeds its stored
+capability. Every retained message contribution feeds `CapabilityMessage`.
+`Partial` is true when any active gap has the same contributing Source ID and a
+nil capability or that exact capability. Resolving one source gap cannot clear a
 different source's partial evidence. Unrelated source/capability gaps do not mark
 the edge.
 
 For messages, public CreatedAt is minimum ReceivedAt, LastActivity is maximum
 ReceivedAt, EventCount is the number of live contributions, and each contribution
 increments exactly one delivery bucket. Latest comes from greatest ReceivedAt,
-breaking an exact tie by lexicographic fixed digest. Expiry rebuilds all derived
-values from remaining contributions.
+breaking an exact tie by the lexicographically greatest fixed `[32]byte` digest.
+The digest comparison is unsigned byte order from index zero. Expiry rebuilds all
+derived values from remaining contributions. Message cardinality, EventCount,
+and bucket additions use checked JSON-safe arithmetic; overflow is atomic
+`AdmissionCountLimit`, never clamping or saturation. Only internal diagnostic gap
+counters use saturation.
+
+Each unique message contribution owns exactly one expiry-index row keyed by
+`(ReceivedAt+MessageWindow,digest)`. Duration addition must be representable.
+Expiry is inclusive: `Advance(now)` removes the contribution when
+`now >= ExpiresAt`, removes its index row, decrements its live-contribution
+history unit, and releases its exact retained charge. Its stable fingerprint
+remains for the Reconciler lifetime. Replay is stopped before semantic staging,
+so it cannot increment a bucket, replace Latest, add an index row, or extend the
+deadline. Messages never coalesce.
 
 An event whose endpoint incarnation differs from the current endpoint cannot
-create or mutate its edge. Resume removes or ghosts prior-incarnation edges under
-the normal endpoint lifecycle before admitting new-incarnation relationships.
+create or mutate its edge. The check uses transaction-local current-incarnation
+and node overlays. Both public endpoint Node records must be present in that
+overlay as well as both matching current-incarnation guards; a retained tombstone
+alone is not an endpoint. Failure returns `AdmissionEndpointIdentity`, opens the
+event family's exact collision gap, and commits no rejected witness or edge
+owner.
+Public self-edges are also forbidden. Spawn and private launch self-edges are
+`AdmissionTopologyCycle` with the spawn collision gap. Service and message self-
+edges are `AdmissionEndpointIdentity` with their service or message collision
+gap. Precedence is replay/collision first, then public-launch ownership rejection,
+then these self-edge rules, then general endpoint and cycle checks. Non-ranking
+cross-links may form multi-node cycles, but never self-edges.
 
-A ranking cycle creates no Edge, held pseudo-edge, node mutation, or rank
-mutation and does not increment `TopologyRevision`. It consumes only the active
-gap identity `(event.Source.Ref.ID, &CapabilitySpawn, GapCollision)`, preserving
-the episode's cumulative count and first `At`, and returns `ChangeSet` with only
-`Gap` and `Visibility`. Tests compare Nodes, Edges, and private rank byte-for-byte
-before and after, with only the named gap and visibility revision changed.
+A spawn or private launch candidate checks reachability from its target back to
+its source by scanning the final transaction overlay of retained spawn/launch
+edges plus the candidate. Traversal is deterministic and bounded by `MaxNodes`
+and `MaxEdges`; service and message edges are ignored. There is no rank map,
+cached reachability owner, retained pseudo-edge, or addition to the fifteen-owner
+charge schedule. A ranking cycle creates no Edge, node mutation, or rank mutation
+and does not increment `TopologyRevision`. It consumes only the active gap
+identity `(event.Source.Ref.ID,&CapabilitySpawn,GapCollision)`, preserving the
+episode's cumulative count and first `At`, and returns `ChangeSet` with only
+`Gap` and `Visibility`. Tests compare Nodes, Edges, edge epoch, revisions, and
+the non-gap semantic owner image before and after. Only the named gap, visibility
+revision, generation, and exact diagnostic retained/published charge may change.
 
-Retain unique message contributions through `ReceivedAt + 60s`, decrementing each
-delivery counter at expiry. Replay neither increments nor extends. Messages never
-coalesce.
+Before revision and charge validation, normalize the complete final node, edge,
+gap, expiry-index, and contribution overlay. An empty relationship or message
+contribution map becomes a staged nil edge. An edge or index absent in both the
+base and final view is deleted from the overlay, not retained as a nil entry. An
+edge created and emptied in one transaction is absent, not a nil-valued public
+record. An edge removed and reconstructed to a byte-identical final public value
+has no public delta. Discard transient stage flags and compare the normalized
+final public nodes, edges, and gaps with the transaction-start public graph:
+membership/key/endpoints/type changes set Topology once;
+nonstructural value changes on a retained edge set Visibility once; byte-identical
+or net-zero public results change neither revision, collection epoch, nor
+generation contents. This clears transient edge/topology/visibility/state flags
+from create-plus-expire and terminal-plus-remove paths. Private replay, sequence,
+index, history, and charge changes may still commit. A private-only message guard
+rewrite across resume changes neither generation, epoch, nor revision. Admission
+uses the final canonical owner set, including every legal same-transaction
+removal, rather than transient insertions.
 
 Task 6 already creates `GhostExpiresAt` with the exact terminal receiver clock.
 Task 7 exclusively advances, fades, pins, expires, and cancels that ghost
 lifecycle. Completed and vanished expire at five minutes; failed at fifteen.
-Duplicate terminal replay does not extend the Task 6 deadline. Explicit terminal
-may replace vanished. Spawn, launch, and service edges ghost with endpoints;
-messages retain independent expiry. Pin suppresses removal but never changes the
-deadline. An expired unpinned ghost cannot be newly pinned; overdue unpin removes
-it. Proven newer incarnation cancels it and keeps the transition ring.
+Positive custom TTLs shorter than a minute remain supported. Duplicate terminal
+replay does not extend the Task 6 deadline. A distinct, later explicit terminal
+event may replace vanished and Task 6 may seed the new outcome's receiver-time
+deadline; that is not replay and Task 7 still never rewrites it.
+
+Terminal normalization in the same staged transaction changes every incident
+spawn, launch, and service edge whose private guard matches that incarnation to
+`LifecycleGhost`; either terminal endpoint is sufficient. Message edges never
+ghost and retain their independent `ReceivedAt+MessageWindow` upper bound while
+both endpoints remain published. Removing an endpoint at its ghost deadline
+deletes all incident relationship edges and eagerly deletes any still-live
+incident message contributions and expiry-index rows, because a public edge may
+not dangle. A proven-newer in-place resume removes prior-incarnation relationship
+edges. A live message aggregate may span that resume: its private guard advances
+to the proven current incarnation, its old contributions remain immutable until
+their own expiry, and new-current contributions may join it. Old-incarnation new
+events still fail the current-endpoint check.
+
+`GhostFadeProgress(node, at)` is the only fade value. It stores nothing. Let D be
+`GhostExpiresAt`, and let T be CompletedAt for completed, FailedAt for failed, and
+`State.Since` for vanished. For a valid terminal ghost, set
+`F=max(T,D-time.Minute)`. Return 0 when `at <= F`, 1 when `at >= D`, and
+`float64(at-F)/float64(D-F)` otherwise, clamped to `[0,1]`. A nonterminal node or
+missing/zero D or T returns 0. For malformed `D <= T`, return 0 before D and 1 at
+or after D without dividing. Callers pass `Snapshot.At`; 0 means full opacity/no fade and 1
+means fully faded. Pinning does not alter progress or D. Snapshot.At-only fade
+changes no collection epoch or revision, and an overdue pinned node remains
+retained even though progress is 1.
+
+Pin semantics are inclusive at D. Before D, changing Pinned changes Visibility
+only and leaves D unchanged. A new `SetPinned(id,true,now)` for a currently
+unpinned ghost at `now >= D` returns `ErrGhostExpired` through `errors.Is`, opens
+no gap, and leaves every owner, revision, and generation unchanged. Repeating
+true for an already-pinned overdue ghost is idempotent nil. Pinned ghosts suppress
+removal without moving D. `SetPinned(id,false,now)` at or after D performs the
+full ghost removal transaction even when the bit was already false; before D it
+only clears the bit. Removal is atomic under the usual revision, history, and
+byte admission checks.
+
+Public ghost removal releases the node record; its node, metrics, state, health,
+sequence, and approval contribution owners; incident relationship owners; and
+incident message/index owners. Decrement history exactly for the released lanes,
+buffer/range records, approvals, relationship contributions, and live message
+contributions. Release their retained charge and compute published charge from
+the normalized final graph. Stable fingerprints and retired-incarnation proofs
+remain. The current-incarnation record also remains as a tombstone, and the Task
+6 transition ring remains charged and intact.
+
+That tombstone prevents resurrection after the public node is gone. Exact stable
+replay still returns before semantics. A changed payload under the same replay key
+is `AdmissionCollision`. A different replay key for the tombstoned same or older
+incarnation is `AdmissionIncarnationProof` and cannot recreate the node. Only a
+strictly newer proven `NodeObserved` may switch the tombstone and recreate the
+stable Node ID. This path works with no visible prior node, moves the former
+incarnation proof to the retained retired set, clears ghost/pin/terminal metadata,
+checks `MaxNodes` against the canonical public-node count rather than the
+tombstone count, and preserves the transition ring. A proven resume while the ghost is still
+visible performs the same cancellation and edge rules. It does not reset or
+delete Task 6 transition history.
+
+Revision categories use only final public deltas. Ghost edge lifecycle and pin
+changes are Visibility. Fade progress and Snapshot.At are none. Node or edge
+membership and node incarnation are Topology. Clearing terminal state/timestamps
+on a retained-node resume is State; clearing GhostExpiresAt/Pinned is Visibility.
+Insertion after tombstone removal is covered by Topology and does not also charge
+initial fields to State, Metrics, or Visibility. Removing a node and any number of
+incident edges increments Topology once. All private-only guard, tombstone,
+fingerprint, index, history, and charge changes have no revision.
+
+Private `nextDeadline(after time.Time) (time.Time, bool)` returns the minimum
+nonzero canonical deadline strictly greater than the exclusive `after` cursor
+across protocol sequence records, semantic validity, source-health epochs,
+message-expiry index rows, and unpinned ghosts. It orders and deduplicates by
+time instant using `After`/`Equal`, never `time.Time` struct equality. A zero
+cursor requests the global earliest. It omits every pinned ghost deadline,
+future or overdue, and does not allocate or retain a deadline owner. With no
+eligible deadline it returns `(time.Time{},false)`. After every commit callers
+recompute it. If `Advance`
+drains a buffered
+terminal or message, its newly staged deadline participates immediately: a
+deadline at or before `now` is consumed in that same `prepareAdvance` fixed point;
+otherwise the committed `nextDeadline` exposes it for Task 8's timer. Task 8 owns
+timer arbitration and ready-queue ordering, not deadline discovery. Task 9 owns
+collector registry and shadow-graph integration and does not relax Task 7's
+endpoint or public-launch rules. The later private Phase 3 trace verifier owns the
+only trace-handshake launch insertion path.
 
 `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop` creates a node through
 `SourceImmutable` `NodeObserved`, terminates it, advances through ghost expiry and
-removal, then replays the original observation. The retained stable witness
-prevents node recreation and leaves topology, visibility, state, and metrics
-revisions unchanged.
+removal, then proves all four tombstone rows: exact original replay no-op,
+changed-payload collision, same-incarnation different-key proof rejection, and a
+strictly newer proven resume. The first three leave the node absent and keep
+topology, state, and metrics revisions unchanged except the exact diagnostic
+Visibility row for the two expected rejections.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -2442,28 +2770,64 @@ Run: `go test ./internal/graph -run '^(TestReconcile(NativeSpawn|SidecarSpawn|Re
 
 Give every new test production and assertion plants. Include public launch,
 trace provenance on spawn, published cycle edge, unbounded cycle diagnostics,
-collapsed delivery, replay increment, fixed rather than sliding expiry, failed
-ghost at five minutes, replay deadline extension, pin deadline extension, and
-resume retaining ghost. Also drop endpoint incarnation from `edgeRecord`, admit an
+stored rank state, self-edge acceptance, relationship counter saturation,
+collapsed delivery, reversed digest tie, message counter saturation, replay
+increment, fixed rather than sliding expiry, leaked expiry index/history, failed
+ghost at five minutes, stored fade state, replay deadline extension, pin deadline
+extension, automatic `Advance(D-1ns)` retention versus `Advance(D)` cleanup,
+same-`D` deferred child retry, tied message/ghost cleanup starvation, tombstone
+resume at visible `MaxNodes`, and resume retaining ghost. Also bypass the generic edge semantic
+stager, read only canonical state instead of transaction overlays, drop endpoint
+incarnation from `edgeRecord`, accept a tombstone as a visible endpoint, admit an
 old-incarnation edge, and expose either endpoint incarnation on public `Edge`.
 For the cycle test, plant a held pseudo-edge or increment Topology revision; its
-assertion plant removes only the byte-identical graph/topology comparison.
+assertion plant removes only the byte-identical non-gap semantic graph/owner and
+exact diagnostic-charge comparison.
 For `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop`, prune the stable
-witness during ghost removal; its assertion plant removes only the post-expiry
-node-absence and unchanged-revision comparison.
+witness or current-incarnation tombstone during ghost removal; its assertion
+plant removes only the corresponding exact-replay, changed-payload collision,
+same-incarnation new-key rejection, or absent-node comparison.
 
 Contribution plants are exact: ignore nil-capability gaps, ignore exact-capability
 gaps, clear Edge.Partial when only one of two source gaps resolves, mark an edge
-from an unrelated capability, and admit a relationship contribution after
-HistoryLimit. Each assertion plant removes only its named source/capability or
-admission comparison. A separate plant keys Messages by public string instead of
+from an unrelated capability, admit a relationship contribution after
+HistoryLimit, accept relationship/message owners at `MaxEdges+1`, or clone an
+existing large contribution map before rejecting it. Each assertion plant removes
+only its named source/capability, edge-limit, preflight, or admission comparison.
+A separate plant keys Messages by public string instead of
 `[32]byte`; its assertion plant removes the fixed-key reflection check.
 For relationship and message byte-limit tests, skip generic charge admission;
 each assertion plant removes only atomic private/public edge equality. A second
-row makes equal-size existing updates reject and removes only their acceptance
-assertion.
+relationship row makes an equal-size existing update reject despite explicit
+fingerprint/history headroom or a same-transaction legal deletion credit, and
+removes only that acceptance assertion. There is no message equal-size-update
+row: the same digest is replay/collision and a new digest adds a witness,
+contribution, and index; message acceptance instead proves exact legal expiry
+credit. Remove any provisional risk or sabotage wording that claims a message
+equal-size acceptance oracle.
+
+Lifecycle plants make fade divide across a nonpositive interval, include pinned
+ghost deadlines in `nextDeadline`, make its cursor inclusive, miss a future ghost
+created by a terminal drained in `Advance`, retain a relationship edge on
+resume/removal, delete a live message aggregate on in-place resume, leave an
+incident message dangling after endpoint removal, delete the Task 6 transition
+ring, or delete the current-incarnation tombstone. Normalization plants retain
+base-absent nil overlay rows, increment edge epoch/revisions for create-plus-expire,
+or increment a revision for a private-only message guard rewrite. They also drop
+observation cursors during ghost cleanup, count tombstones against `MaxNodes`, or
+reorder equal-`D` children ahead of cleanup. Each paired assertion removes only
+the named deadline, cleanup, owner, final-public, or revision comparison.
 Restore and record every exact named test's pair. Physical production and
 assertion plants remain mandatory regardless of mutation-tool availability.
+
+After restoring every plant, rerun the exact 27-name manifest fence from Step 3,
+the anchored Task 7 suite from Step 5, the full `internal/graph` package, its
+`-race` suite, the Linux/386 compile, `go vet ./internal/graph`, and
+`git diff --check`. Repeat the Task 7 implementation/evidence unslop loop over
+exactly `internal/graph/reconcile.go`, `internal/graph/reconcile_test.go`,
+`tests/RISK_MODEL.md`, `tests/SABOTAGE_LOG.md`, and
+`tests/LOUDNESS_AUDIT.md`. The current plan/design/schema amendment has a
+separate docs unslop pass and does not substitute for those five targets.
 
 Task 7 again changes the Task 5 critical reducer. Run the exact Task 5 pinned
 `go-mutesting` version against `internal/graph/reconcile.go`. The only permitted
@@ -2571,12 +2935,42 @@ TestStoreStatsExactShapeAndAccounting
 TestStoreConcurrentReadersSeeImmutableSnapshots
 ```
 
+Scheduler boundary coverage is strengthened as subrows of the existing Store
+tests; it does not add top-level names:
+
+| Existing test | Additional scheduler assertion |
+|---|---|
+| `TestStoreSemanticDeadlinePreemptsBatch` | At semantic deadline `D`, ready work drains before `Advance(D)`. If `Advance(D)` returns an expected admission error while committing its permitted diagnostic, Store remembers `D` and schedules `nextDeadline(D)`, never retrying equal `D` in a busy loop. |
+| `TestStoreDrainsReadyBeforeAdvance` | A ready critical/normal item is applied before `Advance` at an exact deadline, and the scheduler still makes progress when the first due `Advance` produces an expected diagnostic. |
+| `TestStoreFairnessThirtyTwoToOne` | Sustained critical ingress cannot starve a ready normal event; the 32:1 bound remains true while semantic deadlines and expected diagnostics are serviced. |
+| `TestStoreUsesOneShotTimersWithoutReset` | The timer log shows one-shot timers only. The expected-admission path selects the next distinct deadline through `nextDeadline(D)` and does not reset or re-arm at equal `D`. |
+| `TestStoreExpectedAdmissionErrorContinues` | An expected `Advance(D)` admission continues Run after publishing its diagnostic. New ingress resets the exclusive cursor, and a later expiry credit can unblock and admit the previously rejected work. |
+
+Store pin and ownership coverage is also strengthened as subrows of existing
+tests; it does not add top-level names:
+
+| Existing test | Additional pin/ownership assertion |
+|---|---|
+| `TestStorePublishBeforeRun` | `Store.SetPinned` is legal before `Run`, uses `Clock.Now`, and publishes a successful generation before returning; the same call while running serializes with Run's `Apply`/`Advance`. |
+| `TestStorePublishRejectedWhileStopping` | `Store.SetPinned` rejects while stopping, without mutating the Reconciler, generation, cursor, or wake state. |
+| `TestStorePublishRejectedAfterStopped` | `Store.SetPinned` rejects after stopped, with the same no-mutation guarantee. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow` | A successful pin or unpin leaves an earlier borrowed Snapshot byte-identical; a no-generation idempotent call does not increment publication. |
+| `TestStoreUsesOneShotTimersWithoutReset` | A successful pin resets the deadline cursor and nonblocking-wakes Run to recompute its one-shot timer; the wake path cancels/re-arms without `Reset`, while errors do neither. |
+| `TestStoreExpectedAdmissionErrorContinues` | `SetPinned` unpins an overdue ghost through the Store, publishes full cleanup before return, and preserves the atomic error/no-publication path for an overdue new pin. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots` | `SetPinned`, Run `Apply`, and Run `Advance` share the Store mutation mutex; concurrent readers see immutable generations and no race. |
+
 - [ ] **Step 2: Write the failing Store tests**
 
 Write the mapped table using a manual clock and barriers, never sleeps, and make
 no production changes.
 
 - [ ] **Step 3: Verify RED**
+
+First prove the executable Store manifest contains exactly the 41 frozen names:
+
+```bash
+test "$(go test ./internal/graph -list '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' | rg -c '^TestStore')" -eq 41
+```
 
 Run: `go test ./internal/graph -run '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' -count=1`
 
@@ -2622,10 +3016,27 @@ func newStore(StoreConfig, *Reconciler, storeRuntime) (*Store, error)
 ```
 
 Production uses a real clock; tests inject a manual clock and barriers. Timers are
-one-shot and never call Reset. Reconciler exposes private `nextDeadline()`. The
+one-shot and never call `Reset`. Reconciler exposes private
+`nextDeadline(after time.Time) (time.Time, bool)` with an exclusive cursor. The
 next timer is the earliest of the first-dirty 100ms deadline and semantic expiry.
 Ready critical/normal work drains under 32:1 fairness before `Advance` at an exact
-deadline.
+deadline. After ready work drains, when `Advance(D)` returns an expected typed
+admission error and commits its permitted diagnostic, Store publishes that
+diagnostic, remembers `D`, and asks `nextDeadline(D)` for the next distinct
+deadline, so it does not busy-loop on the same due deadline. New event ingress
+resets the cursor after insertion, allowing a later expiry credit to unblock the
+previously rejected work when `D` is reconsidered.
+
+`NewStore` transfers exclusive Reconciler mutation ownership to Store. Store holds
+one mutation mutex shared by Run's `Apply`/`Advance` calls and
+`Store.SetPinned`; callers do not invoke those Reconciler mutators directly after
+transfer. `Store.SetPinned` is legal in open or running state, uses
+`storeRuntime.Clock.Now()`, and rejects in stopping or stopped state. A successful
+pin or unpin commits and publishes its changed generation before returning,
+resets the deadline cursor, and sends a nonblocking wake token so Run recomputes
+its one-shot timer. An idempotent no-generation change does not publish. Any
+error, including `ErrGhostExpired`, leaves canonical state, generation, revision,
+and timer state unchanged.
 
 Store states are open, running, stopping, and stopped. Publish is legal while
 open, exactly one Run transitions open to running, and a second Run errors.
@@ -2661,6 +3072,9 @@ while holding the final publication mutex.
 | Apply committed semantics | n/a | n/a | Applied++ and queued/in-flight charge released |
 | expected Apply admission diagnostic | n/a | typed admission error | ApplyErrors++; diagnostic ChangeSet published; Run continues |
 | unknown Apply invariant error, including revision exhaustion | n/a | invariant error from Run | ApplyErrors++; pending diagnostics become AbortedDiagnostics; accepted/unapplied become AbortedQueued; Run stops without publication |
+| `Store.SetPinned` changed generation | n/a | nil | generation published before return; deadline cursor reset; Run wake token sent |
+| `Store.SetPinned` idempotent no-generation change | n/a | nil | no publication or revision increment |
+| `Store.SetPinned` expected or lifecycle error | n/a | typed error | no canonical, generation, revision, or timer mutation |
 | cancellation discards queued event | n/a | Run returns nil | CanceledQueued++; charge released; semantics unapplied |
 
 `PublishRejected` is a real enum member, not the zero value. Store treats typed
@@ -2715,7 +3129,7 @@ named decisive assertion.
 | `TestStoreExactQueuePartition` | Give normal one critical slot. | Remove exact 6144/2048 assertion. |
 | `TestStoreQueuedByteLimit` | Omit pending map charge. | Remove exact byte boundary assertion. |
 | `TestStoreInvalidConfigRejected` | Accept zero byte limit. | Remove invalid row. |
-| `TestStorePublishBeforeRun` | Reject open-state Publish. | Remove accepted disposition. |
+| `TestStorePublishBeforeRun` | Reject open-state Publish or reject `Store.SetPinned` before `Run`. | Remove the accepted Publish or before-Run pin disposition. |
 | `TestStoreSecondRunRejected` | Allow a second Run. | Remove second-call error. |
 | `TestStorePublishRejectedWhileStopping` | Accept while stopping. | Remove lifecycle disposition. |
 | `TestStorePublishRejectedAfterStopped` | Accept after stopped. | Remove stopped disposition. |
@@ -2734,14 +3148,14 @@ named decisive assertion.
 | `TestStoreBatchPublishesAtHundredMilliseconds` | Schedule at 101ms. | Remove exact manual-clock boundary. |
 | `TestStoreSemanticDeadlinePreemptsBatch` | Ignore earlier semantic deadline. | Remove publication time assertion. |
 | `TestStoreDrainsReadyBeforeAdvance` | Advance before ready drain. | Remove exact-deadline event. |
-| `TestStoreUsesOneShotTimersWithoutReset` | Call Reset. | Remove timer-operation log. |
+| `TestStoreUsesOneShotTimersWithoutReset` | Call `Reset`, or fail to cancel/re-arm the one-shot timer after a successful pin wake. | Remove timer-operation log or pin wake/cursor assertion. |
 | `TestStoreCancellationStopsAcceptance` | Move stopping after drain. | Remove barrier Publish rejection. |
 | `TestStoreCancellationDropsQueuedSemantics` | Apply one queued event. | Remove unchanged graph assertion. |
 | `TestStoreAlreadyCanceledRunFinalizes` | Return before final snapshot. | Remove final state/snapshot assertions. |
 | `TestStoreCancellationPublishesFinalDiagnostics` | Clear pending without commit. | Remove final gaps assertion. |
-| `TestStoreExpectedAdmissionErrorContinues` | Stop on typed admission error. | Remove later applied event assertion. |
+| `TestStoreExpectedAdmissionErrorContinues` | Stop on typed admission error, or drop Store.SetPinned overdue-unpin cleanup/error atomicity. | Remove later applied event or pin cleanup/no-publication assertion. |
 | `TestStoreUnknownInvariantStopsRun` | Continue on invariant error. | Remove Run error assertion. |
-| `TestStorePublicationDoesNotMutateEarlierBorrow` | Mutate earlier-generation backing during later publication. | Remove earlier borrow equality. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow` | Mutate earlier-generation backing during later publication or pin publication. | Remove earlier borrow equality or pin publication count. |
 | `TestStoreRetainsAtMostPreviousSnapshot` | Retain a third generation. | Remove exact generation count. |
 | `TestStoreQueueChargeIncludesInflight` | Release charge before Apply completes. | Remove in-flight boundary probe. |
 | `TestStorePendingDiagnosticFloodBeforeRunIsBounded` | Omit diagnostic charge or ordinary identity cap. | Remove exact depth, bytes, or catchall assertions. |
@@ -2751,9 +3165,17 @@ named decisive assertion.
 | `TestStoreInvariantAbortAccountsQueued` | Count aborted queued work as canceled or leave charge retained. | Remove AbortedQueued/bytes assertion. |
 | `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration` | Commit one of several pending diagnostics or publish its generation before revision failure. | Remove only full canonical/revision/epoch/generation equality or AbortedDiagnostics/count/byte assertions. |
 | `TestStoreStatsExactShapeAndAccounting` | Omit PendingDiagnosticBytes or AbortedDiagnostics accounting. | Remove exact struct/value comparison. |
-| `TestStoreConcurrentReadersSeeImmutableSnapshots` | Reuse mutable backing. | Remove cross-reader checksum. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots` | Reuse mutable backing or let SetPinned race Run's Apply/Advance outside the mutation mutex. | Remove cross-reader checksum or pin/run race assertion. |
 
 Restore and record every pair:
+
+Before the final commit, rerun the exact 41-name Store manifest fence above. A
+zero-match or count-mismatch result blocks GREEN even if the anchored suite exits
+successfully.
+
+```bash
+test "$(go test ./internal/graph -list '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' | rg -c '^TestStore')" -eq 41
+```
 
 ```bash
 git add internal/graph/store.go internal/graph/store_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
