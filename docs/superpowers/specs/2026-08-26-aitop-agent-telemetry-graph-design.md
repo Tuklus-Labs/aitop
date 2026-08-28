@@ -638,14 +638,49 @@ source incarnation by sequence, holds sequenced events for a two-second reorder
 window, and joins process-backed nodes on PID plus start time. An event from an
 older node incarnation cannot mutate the current incarnation.
 
-Nil sequence means unsequenced and a present sequence is positive. The first
-positive sequence in a source incarnation establishes its baseline without
-claiming earlier loss. A later skip becomes a detected gap exactly when receiver
-time reaches the two-second deadline. Work already queued at that instant is
-drained before the deadline decision. A final missing event with no later event
-is never claimed. Because the missing event kind is unknowable, sequence gaps
-carry no capability. A late event cannot rewind state, but complete retained
-range evidence may resolve the active gap.
+Sequence handling wraps every `SourceProtocol` event before semantic dispatch,
+so node, metrics, state, heartbeat, terminal, and later protocol kinds share one
+order. Nil sequence means unsequenced and a present sequence is positive. The
+first accepted event freezes its `(actor, actor incarnation, complete SourceRef)`
+lane as unsequenced or ordered; protocol mode is implicit and is not stored in
+the sequence key. Nonprotocol events do not share or mutate sequence state.
+Mixing nil and positive sequence returns the closed
+`AdmissionSequenceRegime` admission rejection with the source's exact
+event-capability schema gap. The rejected event leaves no fingerprint, sequence
+change, or contribution. A base
+sequence marker consumes retained bytes but no history unit. Each fingerprint,
+buffered event, and retained inclusive missing range consumes one history unit.
+
+The first positive sequence establishes its baseline without claiming earlier
+loss. A later skip arms its two-second deadline from the first skipped event's
+`ReceivedAt`. At the deadline the reducer infers every missing inclusive range
+through the highest buffered sequence and drains buffered events in sequence
+order while skipping holes. `math.MaxUint64` is an exhausted terminal sequence,
+never an increment that can wrap. A `1` to `MaxUint64` hole retains uint64 range
+endpoints without enumeration and saturates its public count at the JSON-safe
+integer ceiling. A final missing event with no later event is never claimed.
+Because the missing event kind is unknowable, sequence gaps carry no capability.
+
+All active ranges from lanes sharing one SourceID aggregate into one public
+`(SourceID,nil,GapSequence)`. Its count is cumulative for the episode: each newly
+detected range adds its cardinality with JSON-safe saturation, and partial late
+recovery never decrements it or changes first `At`. Late evidence splits or
+removes only its lane's private ranges, cannot rewind semantic state, and removes
+the public gap only after every lane range is empty. Retained buffered-event and
+missing-range slices are rebuilt with capacity exactly equal to length so actual
+backing equals their len-based charge.
+
+`Advance` prepares range changes, buffered drain, health expiry, approval cleanup,
+fallback, history and byte deltas, revisions, collection epochs, and the candidate
+generation as one transaction. History, retained-byte, published-byte, charge,
+or revision failure cannot partly advance that state or mutate an earlier
+Snapshot. History or byte admission may commit only
+`(SourceAITopGapLedger,nil,GapResource)` plus affected Partial and Visibility;
+sequence buffers, ranges, and state remain unchanged. Revision exhaustion and
+invariant failure commit no mutation or diagnostic. Calling `Advance`
+again at the same time is deterministic. Reconciler tests call `Apply` for ready
+events before `Advance`; Store queue drain and timer precedence belong to the
+bounded Store scheduler.
 
 Only a node observation may establish a different current actor incarnation. It
 must provide at least one strictly newer comparable start timestamp or process
@@ -653,12 +688,18 @@ start-tick proof and no older contradiction. Opaque incarnation strings and
 receiver arrival order are never treated as newer proof. Retired, unproven, and
 older incarnations cannot switch or mutate the node.
 
-State comparison is per field, not whole-record replacement. Source-health and
-semantic-validity eligibility are filtered first. Eligible evidence orders by
-explicit completed/failed, vanished, nonterminal, authority, positive sequence
-only when the complete `SourceRef` is identical, and `ObservedAt`. An exact time
-tie takes the candidate while a private receiver ordinal fixes fold order. Actor
-incarnation is filtered by the reducer and is never numerically ordered.
+State comparison is per field, not whole-record replacement. Task 4
+`PreferState` remains the ordinary evidence helper and keeps its frozen order:
+explicit completed/failed, vanished, nonterminal, authority, identical-complete-
+`SourceRef` positive sequence, and `ObservedAt`. Task 6 adds a reducer-owned
+approval/blocked overlay after source-health and semantic-validity filtering.
+Completed/failed and vanished still win first. Otherwise, any eligible overlay
+row is selected before the ordinary nonterminal fold. No ordinary state can hide
+it, including later same-lane evidence without the exact relationship
+resolution. Multiple overlay rows use authority, identical-complete-`SourceRef`
+positive sequence, `ObservedAt`, and private receiver ordinal. An exact time tie
+takes the candidate. Actor incarnation is filtered by the reducer and is never
+numerically ordered.
 
 Transient hook states carry `valid_for_ms`, capped at 15 seconds. `thinking`,
 `tool`, `shell`, and `waiting` default to five seconds when the runtime supplies
@@ -666,8 +707,12 @@ no validity. Semantic validity and source health are independent. Private health
 epochs cover both hook sources and successful native collector polls and become
 stale exactly six seconds after their last heartbeat. Expiry removes that epoch's
 nonterminal evidence and open relationships before fallback. A late heartbeat
-starts a new epoch but cannot resurrect removed state; a new state record is
-required. Explicit terminal evidence is exempt from source-health expiry.
+starts a new empty epoch but cannot resurrect removed state or relationships; a
+new state record is required. Explicit terminal evidence is exempt from
+source-health expiry. State `ObservedAt`, the base for `ValidUntil`, health
+`lastHeartbeat`, and terminal `CompletedAt`/`FailedAt` all equal the originating
+event's `ReceivedAt`; reducer now, source time, and wall-clock reads do not supply
+canonical evidence time.
 
 Every heartbeat names one actor, actor incarnation, and complete EventSource lane.
 After a successful native poll, its collector emits one heartbeat for each actor
@@ -677,13 +722,40 @@ is tracked separately from actor evidence freshness.
 
 `approval` and `blocked` carry no semantic TTL and persist until a paired
 resolution, terminal event, or their source-health epoch expires. Pairing uses
-the required relationship ID; resolving one relationship does not clear another.
-Their winning-state fold uses the exact order above: source-health and semantic
-eligibility; completed/failed above vanished above nonterminal; authority;
-positive sequence only for an identical complete `SourceRef`; `ObservedAt`; and
-candidate on an exact cross-lane time tie. The private receiver ordinal supplies
-deterministic fold order. Incarnation is never numerically ordered. The node
+the actor, actor incarnation, complete EventSource lane, and required relationship
+ID; resolving one exact row does not clear another. Their winning-state fold uses
+the overlay order above: source-health and semantic eligibility;
+completed/failed and vanished before the overlay; authority; positive sequence
+only for an identical complete `SourceRef`; `ObservedAt`; and candidate on an
+exact cross-lane time tie. The private receiver ordinal supplies deterministic
+fold order. Incarnation is never numerically ordered. Terminal evidence clears
+all open rows for its actor incarnation, not another incarnation. The node
 records the winning source and freshness.
+
+Append a transition and increment StateRevision only when the published full
+`Node.State` value/source/since/valid-until changes. Losing contributions and
+private-only state, approval, or health changes do neither. `Transition.At` is
+the reducer transaction `now`: Apply time for an Apply publication and Advance
+time for an expiry fallback, never evidence `ObservedAt`. It is nonzero and
+nondecreasing per node; an older transaction time is an invariant error with no
+mutation or diagnostic. The fixed 256-entry ring retains the last 256 exact
+transaction-time/state/source entries in order after the 257th public change and
+remains charged at full configured capacity.
+
+The terminal transaction also creates initial ghost metadata. Completed and
+vanished set `GhostExpiresAt` to `Event.ReceivedAt + SuccessGhostTTL`; failed
+uses `Event.ReceivedAt + FailureGhostTTL`. `CompletedAt` and `FailedAt` equal the
+same receiver time. The transaction changes State and Visibility and increments
+each required revision once. The following phase owns time advancement, fade,
+removal, pinning, resume cancellation, and ghost-edge lifecycle; it does not
+recreate the initial clock.
+
+A proven incarnation switch atomically releases the old incarnation's buffered
+sequence events and ranges, state contributions, approval rows, and health epochs
+with exact history and byte deltas. Stable fingerprints and the retired proof
+remain. Old-incarnation state, heartbeat, approval, sequence, and terminal events
+cannot mutate or clear current evidence. Edge, message, ghost advancement/fade/
+removal, pin, and resume lifecycle is unchanged until the following task.
 
 Serialized state source and since appear together. Valid-until implies that pair
 and is allowed only for nonterminal states other than approval/blocked with native
@@ -747,9 +819,10 @@ restart therefore shares the cursor while contribution lanes still retain their
 complete EventSource identity.
 
 Expected reducer rejection uses exported ErrAdmission and a safe AdmissionError
-with a closed AdmissionKind for collision, observation regime, incarnation proof,
-contribution conflict, count, history, retained bytes, published bytes, topology
-cycle, or endpoint identity. Valid returns true only for these constants. Error
+with a closed AdmissionKind for collision, observation regime, sequence regime,
+incarnation proof, contribution conflict, count, history, retained bytes,
+published bytes, topology cycle, or endpoint identity. Valid returns true only
+for these constants. Error
 text contains only the fixed class. Unwrap returns ErrAdmission only for a nonnil
 valid kind. Store continues only after errors.Is, errors.As to a nonnil typed
 error, and Valid all succeed; nil or forged kinds are fatal invariants. A merged
@@ -757,8 +830,9 @@ context conflict is contribution-conflict and uses the source metrics collision
 gap.
 
 Collision diagnostics use source/exact event capability/GapCollision;
-observation-regime uses source/exact capability/GapSchema; incarnation proof uses
-source/identity/collision; contribution conflict uses source/metrics/collision;
+observation-regime and sequence-regime use source/exact capability/GapSchema;
+incarnation proof uses source/identity/collision; contribution conflict uses
+source/metrics/collision;
 endpoint identity uses source/event capability/collision; topology cycle uses
 source/spawn/collision. Count, history, and both byte failures use the fixed
 GapLedger nil-capability resource catchall. Apply-generated admission diagnostics
@@ -1238,12 +1312,13 @@ the active gap leaves capability absent rather than inventing `all` or
 `transport`. Repeated detections accumulate within the same episode without
 changing first-detection time. Proven recovery removes the episode.
 
-At terminal transition, a node immediately becomes a full-opacity ghost. A
-successful or vanished ghost holds for four minutes, fades during minute five,
-and expires at five minutes. A failed ghost holds for fourteen minutes, fades
-during minute fifteen, and expires at fifteen minutes. Deadlines use receiver
-monotonic time. Spawn, launch, and service edges fade with their ghost endpoint;
-message edges retain their independent 60-second lifetime.
+At terminal transition, Task 6 immediately creates a full-opacity ghost and its
+receiver-time expiry metadata. A successful or vanished ghost holds for four
+minutes, fades during minute five, and expires at five minutes. A failed ghost
+holds for fourteen minutes, fades during minute fifteen, and expires at fifteen
+minutes. Task 7 advances, fades, removes, pins, or cancels that metadata without
+resetting its deadline. Spawn, launch, and service edges fade with their ghost
+endpoint; message edges retain their independent 60-second lifetime.
 
 A ghost is pinned only while selected, marked, or while its inspector is open.
 If its deadline passes while pinned, it disappears when selection, marks, and

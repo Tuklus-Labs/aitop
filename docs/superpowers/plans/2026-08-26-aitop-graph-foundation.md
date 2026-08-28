@@ -508,6 +508,7 @@ type AdmissionKind string
 const (
 	AdmissionCollision          AdmissionKind = "collision"
 	AdmissionObservationRegime AdmissionKind = "observation-regime"
+	AdmissionSequenceRegime    AdmissionKind = "sequence-regime"
 	AdmissionIncarnationProof   AdmissionKind = "incarnation-proof"
 	AdmissionContributionConflict AdmissionKind = "contribution-conflict"
 	AdmissionCountLimit         AdmissionKind = "count-limit"
@@ -1474,8 +1475,10 @@ At `HistoryLimit`, permit only an exact duplicate or an update whose fully stage
 history total, including legal removals, does not grow. Every new replay key
 requires a fingerprint witness,
 including an event that would otherwise update an existing node or edge. A cursor,
-retired proof, sequence record, relationship contribution, or message
-contribution that did not already exist is also a positive history delta. Reject
+retired proof, buffered sequence event, missing-range record, relationship
+contribution, or message contribution that did not already exist is also a
+positive history delta. The base sequence marker consumes retained bytes but no
+history unit. Reject
 positive history growth, retain all prior witnesses, and open the active resource
 gap. Never evict retained truth to admit new work. An existing semantic key is not
 by itself permission to bypass history admission. Reserve exactly the three full
@@ -1657,6 +1660,11 @@ previous physically alias it; previous is not part of the candidate published
 charge. Tests enumerate every equation, the fifteen root maps, both possible
 nested edge-map shapes, and their single-owner sum.
 
+Every retained buffered-event or missing-range slice has `cap == len`, so the
+actual backing equals the len-based logical charge. Hidden spare capacity is
+forbidden. Growth prepares an exact replacement only after checked count,
+history, retained-byte, and published-byte admission.
+
 The published projection charges one 64-byte Snapshot header, its `At` plus four
 revision scalars at 16 bytes each, and its three empty 32-byte slice containers.
 The exact empty published baseline is `P0 = 64 + 5*16 + 3*32 = 240`. A candidate
@@ -1765,13 +1773,14 @@ Reducer results are closed:
 
 Every expected rejection selects one closed `AdmissionKind`. Count and byte kinds
 identify the limit class, not an object or source. Collision, observation-regime,
-incarnation-proof, and contribution-conflict rejection use the capability table above when opening their
+sequence-regime, incarnation-proof, and contribution-conflict rejection use the capability table above when opening their
 diagnostic. A source event rejected by admission retains no new replay witness,
 so it may apply later.
 
 Diagnostic identities are exact. Collision uses
 `(event.Source.Ref.ID, &eventCapability, GapCollision)`. Observation-regime uses
-`(event.Source.Ref.ID, &eventCapability, GapSchema)`. Incarnation-proof uses
+`(event.Source.Ref.ID, &eventCapability, GapSchema)`. Sequence-regime uses the
+same exact schema-gap identity. Incarnation-proof uses
 `(event.Source.Ref.ID, &CapabilityIdentity, GapCollision)`. A metrics merge whose
 individually valid present fields conflict with preserved lane fields uses
 `AdmissionContributionConflict` and
@@ -2015,17 +2024,18 @@ git commit -m "feat: reconcile graph node observations"
 
 - [ ] **Step 1: Amend the risk model and freeze coverage names**
 
-Before test code, add and map risk rows for exact reorder boundaries, false loss
-claims, source-health epochs, relationship isolation, and terminal persistence.
-The exact test set covers `1,3,2`, first sequence other than one,
-`D-1ns` and `D`, queued-before-deadline versus published-after-deadline,
-unsequenced and final loss not claimed, mixed regime rejection, late range
-completion, hook/native/passive precedence, stale exactly at six seconds, late
-heartbeat epochs, semantic TTL before heartbeat expiry, independent relationship
-IDs, terminal clearing all, terminal heartbeat exemption, and old incarnations.
-
-Freeze these exact names and map every one to a risk row and per-test sabotage
-pair before implementation:
+Before test code, add and map risk rows for reorder boundaries, false loss,
+multi-hole and multi-lane aggregation, unsigned overflow, JSON-safe gap counts,
+sequence-regime rejection, transactional `Advance`, source-health epochs,
+protected approvals, relationship isolation, incarnation switches, and terminal
+persistence. Freeze exactly these 16 names. Do not add a seventeenth Task 6 test;
+use the table rows below as named subtests. Map every row to a risk entry and map
+every test function to one production and one weakened-assertion sabotage pair
+before implementation. The currently held `tests/RISK_MODEL.md` Task 6 section
+is provisional and the implementer must rewrite it before test code. The rewrite
+states that sequence is one generic pre-dispatch wrapper for every
+`SourceProtocol` kind, protocol mode is implicit and absent from `SequenceKey`,
+and nonprotocol events never share that state.
 
 ```text
 TestReconcileSequence132WithinWindow
@@ -2046,44 +2056,135 @@ TestReconcileTerminalExemptFromHeartbeatExpiry
 TestReconcileRejectsOldIncarnationEvent
 ```
 
+The case rows are exact:
+
+| Test | Required rows and oracles |
+|---|---|
+| `TestReconcileSequence132WithinWindow` | `1,3,2 before D` applies semantics in `1,2,3` order with no gap; use different Node/Metrics/State protocol kinds to prove one pre-dispatch wrapper orders every `SourceProtocol` event. The buffered event costs its fingerprint plus one buffered-event history unit, releases only the buffered unit on drain, and buffered/range slices have `cap == len`. `1,4,6 at D` retains `[2,3]` and `[5,5]`, drains `4,6` in order while skipping both holes, and reports count three. |
+| `TestReconcileFirstPositiveSequenceEstablishesBaseline` | First positive `7` claims no `1..6` loss. Its sequence marker consumes retained bytes and no history unit beyond the event fingerprint. First positive `math.MaxUint64` enters exhausted mode without `+1`; every later representable sequence is stale and cannot wrap, buffer, or open a gap. |
+| `TestReconcileSequenceGapExactDeadline` | A later skip arms `D = firstSkippedEvent.ReceivedAt + ReorderWindow`, regardless of `Apply`'s `now` or `SourceTime`; `Advance(D-1ns)` is inert and `Advance(D)` emits `At=D`. The `1,MaxUint64` row retains uint64 range endpoints without enumerating them and saturates public `GapSequence.Count` at `9007199254740991`. |
+| `TestReconcileSequenceDeadlineDrainsReadyWork` | Call `Apply` for every ready event before `Advance(D)`. At D, infer every inclusive missing range through the highest buffered sequence and drain buffered events in ascending sequence while skipping holes, in one transaction. History-, retained-charge-, and published-charge admission may commit only `(SourceAITopGapLedger,nil,GapResource)` plus its affected `Partial` and Visibility; sequence buffers/ranges/state remain unchanged. Required-revision or invariant failure commits no mutation or diagnostic. Assert the sequence marker, buffers, ranges, state, gaps except the permitted resource diagnostic, epochs, revisions, current generation, earlier borrowed Snapshot, and exact history and retained/published owner deltas, then retry deterministically at the same D. Store queue/barrier ordering belongs to Task 8's `TestStoreDrainsReadyBeforeAdvance`. |
+| `TestReconcileUnsequencedLossNotClaimed` | A nil-sequence lane never claims loss. Nil followed by positive is `AdmissionSequenceRegime`, uses `(SourceID,&eventCapability,GapSchema)`, marks only matching published contributors partial, and retains no rejected fingerprint, sequence change, state, or semantic revision. |
+| `TestReconcileFinalMissingEventNotClaimed` | An applied sequence with no later event never opens a final-loss gap. Positive followed by nil produces the same exact sequence-regime admission result and leaves the ordered marker unchanged. |
+| `TestReconcileRejectsMixedSequenceRegime` | Exercise nil-to-positive and positive-to-nil for every affected capability. `AdmissionSequenceRegime.Valid()` is true, its fixed error unwraps to `ErrAdmission`, and invalid or forged kinds remain fatal. Exact diagnostic identity, matching-only `Partial`, zero rejected witness, and replay-after-rejection are asserted. |
+| `TestReconcileLateMissingRangeResolvesGapWithoutRewind` | Late events split or remove only their lane's retained inclusive ranges and never replay stale semantics. Two lanes with one SourceID aggregate to one `(SourceID,nil,GapSequence)` whose cumulative saturated count and first `At` never decrease during partial recovery. Resolving one range or lane changes only private outstanding ranges; the public row remains unchanged until every lane range is empty, then is removed. Missing-range history releases per removed range; fingerprints remain. |
+| `TestReconcileStateAuthorityAndSemanticTTL` | `StateEvidence.ObservedAt` is `Event.ReceivedAt`; `ValidUntil` is based on that value, never `Apply now`, `SourceTime`, or `time.Now`. Semantic TTL may expire before health. Approval/blocked rows are a separate reducer overlay: terminal/vanished win first; if any eligible overlay row remains, it is selected before the ordinary nonterminal fold. Multiple overlay rows fold by authority, identical-complete-`SourceRef` positive sequence, `ObservedAt`, then accepted ordinal. `PreferState` and Task 4's ordinary evidence order remain unchanged. Append a transition and increment `StateRevision` only when the published full `Node.State` value/source/since/valid-until changes; losing or private-only contribution changes do neither. A 257-public-change row asserts the exact last 256 transaction-`now`/state/source entries in order, full-capacity charge, and one StateRevision increment per public change. An Advance-expiry row asserts fallback `Transition.At` equals Advance `now`, not evidence time. Zero or per-node decreasing transaction time is an invariant error with no mutation or diagnostic. |
+| `TestReconcileSourceHealthStaleAtSixSeconds` | Initial matching state seeds `lastHeartbeat = Event.ReceivedAt`. Freshness is `now < lastHeartbeat + HookFreshness`; at equality, that epoch's nonterminal state and approvals are removed before fallback. Failed expiry preparation, including revision exhaustion, is atomic and retryable. |
+| `TestReconcileLateHeartbeatStartsNewEpoch` | A late heartbeat creates a new empty epoch with its own `ReceivedAt` clock. It cannot resurrect removed state or approval rows; new state evidence is required. The empty epoch's history and charge are admitted transactionally. |
+| `TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane` | Heartbeat identity is actor, actor incarnation, complete `SourceRef`, and `EventSource.Mode`. Explicit heartbeats for another actor, actor incarnation, source incarnation, or mode refresh nothing else; actorless or mismatched heartbeat input is rejected. Task 9 tests which collector polls emit those events. |
+| `TestReconcileApprovalAndBlockedRelationshipsResolveIndependently` | Open approval/blocked identity includes actor, actor incarnation, complete source lane, and relationship ID. No ordinary state can hide an open protected row, including a later same-lane event without the exact relationship resolution. Resolution requires the exact row identity and closes only that row; with any row left open, the aggregate remains approval/blocked and folds the remaining rows normally. |
+| `TestReconcileTerminalClearsRelationships` | Completed/failed outrank protected rows; terminal evidence clears all approval/blocked rows for that actor incarnation and no other incarnation. `CompletedAt`/`FailedAt` are `Event.ReceivedAt`. In the same transaction, completed and vanished set `GhostExpiresAt = ReceivedAt + SuccessGhostTTL`; failed sets `GhostExpiresAt = ReceivedAt + FailureGhostTTL`; ChangeSet has State and Visibility and each required revision increments once. A terminal event for an old incarnation cannot clear or replace current evidence. |
+| `TestReconcileTerminalExemptFromHeartbeatExpiry` | Terminal evidence has no semantic or health expiry, never serializes `ValidUntil`, survives Advance beyond six seconds, and retains its exact `ReceivedAt` terminal and ghost clocks. Task 7 advances, fades, removes, pins, or cancels the already-created ghost metadata. |
+| `TestReconcileRejectsOldIncarnationEvent` | After a proven switch, old-incarnation state, approval, heartbeat, exit, and sequence events cannot mutate the current node. The switch atomically releases the old incarnation's sequence buffers/ranges, state lanes, approval rows, and health epochs with exact history/charge deltas; stable fingerprints and the retired proof remain. It performs no Task 7 edge, message, ghost, or resume behavior. |
+
 - [ ] **Step 2: Write the exact failing sequence and state tests**
 
 Implement every frozen test above with manual clocks and barriers, no sleeps, and
-no production changes.
+no production changes. Use table subtest names that match the required row labels
+closely enough to locate each risk and sabotage record by search. Before the RED
+run, prove the fence contains all 16 tests rather than accepting Go's zero-match
+success:
+
+```bash
+test "$(go test ./internal/graph -list '^TestReconcile(Sequence132WithinWindow|FirstPositiveSequenceEstablishesBaseline|SequenceGapExactDeadline|SequenceDeadlineDrainsReadyWork|UnsequencedLossNotClaimed|FinalMissingEventNotClaimed|RejectsMixedSequenceRegime|LateMissingRangeResolvesGapWithoutRewind|StateAuthorityAndSemanticTTL|SourceHealthStaleAtSixSeconds|LateHeartbeatStartsNewEpoch|NativeHeartbeatRefreshesOnlyMatchingActorLane|ApprovalAndBlockedRelationshipsResolveIndependently|TerminalClearsRelationships|TerminalExemptFromHeartbeatExpiry|RejectsOldIncarnationEvent)$' | rg -c '^TestReconcile')" -eq 16
+```
 
 - [ ] **Step 3: Verify RED**
 
 Run: `go test ./internal/graph -run '^TestReconcile(Sequence132WithinWindow|FirstPositiveSequenceEstablishesBaseline|SequenceGapExactDeadline|SequenceDeadlineDrainsReadyWork|UnsequencedLossNotClaimed|FinalMissingEventNotClaimed|RejectsMixedSequenceRegime|LateMissingRangeResolvesGapWithoutRewind|StateAuthorityAndSemanticTTL|SourceHealthStaleAtSixSeconds|LateHeartbeatStartsNewEpoch|NativeHeartbeatRefreshesOnlyMatchingActorLane|ApprovalAndBlockedRelationshipsResolveIndependently|TerminalClearsRelationships|TerminalExemptFromHeartbeatExpiry|RejectsOldIncarnationEvent)$' -count=1`
 
 The anchored alternatives enumerate every frozen Task 6 test name above.
+Run each exact name alone and record a rule-specific behavioral RED. Compile
+failure, panic, or zero selected tests does not qualify.
 
 - [ ] **Step 4: Implement reorder and state lifecycle**
 
-Use a min-heap for the complete source identity. Nil sequence is unsequenced and
-positive sequence is ordered; one source incarnation cannot mix regimes. The
-first positive value establishes baseline. A later skip arms one deadline.
-`Advance(D-1ns)` does nothing; `Advance(D)` opens a nil-capability sequence gap
-with exact missing count and first-detection `At=D`, then drains buffered events.
-Store drains ready work before advancing the deadline. Late missing input never
-rewinds state; complete retained range proof resolves the episode. No later event
-means no detectable final loss.
-`Advance` uses `prepareAdvance` and returns `(ChangeSet, error)`; it never mutates
-then rolls back when expiry or publication charge is rejected.
+Sequence handling is a generic wrapper before Task 5 semantic dispatch for every
+`SourceProtocol` event kind. Its identity is
+`(Actor, ActorIncarnation, complete SourceRef)`; protocol mode is implicit and no
+mode field is stored in `SequenceKey`. Nonprotocol events do not read or mutate
+sequence state. Node, metrics, state, heartbeat, terminal, and later protocol
+kinds therefore cannot bypass one another's ordering. The private regime is
+unseen, unsequenced, ordered, or exhausted. The first accepted
+nil or positive sequence freezes the regime. A nil/positive transition returns
+`AdmissionSequenceRegime`; its diagnostic is
+`(event.Source.Ref.ID,&eventCapability,GapSchema)`. Rejection retains no event
+fingerprint, buffered item, range, sequence-state change, contribution, or
+semantic revision. The base marker itself costs retained bytes but no history
+unit. Each event fingerprint, buffered event, and missing-range record is one
+history unit. A drained buffered item releases only its buffered unit.
 
-Maintain private health epochs for full hook sources and successful native polls.
-`EventHeartbeatObserved` always names one actor and actor incarnation. After a
-successful native poll, the collector emits exactly one heartbeat for every actor
-and incarnation it successfully observed, using that actor's complete
-`SourceRef` lane. A poll that observes zero actors emits no heartbeat. There is no
-actorless or one-source-wide heartbeat, and collector operational health remains
-separate. First state seeds six seconds; its matching actor heartbeat refreshes
-only that lane. Freshness is strictly
-`now < lastHeartbeat + HookFreshness`. Expiry deletes that epoch's nonterminal
-state and open relationships before fallback. A late heartbeat starts a new epoch
-but cannot resurrect deleted evidence; a new state is required. Terminal evidence
-is exempt. Relationship resolution matches full source, actor incarnation, and
-relationship ID; terminal clears all for that actor incarnation. Task 6 does no
-ghost work.
+The first positive value establishes baseline without earlier loss. Checked
+successor arithmetic treats an applied `math.MaxUint64` as exhausted; it never
+wraps. A later skip arms `D` from the first skipped event's `ReceivedAt`, not
+`Apply now` or source time. At D, create all inclusive holes through the highest
+buffered sequence and drain buffered events in ascending order while skipping
+holes. Keep uint64 endpoints. Each newly detected missing cardinality adds with
+saturation at `9007199254740991`. All lanes sharing a SourceID publish one
+`(SourceID,nil,GapSequence)` with the episode's cumulative saturated count and
+first `At`. Late evidence splits or removes only its lane ranges and never
+rewinds semantics; partial recovery never decrements the public count or changes
+`At`. Newly detected holes in the same episode add to that cumulative count.
+Remove the public row only after every lane is clear. No later event means no
+detectable final loss.
+
+All retained buffered-event and missing-range slices are rebuilt with
+`cap == len`, so their actual backing equals the len-based charge.
+`prepareAdvance` stages due range creation/removal,
+buffer drain, health expiry, approval cleanup, fallback, exact history and byte
+deltas, revisions, collection epochs, and candidate generation before commit.
+Expected admission failure must not advance sequence or health state. For
+history or either byte limit, it may commit exactly
+`(SourceAITopGapLedger,nil,GapResource)` plus affected `Partial` and
+Visibility, with no sequence buffer/range/state mutation. `ErrRevisionExhausted`
+and invariant errors commit no mutation or diagnostic. A retry at the same time
+sees the original state.
+Reconciler owns buffered sequence drain and semantic expiry; Task 8 alone owns
+Store ready-queue drain, timer selection, and scheduler precedence.
+
+Every state, terminal, and health clock is receiver-owned:
+`StateEvidence.ObservedAt`, the base for `ValidUntil`, health `lastHeartbeat`,
+and `CompletedAt`/`FailedAt` all equal `Event.ReceivedAt`. Neither `Apply now`,
+`SourceTime`, nor `time.Now` supplies canonical evidence time. Maintain private
+health epochs per actor, actor incarnation, complete SourceRef, and
+`EventSource.Mode`. First state seeds its matching epoch. A matching heartbeat
+refreshes only that lane. Freshness is exactly
+`now < lastHeartbeat + HookFreshness`; expiry removes that epoch's nonterminal
+evidence and open approvals before fallback. A late heartbeat creates a new empty
+epoch and cannot resurrect removed evidence. Task 6 consumes explicit per-actor
+heartbeats; Task 9 owns native-poll emission and zero-result silence. Collector
+operational health remains separate.
+
+Open approval/blocked rows are a reducer-owned protected overlay, not a change to
+Task 4 `PreferState` or its ordinary evidence order. Completed/failed and vanished
+win first. Otherwise, any eligible overlay row is selected before the ordinary
+nonterminal fold. Fold overlay rows by authority, identical-complete-SourceRef
+positive sequence, `ObservedAt`, and accepted ordinal. No ordinary state can hide
+them; neither can a later same-lane ordinary event without the exact relationship
+resolution. Exact actor, actor incarnation, complete EventSource lane, and
+relationship ID are required to resolve one row. Append and rotate a transition
+and increment `StateRevision` only when the published full `Node.State`
+value/source/since/valid-until changes. A losing contribution or private-only
+state/approval/health mutation does neither. `Transition.At` is the reducer
+transaction `now`: Apply `now` for Apply publication and Advance `now` for expiry
+fallback, never evidence `ObservedAt`. It must be nonzero and nondecreasing per
+node; an older transaction time is an invariant error with no mutation or
+diagnostic. The 256-entry ring retains exact transaction-time/state/source order
+and full-capacity charge. Terminal clears every overlay row for its actor
+incarnation and remains exempt from source-health expiry.
+
+Task 6 creates initial terminal ghost metadata in the same staged state update.
+Completed and vanished set `GhostExpiresAt = Event.ReceivedAt + SuccessGhostTTL`;
+failed sets it to `Event.ReceivedAt + FailureGhostTTL`. CompletedAt and FailedAt
+also use exact `Event.ReceivedAt`. This transaction sets State and Visibility and
+increments each required revision once. Task 7 alone advances ghost time, applies
+fade/removal, pinning, resume cancellation, and endpoint-edge lifecycle.
+
+A proven incarnation
+switch atomically releases the old sequence state, nonterminal state lanes,
+approval rows, and health epochs; stable fingerprints and the retired proof
+remain. Task 6 does not change edges, messages, ghost advancement/fade/removal,
+pinning, resume, or any other Task 7 lifecycle behavior.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -2091,14 +2192,29 @@ Run: `go test ./internal/graph -run '^TestReconcile(Sequence132WithinWindow|Firs
 
 - [ ] **Step 6: Sabotage and commit**
 
-Give every new test production and assertion plants. Include `>` instead of
-`>=`, timer before ready drain, assumed start one, unsequenced loss claim, merged
-source incarnations, late-heartbeat resurrection, terminal expiry, and clearing
-all relationships for one resolution. Also replace per-actor native heartbeat
-lanes with one source-wide timestamp; this must make
-`TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane` RED. Restore and
-record every exact named test's pair. Physical production and assertion plants
-remain mandatory regardless of mutation-tool availability.
+Give every exact test one physical production and one weakened-assertion plant.
+The production set must include: `>` at D; deadline from `Apply now`; deadline
+timer before buffered drain; assumed baseline one; wrapped `MaxUint64+1`;
+enumerated huge holes; one missing range for disjoint holes; one sequence gap per
+lane instead of SourceID aggregation; decrementing cumulative count during
+partial recovery; premature aggregate resolution; sequence
+marker charged as history; buffered/range history omitted; nil/positive mixing;
+retained rejected witness; apply-then-rollback `Advance`; receiver slices with
+spare capacity; state clocks from source/apply time; ordinary state hiding an
+approval; changing Task 4 `PreferState` instead of using the overlay;
+relationship-only rather than full-lane resolution; appending a transition or
+incrementing StateRevision for a losing/private-only contribution; a 257-entry
+ring that keeps the first 256, uses evidence time instead of transaction `now`,
+misorders value/source, undercharges capacity, or increments StateRevision twice;
+accepting zero or decreasing per-node transition time; one source-wide
+heartbeat; late-heartbeat resurrection; terminal expiry; old terminal clearing
+current approvals; delayed or missing initial terminal ghost metadata, a ghost
+deadline based on Apply time, wrong success/failure TTL, or missing
+State/Visibility change; and switch leakage of any sequence/state/approval/health
+owner. Each corresponding assertion plant removes only the named boundary,
+identity, clock, accounting, or byte-identical pre/post oracle. Record predicted
+RED or false GREEN, observed result, restoration, and rerun. Compile-only failure
+does not count.
 
 Task 6 changes the same critical `reconcile.go` surface as Task 5. Run the exact
 Task 5 pinned `go-mutesting` version against `internal/graph/reconcile.go` again.
@@ -2110,6 +2226,15 @@ Task 6 sabotage section. If any item differs, reinstall the exact pin and rerun.
 A different failure, missing metadata, or unexplained survivor blocks GREEN.
 Confirm no tool mutation remains.
 
+```bash
+aitop_task6_mutation_dir="$(mktemp -d)"
+GOBIN="$aitop_task6_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task6_mutation_tool="$aitop_task6_mutation_dir/go-mutesting"
+test -x "$aitop_task6_mutation_tool"
+go version -m "$aitop_task6_mutation_tool"
+"$aitop_task6_mutation_tool" --exec-timeout=15 internal/graph/reconcile.go
+```
+
 Before commit, perform a task-local Phase D sweep of every assertion and assertion
 helper in the complete modified `internal/graph/reconcile_test.go`, including
 inherited Task 5 sites and all success, timing, state, and rejection paths. Audit
@@ -2118,9 +2243,26 @@ Append one literal file:line row per site to `tests/LOUDNESS_AUDIT.md` with the
 four-box result: present-tense rule name, enough offending state to debug without
 rerun, unique greppable phrase, and present-tense wording. Repair every failed
 box; an `EXEMPTION:` must name the exact covering assertion and file:line. Rerun
-the Step 5 suite plus package, race, 386 compile, vet, and `git diff --check` after
-restoring every plant. Task 12 re-audits this evidence; it is not a substitute
-for Task 6's full assertion sweep.
+the Step 5 suite and the 16-name existence fence after restoring every plant,
+then run these gates. Task 12 re-audits this evidence; it is not a substitute for
+Task 6's full assertion sweep.
+
+```bash
+go test ./internal/graph -count=1
+go test -race ./internal/graph -count=1
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1
+go vet ./internal/graph
+git diff --check
+for aitop_task6_unslop_target in \
+  internal/graph/reconcile.go \
+  internal/graph/reconcile_test.go \
+  tests/RISK_MODEL.md \
+  tests/SABOTAGE_LOG.md \
+  tests/LOUDNESS_AUDIT.md
+do
+  bash ~/.agents/skills/unslop/locate.sh "$aitop_task6_unslop_target"
+done
+```
 
 ```bash
 git add internal/graph/reconcile.go internal/graph/reconcile_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
@@ -2144,8 +2286,10 @@ test set covers
 nested native and sidecar spawn, exact spawn/service provenance, public launch
 rejection, service links, bounded cycle diagnostics, duplicate message replay,
 mixed delivery, exact sliding 60-second contribution expiry, five- and
-fifteen-minute ghosts, fade windows, edge partial propagation, pin before/after
-deadline, overdue unpin, and proven-incarnation resume cancellation.
+fifteen-minute lifecycle from Task 6's initial ghost metadata, fade windows, edge
+partial propagation, pin before/after deadline, overdue unpin, and
+proven-incarnation resume cancellation. Task 7 does not recreate or reset the
+terminal clocks frozen in Task 6.
 
 Freeze these exact names and map every one to a risk row and per-test sabotage
 pair before implementation:
@@ -2183,7 +2327,9 @@ TestEdgePublicShapeOmitsEndpointIncarnations
 - [ ] **Step 2: Write the exact failing relationship and lifecycle tests**
 
 Implement every frozen test above with rule-naming failures and no production
-changes.
+changes. `TestReconcileSuccessVanishedAndFailedGhostDeadlines` must seed the
+terminal metadata through Task 6 and prove Task 7 consumes, never recreates or
+resets, those deadlines.
 
 - [ ] **Step 3: Verify RED**
 
@@ -2273,13 +2419,14 @@ Retain unique message contributions through `ReceivedAt + 60s`, decrementing eac
 delivery counter at expiry. Replay neither increments nor extends. Messages never
 coalesce.
 
-Task 7 exclusively creates, advances, pins, expires, and cancels ghosts. Completed
-and vanished expire at five minutes; failed at fifteen. Duplicate terminal replay
-does not extend. Explicit terminal may replace vanished. Spawn, launch, and service
-edges ghost with endpoints; messages retain independent expiry. Pin suppresses
-removal but never changes deadline. An expired unpinned ghost cannot be newly
-pinned; overdue unpin removes it. Proven newer incarnation cancels it and keeps
-the transition ring.
+Task 6 already creates `GhostExpiresAt` with the exact terminal receiver clock.
+Task 7 exclusively advances, fades, pins, expires, and cancels that ghost
+lifecycle. Completed and vanished expire at five minutes; failed at fifteen.
+Duplicate terminal replay does not extend the Task 6 deadline. Explicit terminal
+may replace vanished. Spawn, launch, and service edges ghost with endpoints;
+messages retain independent expiry. Pin suppresses removal but never changes the
+deadline. An expired unpinned ghost cannot be newly pinned; overdue unpin removes
+it. Proven newer incarnation cancels it and keeps the transition ring.
 
 `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop` creates a node through
 `SourceImmutable` `NodeObserved`, terminates it, advances through ghost expiry and
