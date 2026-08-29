@@ -204,13 +204,13 @@ Deep-tests Phase A for the graph foundation planned in Tasks 1 through 11.
 ### Regression traps
 
 - boundary: `boundary: exact-limit off-by-one`, `boundary: maximum value silently overflows`, `boundary: zero treated as falsy in numeric context`, and `boundary: empty collection treated as missing collection`. Complete 192-byte canonical and event IDs, 4096-byte observation keys, 64-byte relationships, and JSON-safe metrics/process ticks stop at their inclusive limits. `GF-BOUND-1` is caught by `graph.TestCanonicalNodeIDAccepts192BytesRejects193`; Task 3A event boundaries by `graph.TestEventRejectsMalformedIdentityBounds`, `graph.TestEventRelationshipIDIsOpaqueAndBounded`, `graph.TestEventRejectsInvalidOptionalZeros`, `graph.TestSemanticValidationTable`, and `graph.TestEventProcessIdentityJSONSafeBoundaries`; `GF-SAFEINT-1` by `graph.TestDeliveryObserveRejectsOverflowAtomically`; later queue and reducer boundaries retain their planned tests.
-- concurrency: `concurrency: cancellation/read interleaving exposes shared state or leaks a task`. Readers interleaving with publication must not observe mutable maps or slices, and shutdown must wait for every named task without sleeping. `GF-CONC-1` is caught by `graph.TestStorePublishesSnapshotsAtomically` and `graph.TestStoreConcurrentReadersSeeImmutableSnapshots`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`.
+- concurrency: `concurrency: cancellation/read interleaving exposes shared state or leaks a task`. Readers interleaving with publication must not observe mutable maps or slices, and shutdown must wait for every named task without sleeping. `GF-CONC-1` is caught by `graph.TestStoreOverflowPublicationLinearizes` and `graph.TestStoreConcurrentReadersSeeImmutableSnapshots`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`.
 - contract: `contract: a producer violates the consumer's visibility or isolation contract` and `contract: field rename breaks silent consumers`. Frozen graph/event shapes, nine domains, public role ownership, scalar event-gap capability, and exact value payload closure must not drift. `GF-VALUE-2` retains its corrected value tests; Task 3A closure is caught by `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventKindPayloadCartesianClosed`, `graph.TestGapObservedOpenResolvedValidation`, `graph.TestPublicRolesExcludeClassifierSentinels`, `graph.TestCloneEventRejectsInvalidPayloadShapes`, and `graph.TestPrivacyRejectsContentFields`; later edge, JSON, and collector contracts retain their planned tests.
 - encoding: `encoding: malformed identity bytes, delimiter-ambiguous keys, pointer-presence loss, or time-location drift changes meaning`. Task 3A is caught by `graph.TestEventReplayModeFingerprintTable` with six independent key/fingerprint vectors, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestEventFingerprintIncludesEverySemanticFieldAndPayload`, `graph.TestEventRejectsMalformedIdentityBounds`, `graph.TestEventRelationshipIDIsOpaqueAndBounded`, and both clone tests. Existing canonical ID, edge-key, snapshot, and JSON tests retain their narrower contracts.
 - framework: N/A - the graph foundation uses no external framework-owned lifecycle or serializer; the command path is standard Go.
 - io: `io: capture or writer failure emits a successful-looking document`. A failed one-shot path must emit no successful schema-2 document. `GF-JSON-1` is caught by `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument`.
 - persistence: `persistence: restart replay or repeated mutable revision inflates state`. Immutable, occupancy, and sidecar replay ignore collector incarnation; protocol replay retains it; ordered observation keys use timestamp before digest; structural keys use digest only at zero timestamp. `GF-REPLAY-1` and `GF-REPLAY-2` are caught by `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventReplayAndCollisionComposition`, `graph.TestObservationDedupTimestampFirst`, and `graph.TestObservationFingerprintCanonicalizesTime`; later reducer replay tests remain planned.
-- resource: `resource: saturation or cancellation leaks bounded capacity or goroutines`. Queue/store limits must remain exact, and cancellation must reclaim every Store, Registry, Engine, Poller, and Actor task. `GF-BOUND-2` is caught by `graph.TestStoreDefaultLimits` and `graph.TestStoreExactQueuePartition`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`; `GF-LIFE-1` by `graph.TestStoreStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, and `act.TestActorStopsOnContextCancellation`.
+- resource: `resource: saturation or cancellation leaks bounded capacity or goroutines`. Queue/store limits must remain exact, and cancellation must reclaim every Store, Registry, Engine, Poller, and Actor task. `GF-BOUND-2` is caught by `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, and `graph.TestStoreQueuedByteLimit`; Store cancellation is caught by `graph.TestStoreCancellationDropsQueuedSemantics`, `graph.TestStoreAlreadyCanceledRunFinalizes`, and `graph.TestStoreCancellationPublishesFinalDiagnostics`; `GF-CONC-2` by `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`; `GF-LIFE-1` by `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, and `act.TestActorStopsOnContextCancellation`.
 - state: `state: switch default swallows new case`, an invalid gap transition, or unsafe replacement mutates lifecycle. Task 3A state closure is caught by `graph.TestGapObservedOpenResolvedValidation`, `graph.TestCoalesceCandidateLaneTable`, `graph.TestCanCoalesceReplaceOrdering`, and `graph.TestCanCoalesceReplaceRequiresMetricCoverage`; delivery, reducer, state preference, and ghost tests retain their planned contracts.
 
 #### Task 2A nine-prefix bug-shape sweep
@@ -692,6 +692,295 @@ resume extension.
 |---|---|---|---|
 | `TestReconcileAcceptsStrictlyNewerIncarnation` | `GF-T7-RESUME`, `GF-T7-CLOCK-OWNERSHIP`, `GF-T7-OWNER-IMAGE` | Preserve `Pinned`/`GhostExpiresAt` on proven resume, delete the Task 6 transition ring or metrics, or replace the whole canonical edge backing for a guard-only update. | Remove the clear-pin/deadline, preserved-ring/metrics, exact Topology/State/Visibility/Metrics revision, or full fifteen-owner/generation/Snapshot-byte assertion. |
 
+#### Task 8 bounded Store and atomic publication: eight-axis risk model
+
+Task8 is process-memory only. Persistence is N/A beyond in-memory replay
+witnesses; IO is N/A because the Store performs no filesystem, network, IPC,
+shell, or device operation. The following nine risk groups are the complete
+Task8 namespace and are used by every coverage row below.
+
+**Invariants**
+
+- `GF-T8-QUEUE`: `StoreConfig` is exact; defaults are 8192 total, 2048 critical,
+  6144 normal, and 8 MiB queued bytes. `NewStore` rejects nil Reconciler,
+  `EventQueue < 2`, invalid reserve ordering, or a queue limit below 1104 before
+  transferring ownership. The permanent normal, critical, and catch-all
+  diagnostic reserve identities are exactly 368 bytes each; unused reserve is
+  not depth. Arbitrary pending identities charge the full dynamic
+  `chargeActiveGapEntry(key, gap)`, including SourceID and present capability.
+  Event token, replay, coalescing, and pending-diagnostic charges follow the
+  frozen literal schedule, and aggregate shortage drops only total-fitting work.
+- `GF-T8-INGRESS`: Every Publish performs clone -> validation -> fingerprint ->
+  classification -> complete charge/key derivation before retention. Replay
+  identities cover queued and in-flight work only. Duplicate/collision precede
+  coalescing, which precedes queue insertion; inflight work cannot coalesce and
+  replacement preserves queue position. The ten-kind critical/normal matrix,
+  candidate-lane restrictions, complete metric coverage, and message
+  noncoalescing are exact. A valid decision samples Clock.Now once after pure
+  charge/key work; collision/drop/catchall firstAt uses that sample, never
+  Event.ReceivedAt. Zero returns PublishRejected with only Rejected incremented.
+- `GF-T8-LIFECYCLE`: Store has open, running, stopping, and stopped states,
+  one Run, never-closed channels, `ErrStoreAlreadyRun`, and
+  `ErrStoreNotAccepting`. Cancellation linearizes running -> stopping before
+  draining, retains committed-before-cancellation work as Applied, and
+  distinguishes CanceledQueued from AbortedQueued. Publish and SetPinned reject
+  stopping/stopped with ErrStoreNotAccepting; every Run after the first accepted
+  transition, including after stopped, returns ErrStoreAlreadyRun. A pre-Apply in-flight event
+  canceled before Apply is CanceledQueued on successful finalization. Any
+  nonnil final diagnostic-prepare error is terminal, returns the original error,
+  publishes nothing, clears dynamic charge, maps pending counts to
+  AbortedDiagnostics, maps unattempted queued/pre-Apply work to AbortedQueued,
+  and stops; cancellation returns nil only after complete batch success.
+- `GF-T8-DIAGNOSTIC`: Normal, critical, collision, and catch-all ledgers retain
+  saturating counts and stable firstAt values. Pending identities are bounded to
+  ordinary MaxGaps-3; overflow allocates no identity. A canonical sorted batch
+  prepares once, commits once, pointer-stores once, and clears only committed
+  entries. Pending Gap.At is the first Publish clock sample; expected failures during normal running retain the full set for retry;
+  any nonnil final cancellation failure aborts the full set and counts
+  AbortedDiagnostics.
+- `GF-T8-SCHEDULER`: The first nonzero unpublished ChangeSet owns firstDirty and
+  never moves later. The timer is min(firstDirty+100ms, semantic deadline).
+  Critical debt saturates at 32, late normals run immediately, and timer checks
+  occur between bounded groups. At D Store captures the last accepted ordinal,
+  drains through the cutoff, advances at D, and keeps later ingress outside the
+  batch. Semantic D comes exclusively from nextDeadline(after). Each timer/wake
+  samples readiness Clock.Now once; now<D re-arms one-shot D-now, while due work
+  always calls Advance(D), never Advance(now) or the timer payload. Each dequeued
+  Apply samples Clock.Now once after the final cancellation recheck and passes
+  that sample to Apply/firstDirty. The exclusive nextDeadline(D) cursor advances after expected errors,
+  including zero-change results; new ingress resets it.
+- `GF-T8-ERROR-TYPE`: `ErrEventTooLarge` is reserved for a complete single token
+  exceeding total capacity or arithmetic saturation. Typed collision and typed
+  admission errors preserve `errors.Is`/`errors.As`; unknown or forged typed
+  errors are invariant failures. During normal running, expected admission
+  errors continue Run; once cancellation enters stopping, any nonnil final
+  diagnostic-preparation error stops it without publication and returns the
+  original error. Helper failures return their exact safe nonnil error
+  unwrapped only for reachable unsupported-payload clone and recognized-payload
+  validation failures; no stable helper sentinel/type is promised. Replay
+  digest/Fingerprint are deterministic after validation, CoalesceKey has no
+  error return, validated Store coalescing has no reachable error, and charge
+  saturation is ErrEventTooLarge. Zero-clock Advance/diagnostic preparation is
+  a fatal invariant; zero-clock SetPinned is a safe caller error that leaves Run
+  active. Every Store-owned zero Clock.Now sample uses the exact safe Error text
+  `graph store clock rule violated: now=zero`; no stable concrete type or
+  errors.Is identity is promised.
+- `GF-T8-PIN`: NewStore owns all Reconciler mutation. SetPinned uses one injected
+  Clock.Now sample, shares the mutation mutex, publishes a changed generation before
+  return, resets the cursor, and sends a nonblocking wake. Idempotent calls do
+  not publish; errors, including ErrGhostExpired, mutate nothing.
+- `GF-T8-PUBLICATION`: NewStore atomically installs the initial generation with
+  Snapshots=1. Snapshot is an atomic load; each distinct pointer increments
+  Snapshots once. Store-published generation and Reconciler.previous align, and
+  owned commits retain at most current and previous excluding caller refs.
+  Earlier borrowed snapshots remain byte-identical. Construction samples
+  Clock.Now once and atomically exposes the nonzero construction-time snapshot.
+- `GF-T8-STATS`: StoreStats has exactly the frozen fields and no extras. Its
+  unsaturated equation is `AcceptedCritical+AcceptedNormal == Applied+
+  ApplyErrors+CanceledQueued+AbortedQueued+NormalDepth+CriticalDepth+
+  inflightTokenCount`; the CanceledQueued term includes pre-Apply in-flight
+  cancellation. Bytes, pending counts, drops, errors, and snapshots obey the
+  same ownership transitions.
+
+**State transitions**
+
+Publish transitions only through queue insertion, safe replacement, duplicate,
+collision, aggregate drop, oversize rejection, or lifecycle rejection. Apply
+transitions accepted work to Applied, ApplyErrors, CanceledQueued, or
+AbortedQueued exactly once. Run's cancellation and invariant-abort barriers are
+linearization points, and SetPinned has changed, idempotent, expected-error,
+and lifecycle-error paths with no partial mutation.
+
+**Boundaries**
+
+Inclusive boundaries cover EventQueue=2, reserve values 1 and EventQueue-1,
+QueuedByteLimit=1104, exact normal/critical slot capacities, exact byte-token
+fit, one-byte shortage, token arithmetic saturation, MaxGaps-3 identities,
+catch-all saturation, 32:1 fairness, 100ms at D-1ns/D/D+1ns, equal semantic
+deadlines, and accepted-ordinal cutoffs. The initial Snapshots count is one;
+the accounting equation is checked before any counter can saturate.
+
+**Malformed inputs**
+
+Nil or typed-nil Reconciler/config inputs, invalid Event values, malformed
+replay/coalesce keys, forged collision/admission errors, unknown lifecycle
+states, and timer implementations that require Reset fail without panic or
+ownership transfer. `ErrEventTooLarge` does not open a gap. Validation and
+collision diagnostics never echo rejected event bytes.
+
+**Concurrency**
+
+The sole nested lock order is mutation -> queue -> publication. Queue-only paths
+release and revalidate before nesting. BeforeApply runs after in-flight charge
+with no lock and before cancellation check; BeforePublish covers prepare,
+commit, pointer-store, counters, and clear under the required locks; AfterStop
+runs once after acceptance/timer disable, with no lock and before disposal.
+Concurrent Snapshot readers observe immutable generations; SetPinned, Apply, and
+Advance serialize through mutation ownership.
+
+**Persistence and replay**
+
+Persistence is N/A (process-memory only). Queued/in-flight replay identities are
+removed when work resolves; stable Reconciler replay witnesses remain under the
+existing lifetime contract. Duplicate and collision checks cannot see discarded
+or already-applied Store queue entries.
+
+**Integration contracts**
+
+Store calls only the frozen Reconciler Apply, Advance, SetPinned,
+prepareStoreDiagnostics, and exclusive nextDeadline seams. Diagnostic ordering
+uses the canonical existing sort. StoreStats remains operational and never
+introduces a second snapshot-partial surface. The production timer interface has
+only C and Stop; a test-only poison Reset interface is outside production.
+
+**Regression traps, all nine-prefix sweep**
+
+- boundary: populated by exact queue/reserve/byte/identity limits, 32:1 fairness,
+  100ms latency, deadline equality, cutoff ordinal, and saturating counters.
+- concurrency: populated by lock order, cancellation barriers, hook timing,
+  atomic publication, immutable readers, and SetPinned/Apply/Advance ownership.
+- contract: populated by exact public API declarations, ten-kind lane matrix,
+  nonzero disposition order, 24-field StoreStats reflection, never-closed
+  channels, and error sentinel identity.
+- encoding: populated by the literal `128+chargeEvent` token, 128-byte replay
+  and queued-only coalesce entries, full dynamic `chargeActiveGapEntry(key,
+  gap)` with only fixed nil-capability reserves at 368 bytes, complete
+  fingerprint/key-before-retention ordering, canonical diagnostic sort, exact
+  Clock.Now versus Event.ReceivedAt ownership, and source-parsed versus
+  `go test -list` exact manifest comparisons.
+- framework: populated by Go `atomic.Value` Snapshot loads, typed nil/error
+  handling, errors.Is/errors.As identity, lock-order enforcement, manual-clock
+  one-shot timers, exact one-sample hooks, the production interface's absence of
+  Reset, and reflection of exact StoreStats fields.
+- io: N/A - Store performs no filesystem, network, IPC, shell, or device I/O.
+- persistence: N/A - Store is process-memory only; replay ownership is tested as
+  bounded queued/in-flight state and existing Reconciler lifetime witnesses.
+- resource: populated by queue token/replay/coalesce/diagnostic charges,
+  aggregate drops, in-flight retention, catch-all saturation, cancellation
+  reclamation, and current/previous generation ownership.
+- state: populated by open/running/stopping/stopped, duplicate/collision/drop
+  precedence, expected versus invariant errors, cancellation outcomes, dirty
+  cursor movement, pin transitions, and one-publication-per-generation rules.
+
+Task8 sabotage evidence predeclares a separate physical production plant and
+decisive assertion weakening for each overloaded subrow. In particular,
+open-state Publish and before-Run pin, timer Reset and pin wake, Advance
+admission and pin cleanup, Run publication and pin publication, pending
+diagnostic charge and identity cap, revision batch atomicity and no-generation
+publication, and reader backing and mutation-lock cases are separate pairs.
+Named hook and lock subrows have their own pairs:
+`QueueChargeIncludesInflight/before-apply`,
+`OverflowPublicationLinearizes/before-publish`,
+`CancellationStopsAcceptance/after-stop`,
+`DiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-queue`,
+`DiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-mutation`, and
+`ConcurrentReadersSeeImmutableSnapshots/lock-order`. The deliberately
+noncanonical successful batch has separate omit-sort and reverse-sort pairs.
+No pair is represented by an `or` cell. The poison Reset test interface is
+never part of the production timer interface. Every pair's
+`tests/SABOTAGE_LOG.md` entry records prediction, observed behavioral RED or
+false GREEN, exact focused command, pristine-hash restoration proof, rerun, and
+conclusion; missing evidence blocks acceptance.
+
+Task8 hook, lock-order, generation, and noncanonical-sort subrows remain within
+the 41 top-level names:
+
+| Exact subrow | Task8 risk groups |
+|---|---|
+| `TestStoreQueueChargeIncludesInflight/before-apply/charged-inflight` | `GF-T8-QUEUE`, `GF-T8-LIFECYCLE` |
+| `TestStoreQueueChargeIncludesInflight/before-apply/lock-free` | `GF-T8-LIFECYCLE` |
+| `TestStoreQueueChargeIncludesInflight/before-apply/cancel-adjacent` | `GF-T8-LIFECYCLE`, `GF-T8-QUEUE` |
+| `TestStoreOverflowPublicationLinearizes/before-publish/lock-order` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreOverflowPublicationLinearizes/before-publish/atomic-publication` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreCancellationStopsAcceptance/after-stop/exactly-once` | `GF-T8-LIFECYCLE` |
+| `TestStoreCancellationStopsAcceptance/after-stop/lock-free` | `GF-T8-LIFECYCLE` |
+| `TestStoreCancellationStopsAcceptance/after-stop/after-disable` | `GF-T8-LIFECYCLE`, `GF-T8-SCHEDULER` |
+| `TestStoreCancellationStopsAcceptance/after-stop/before-disposal` | `GF-T8-LIFECYCLE`, `GF-T8-QUEUE` |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-queue` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-mutation` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots/lock-order` | `GF-T8-PUBLICATION`, `GF-T8-PIN`, `GF-T8-LIFECYCLE` |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-sort-omit` | `GF-T8-DIAGNOSTIC` |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-sort-reverse` | `GF-T8-DIAGNOSTIC` |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error` | `GF-T8-LIFECYCLE`, `GF-T8-DIAGNOSTIC`, `GF-T8-ERROR-TYPE`, `GF-T8-STATS` |
+| `TestStorePublishBeforeRun/initial-generation` | `GF-T8-PIN`, `GF-T8-PUBLICATION` |
+| `TestStorePublishBeforeRun/initial-generation/skip-publication` | `GF-T8-PIN`, `GF-T8-PUBLICATION` |
+| `TestStorePublishBeforeRun/initial-generation/snapshots-zero` | `GF-T8-PUBLICATION`, `GF-T8-STATS` |
+| `TestStorePublicationDoesNotMutateEarlierBorrow/distinct-publication` | `GF-T8-PUBLICATION`, `GF-T8-STATS` |
+| `TestStoreStatsExactShapeAndAccounting/shape-add` | `GF-T8-STATS` |
+| `TestStoreStatsExactShapeAndAccounting/shape-omit` | `GF-T8-STATS` |
+| `TestStoreStatsExactShapeAndAccounting/equation` | `GF-T8-STATS`, `GF-T8-QUEUE`, `GF-T8-LIFECYCLE` |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/long-identity-charge` | `GF-T8-QUEUE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreClonesBeforeReturn/helper-clone-error` | `GF-T8-INGRESS`, `GF-T8-ERROR-TYPE` |
+| `TestStoreClonesBeforeReturn/helper-validation-error` | `GF-T8-INGRESS`, `GF-T8-ERROR-TYPE` |
+| `TestStoreDuplicateDispositionAndStats/successful-derivation-order` | `GF-T8-INGRESS`, `GF-T8-QUEUE` |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/once` | `GF-T8-PIN`, `GF-T8-PUBLICATION` |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/zero-rejection` | `GF-T8-PIN`, `GF-T8-ERROR-TYPE` |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/once` | `GF-T8-INGRESS`, `GF-T8-QUEUE` |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/publish-at` | `GF-T8-INGRESS`, `GF-T8-DIAGNOSTIC`, `GF-T8-ERROR-TYPE` |
+| `TestStoreOverflowFirstDetectionTimeStable/clock-now/zero-rejection` | `GF-T8-INGRESS`, `GF-T8-ERROR-TYPE`, `GF-T8-QUEUE`, `GF-T8-STATS` |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/once` | `GF-T8-QUEUE`, `GF-T8-SCHEDULER` |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/received-at` | `GF-T8-QUEUE`, `GF-T8-SCHEDULER` |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/zero-rejection` | `GF-T8-LIFECYCLE`, `GF-T8-ERROR-TYPE` |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-prepare/clock-once` | `GF-T8-DIAGNOSTIC`, `GF-T8-SCHEDULER` |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-clock/generation-time` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreUsesOneShotTimersWithoutReset/advance/clock-once` | `GF-T8-SCHEDULER` |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned/clock-once` | `GF-T8-PIN`, `GF-T8-SCHEDULER` |
+| `TestStoreSemanticDeadlinePreemptsBatch/deadline-source` | `GF-T8-SCHEDULER`, `GF-T8-ERROR-TYPE` |
+| `TestStoreUnknownInvariantStopsRun/advance-clock-zero` | `GF-T8-SCHEDULER`, `GF-T8-LIFECYCLE`, `GF-T8-ERROR-TYPE`, `GF-T8-STATS` |
+| `TestStoreExpectedAdmissionErrorContinues/pending-prepare-clock-zero` | `GF-T8-DIAGNOSTIC`, `GF-T8-LIFECYCLE`, `GF-T8-ERROR-TYPE`, `GF-T8-STATS` |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned-clock-zero` | `GF-T8-PIN`, `GF-T8-ERROR-TYPE` |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error/clock-zero` | `GF-T8-DIAGNOSTIC`, `GF-T8-LIFECYCLE`, `GF-T8-ERROR-TYPE`, `GF-T8-STATS` |
+| `TestStoreUsesOneShotTimersWithoutReset/timer-payload` | `GF-T8-SCHEDULER` |
+
+### Task 8 Coverage Matrix (Phase A fence)
+
+Every one of the 41 frozen top-level Store tests is mapped below. Scheduler,
+pin, hook, lock-order, and error-path cases are subrows and do not add names.
+
+| Exact test | Task8 risk groups |
+|---|---|
+| `TestStoreDefaultLimits` | `GF-T8-QUEUE` |
+| `TestStoreExactQueuePartition` | `GF-T8-QUEUE` |
+| `TestStoreQueuedByteLimit` | `GF-T8-QUEUE`, `GF-T8-STATS` |
+| `TestStoreInvalidConfigRejected` | `GF-T8-QUEUE`, `GF-T8-ERROR-TYPE` |
+| `TestStorePublishBeforeRun` | `GF-T8-LIFECYCLE`, `GF-T8-PIN`, `GF-T8-PUBLICATION` |
+| `TestStoreSecondRunRejected` | `GF-T8-LIFECYCLE`, `GF-T8-ERROR-TYPE` |
+| `TestStorePublishRejectedWhileStopping` | `GF-T8-LIFECYCLE`, `GF-T8-PIN` |
+| `TestStorePublishRejectedAfterStopped` | `GF-T8-LIFECYCLE`, `GF-T8-PIN` |
+| `TestStoreChannelsNeverClose` | `GF-T8-LIFECYCLE` |
+| `TestStoreClassifiesCriticalEvents` | `GF-T8-INGRESS` |
+| `TestStoreClassifiesNormalEvents` | `GF-T8-INGRESS` |
+| `TestStoreClonesBeforeReturn` | `GF-T8-INGRESS`, `GF-T8-QUEUE` |
+| `TestStoreDuplicateDispositionAndStats` | `GF-T8-INGRESS`, `GF-T8-ERROR-TYPE`, `GF-T8-STATS` |
+| `TestStoreCoalescesOnlySafeReplacement` | `GF-T8-INGRESS`, `GF-T8-QUEUE` |
+| `TestStoreCollisionQueuesDiagnostic` | `GF-T8-INGRESS`, `GF-T8-DIAGNOSTIC`, `GF-T8-ERROR-TYPE` |
+| `TestStoreNormalOverflowLedger` | `GF-T8-QUEUE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreCriticalOverflowLedger` | `GF-T8-QUEUE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreOverflowPublicationLinearizes` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreOverflowFirstDetectionTimeStable` | `GF-T8-DIAGNOSTIC` |
+| `TestStoreFairnessThirtyTwoToOne` | `GF-T8-SCHEDULER` |
+| `TestStoreBatchPublishesAtHundredMilliseconds` | `GF-T8-SCHEDULER`, `GF-T8-PUBLICATION` |
+| `TestStoreSemanticDeadlinePreemptsBatch` | `GF-T8-SCHEDULER`, `GF-T8-ERROR-TYPE` |
+| `TestStoreDrainsReadyBeforeAdvance` | `GF-T8-SCHEDULER` |
+| `TestStoreUsesOneShotTimersWithoutReset` | `GF-T8-SCHEDULER`, `GF-T8-PIN` |
+| `TestStoreCancellationStopsAcceptance` | `GF-T8-LIFECYCLE` |
+| `TestStoreCancellationDropsQueuedSemantics` | `GF-T8-LIFECYCLE`, `GF-T8-QUEUE` |
+| `TestStoreAlreadyCanceledRunFinalizes` | `GF-T8-LIFECYCLE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreCancellationPublishesFinalDiagnostics` | `GF-T8-LIFECYCLE`, `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreExpectedAdmissionErrorContinues` | `GF-T8-ERROR-TYPE`, `GF-T8-SCHEDULER`, `GF-T8-PIN` |
+| `TestStoreUnknownInvariantStopsRun` | `GF-T8-ERROR-TYPE`, `GF-T8-LIFECYCLE` |
+| `TestStorePublicationDoesNotMutateEarlierBorrow` | `GF-T8-PUBLICATION`, `GF-T8-PIN` |
+| `TestStoreRetainsAtMostPreviousSnapshot` | `GF-T8-PUBLICATION` |
+| `TestStoreQueueChargeIncludesInflight` | `GF-T8-QUEUE`, `GF-T8-LIFECYCLE` |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded` | `GF-T8-QUEUE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic` | `GF-T8-DIAGNOSTIC`, `GF-T8-PUBLICATION` |
+| `TestStoreOversizeEventRejected` | `GF-T8-QUEUE`, `GF-T8-ERROR-TYPE` |
+| `TestStoreCoalescingGrowthDropsNewer` | `GF-T8-INGRESS`, `GF-T8-QUEUE`, `GF-T8-DIAGNOSTIC` |
+| `TestStoreInvariantAbortAccountsQueued` | `GF-T8-LIFECYCLE`, `GF-T8-DIAGNOSTIC`, `GF-T8-STATS` |
+| `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration` | `GF-T8-DIAGNOSTIC`, `GF-T8-ERROR-TYPE`, `GF-T8-PUBLICATION` |
+| `TestStoreStatsExactShapeAndAccounting` | `GF-T8-STATS` |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots` | `GF-T8-PUBLICATION`, `GF-T8-PIN`, `GF-T8-LIFECYCLE` |
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.
@@ -720,17 +1009,17 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-STATE-HEALTH-1` | `graph.TestReconcileHookExpiryFallsBackToNative`, `graph.TestReconcileRejectsOldIncarnationEvent` |
 | `GF-GHOST-1` | `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`, `graph.TestReconcileGhostPinAfterDeadline` |
 | `GF-BOUND-1` | `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestProcessIdentityRejectsPartialIdentity` |
-| `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowPublishesGap` |
+| `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowLedger` |
 | `GF-BOUND-3` | `graph.TestReconcileTransitionsCapAt256PerNode` |
 | `GF-EVENT-1` | `graph.TestEventKindPayloadCartesianClosed`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud`, `graph.TestCloneEventRejectsInvalidPayloadShapes` |
 | `GF-JSON-1` | `snapshot.TestSchema2RequiresNonNullArrays`, `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`, `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument` |
-| `GF-CONC-1` | `graph.TestStorePublishesSnapshotsAtomically`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
+| `GF-CONC-1` | `graph.TestStoreOverflowPublicationLinearizes`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
 | `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep` |
 | `GF-REPLAY-1` | `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventReplayAndCollisionComposition`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
 | `GF-REPLAY-2` | `graph.TestObservationDedupTimestampFirst`, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
 | `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
 | `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged` |
-| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreStopsOnContextCancellation` |
+| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
 | `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor` |
 
 ### Task 7 Coverage Matrix (Phase A fence)

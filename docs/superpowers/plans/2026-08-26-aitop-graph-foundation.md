@@ -503,6 +503,8 @@ var ErrRevisionExhausted = errors.New("graph revision exhausted")
 var ErrEventTooLarge = errors.New("event exceeds queued byte limit")
 var ErrAdmission = errors.New("graph admission rejected")
 var ErrGhostExpired = errors.New("graph ghost deadline passed")
+var ErrStoreAlreadyRun = errors.New("store already run")
+var ErrStoreNotAccepting = errors.New("store not accepting")
 
 type AdmissionKind string
 
@@ -608,15 +610,39 @@ func (s *Store) Snapshot() *Snapshot
 func (s *Store) Stats() StoreStats
 ```
 
+The Store declarations above are a public API freeze, not illustrative pseudocode.
+`DefaultStoreConfig` returns exactly `8192/2048/8 MiB`; `PublishRejected` is a
+nonzero disposition and the remaining dispositions follow the declared order.
+`ErrStoreAlreadyRun` and `ErrStoreNotAccepting` are stable lifecycle sentinels
+that remain discoverable through `errors.Is`. A collision is a typed
+`*AdmissionError` with `Kind == AdmissionCollision`, discoverable through both
+`errors.As` and `errors.Is(err, ErrAdmission)`. `NewStore` rejects nil
+Reconciler, `EventQueue < 2`, `CriticalReserve <= 0`,
+`CriticalReserve >= EventQueue`, or `QueuedByteLimit < 1104` before transferring
+any Reconciler ownership. Failed construction leaves the caller as owner.
+
 `AdmissionKind.Valid` accepts only the declared constants. `AdmissionError.Error`
 returns only the fixed text `graph admission rejected: <kind>` for a declared
 kind and `graph admission rejected: unknown` for nil or unknown values. It never
 includes an event, source, actor, path, payload, or wrapped raw error. `Unwrap`
 returns `ErrAdmission` only when the receiver is nonnil and its kind is valid;
-otherwise it returns nil. Store continues only when `errors.Is(err,
-ErrAdmission)`, `errors.As` produces a nonnil `*AdmissionError`, and
+otherwise it returns nil. During normal running, Store continues only when
+`errors.Is(err, ErrAdmission)`, `errors.As` produces a nonnil `*AdmissionError`, and
 `Kind.Valid()` all succeed. A nil or forged unknown AdmissionError is an invariant
 failure and aborts. `AdmissionError` has no identifier or free-text field.
+
+The reachable helper error graph is narrow. `cloneEvent` can fail on an
+unsupported payload before validation, and `Event.Validate` can fail on a
+recognized payload with invalid fields; Store returns each exact safe nonnil
+helper error unwrapped with `PublishRejected` and unchanged state. After
+successful validation, replay-digest and `Fingerprint` derivation are
+deterministic, `CoalesceKey` returns only `(string, bool)`, and
+`canCoalesceReplace` has no reachable Store error because both retained inputs
+were validated (direct invalid-helper calls may still return validation errors).
+Charge saturation and complete-token overflow use the separately frozen
+`ErrEventTooLarge`. No stable sentinel or typed-error promise exists for clone
+or validation beyond their exact safe errors; typed collision and lifecycle
+errors retain their stated identities.
 
 `DefaultReconcileConfig` is exact: `ReorderWindow=2s`, `HookFreshness=6s`,
 `TransitionLimit=256`, `MessageWindow=60s`, `SuccessGhostTTL=5m`,
@@ -1758,6 +1784,11 @@ as committed only after infallible commit and pointer-store of the prevalidated
 generation. A fatal prepare error instead follows the already-frozen invariant
 abort path and accounts the discarded counts in `AbortedDiagnostics`.
 
+Canonical diagnostic order is exact: `SourceID` ascending, nil capability before
+present capability, present `Capability` ascending, then `GapKind` ascending.
+The Store uses this order for pending collection, prepare input, commit, and
+published diagnostic slices.
+
 Reconciler owns exactly `current *generation` and `previous *generation`.
 Successful publication assigns the former current to previous and the prepared
 candidate to current, releasing any older generation. `publishedCharge` is the
@@ -2863,31 +2894,54 @@ git commit -m "feat: reconcile graph relationships and lifecycle"
 - Create: `internal/graph/store_test.go`
 - Modify: `tests/RISK_MODEL.md`
 - Modify: `tests/SABOTAGE_LOG.md`
+- Modify: `tests/LOUDNESS_AUDIT.md`
+
+Task8 Phase A is this documentation amendment only. It is committed separately
+at the contract checkpoint. Phase B starts with Store tests and production
+implementation; its final Task8 implementation/evidence commit stages
+`internal/graph/store.go`, `internal/graph/store_test.go`,
+`tests/SABOTAGE_LOG.md`, and `tests/LOUDNESS_AUDIT.md`—exactly four files.
+`tests/RISK_MODEL.md` is Phase A-only and is already committed in this docs
+checkpoint.
 
 - [ ] **Step 1: Amend the risk model and freeze Store coverage**
 
-Before test code, add and map risk rows for queue partitions, ownership, clone
-isolation, coalescing order, fairness, latency, overflow linearization,
-cancellation, and immutable readers. The planned table covers 6144 normal plus
-2048 critical, invalid config, one Run, Publish
-before Run, never-closed channels, exact classification, clone-before-return,
-safe pair coalescing, duplicate retention, normal/critical drops, canonical
-cumulative gaps, first-drop timestamps, concurrent publication, 100ms maximum
-latency, 32:1 fairness, no recursive Publish, cancellation, readers, and the
-exact `StoreStats` shape with live capacities, depths, pending lanes, accepted,
-rejected, applied, apply errors, canceled/aborted work, drops, and snapshots.
-Reflection freezes every field: normal/critical capacities and depths; coalesced
-pending; pending diagnostic count and bytes; queued byte capacity/depth;
-in-flight bytes; accepted normal/critical; coalesced; duplicates; collisions;
-rejected; applied; apply errors; canceled queued; aborted queued; aborted
-diagnostics; dropped normal/critical; and snapshots.
-The same risk table freezes a later-item diagnostic-batch failure as atomic across
-canonical state, revisions, epochs, and the previously borrowed generation.
+Before test code, add and map the full Task8 eight-axis risk model and nine-prefix
+sweep in `tests/RISK_MODEL.md`. The risk groups are exactly
+`GF-T8-QUEUE`, `GF-T8-INGRESS`, `GF-T8-LIFECYCLE`, `GF-T8-DIAGNOSTIC`,
+`GF-T8-SCHEDULER`, `GF-T8-ERROR-TYPE`, `GF-T8-PIN`, `GF-T8-PUBLICATION`, and
+`GF-T8-STATS`. The model covers queue partitions and byte ownership, ingress
+clone/fingerprint/classification/order, coalescing and duplicate/collision
+precedence, one Run and never-closed channels, hook and cancellation
+linearization, canonical diagnostic batches, expected versus invariant errors,
+deadlines/fairness/100ms latency, pin ownership, immutable generation
+publication, and every `StoreStats` field.
+
+The public declarations are frozen exactly: `StoreConfig{EventQueue int,
+CriticalReserve int, QueuedByteLimit uint64}`, defaults `8192/2048/8 MiB`,
+nonzero `PublishRejected` followed by `AcceptedCritical`, `AcceptedNormal`,
+`Coalesced`, `Duplicate`, `DroppedNormal`, and `DroppedCritical`, and the exact
+24-field `StoreStats` shape already declared above. `ErrStoreAlreadyRun` and
+`ErrStoreNotAccepting` are `errors.Is`-stable. Config validation rejects nil
+Reconciler, `EventQueue < 2`, `0 < CriticalReserve < EventQueue` violations, or
+queued limit below the fixed 1104-byte diagnostic reserve without transferring
+ownership.
 
 Critical events are node, relationship, exit, gap, launch intent, session bind,
-and terminal state. Normal events are metrics, nonterminal state, heartbeat, and
+and terminal state; normal events are metrics, nonterminal state, heartbeat, and
 message. Messages never coalesce. No animation Event exists; animation shedding
-is deferred.
+is deferred. The exact classification matrix, including terminal versus
+nonterminal StateObserved, is a contract and has no top-level test additions.
+
+The byte schedule is literal: event token `128+chargeEvent(event)`; queued and
+in-flight replay entry 128; queued-only eligible-coalesce entry 128; arbitrary
+pending diagnostic entry `chargeActiveGapEntry(key, gap)` including dynamic
+SourceID/capability. Only fixed normal, critical, and catch-all nil-capability
+reserve identities are exactly 368 bytes each; reserve is exactly
+`3*368 == 1104`, and unused reserve is not depth. `ErrEventTooLarge` applies only when the complete single token exceeds
+the total limit or saturates. A total-fitting token lost to aggregate capacity
+is a normal/critical drop. Replay covers queued plus in-flight only; in-flight
+work is not coalescible.
 
 Freeze these 41 exact tests and map each to a risk row and sabotage row:
 
@@ -2940,11 +2994,11 @@ tests; it does not add top-level names:
 
 | Existing test | Additional scheduler assertion |
 |---|---|
-| `TestStoreSemanticDeadlinePreemptsBatch` | At semantic deadline `D`, ready work drains before `Advance(D)`. If `Advance(D)` returns an expected admission error while committing its permitted diagnostic, Store remembers `D` and schedules `nextDeadline(D)`, never retrying equal `D` in a busy loop. |
+| `TestStoreSemanticDeadlinePreemptsBatch` | At semantic deadline `D`, ready work drains before `Advance(D)`. During normal running, if `Advance(D)` returns an expected admission error while committing its permitted diagnostic, Store remembers `D` and schedules `nextDeadline(D)`, never retrying equal `D` in a busy loop. |
 | `TestStoreDrainsReadyBeforeAdvance` | A ready critical/normal item is applied before `Advance` at an exact deadline, and the scheduler still makes progress when the first due `Advance` produces an expected diagnostic. |
 | `TestStoreFairnessThirtyTwoToOne` | Sustained critical ingress cannot starve a ready normal event; the 32:1 bound remains true while semantic deadlines and expected diagnostics are serviced. |
 | `TestStoreUsesOneShotTimersWithoutReset` | The timer log shows one-shot timers only. The expected-admission path selects the next distinct deadline through `nextDeadline(D)` and does not reset or re-arm at equal `D`. |
-| `TestStoreExpectedAdmissionErrorContinues` | An expected `Advance(D)` admission continues Run after publishing its diagnostic. New ingress resets the exclusive cursor, and a later expiry credit can unblock and admit the previously rejected work. |
+| `TestStoreExpectedAdmissionErrorContinues` | During normal running, an expected `Advance(D)` admission continues Run after publishing its diagnostic. New ingress resets the exclusive cursor, and a later expiry credit can unblock and admit the previously rejected work. |
 
 Store pin and ownership coverage is also strengthened as subrows of existing
 tests; it does not add top-level names:
@@ -2959,38 +3013,212 @@ tests; it does not add top-level names:
 | `TestStoreExpectedAdmissionErrorContinues` | `SetPinned` unpins an overdue ghost through the Store, publishes full cleanup before return, and preserves the atomic error/no-publication path for an overdue new pin. |
 | `TestStoreConcurrentReadersSeeImmutableSnapshots` | `SetPinned`, Run `Apply`, and Run `Advance` share the Store mutation mutex; concurrent readers see immutable generations and no race. |
 
+Hooks, lock order, generation, and diagnostic-sort coverage are additional
+subrows of the existing names:
+
+| Existing test subrow | Required assertion |
+|---|---|
+| `TestStoreQueueChargeIncludesInflight/before-apply/charged-inflight` | `BeforeApply` observes the event charged in-flight before the hook returns. |
+| `TestStoreQueueChargeIncludesInflight/before-apply/lock-free` | `BeforeApply` runs with no Store lock held. |
+| `TestStoreQueueChargeIncludesInflight/before-apply/cancel-adjacent` | `BeforeApply` runs immediately before the cancellation check and final recheck. |
+| `TestStoreOverflowPublicationLinearizes/before-publish/lock-order` | `BeforePublish` observes the required mutation -> queue -> publication lock order. |
+| `TestStoreOverflowPublicationLinearizes/before-publish/atomic-publication` | `BeforePublish` covers prepare, commit, pointer-store, counters, and committed-clear as one publication protocol. |
+| `TestStoreCancellationStopsAcceptance/after-stop/exactly-once` | `AfterStop` runs exactly once after acceptance and timer disable. |
+| `TestStoreCancellationStopsAcceptance/after-stop/lock-free` | `AfterStop` runs with no Store lock held. |
+| `TestStoreCancellationStopsAcceptance/after-stop/after-disable` | `AfterStop` observes acceptance stopped and no live timer. |
+| `TestStoreCancellationStopsAcceptance/after-stop/before-disposal` | `AfterStop` runs before owned resource disposal. |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-queue` | Mutation -> queue -> publication is the only nested lock order; a queue-only path releases and revalidates before nesting into publication. |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-mutation` | Mutation -> queue -> publication is the only nested lock order; a queue-only path releases and revalidates before nesting into mutation. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots/lock-order` | Concurrent SetPinned, Apply, Advance, and Snapshot readers prove the same lock order and immutable generation boundary. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-sort` | A deliberately noncanonical pending set succeeds; an independent oracle checks both prepare input and published output in canonical SourceID, nil-capability, capability, GapKind order. |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error` | A valid `AdmissionError` from final diagnostic preparation during cancellation is terminal: no retry, original error identity, stopped state, no publication, cleared dynamic charge, exact `AbortedQueued`, and exact `AbortedDiagnostics`. |
+| `TestStorePublishBeforeRun/initial-generation` | NewStore atomically installs the initial generation and reports `Snapshots == 1`; construction never counts a duplicate pointer. |
+| `TestStorePublishBeforeRun/initial-generation/skip-publication` | The positive test requires an initial generation pointer and its initial publication time after NewStore. |
+| `TestStorePublishBeforeRun/initial-generation/snapshots-zero` | The positive test requires `Snapshots == 1` after NewStore. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow/distinct-publication` | Snapshots increments only for a distinct generation pointer, including pin publication; idempotent calls do not increment it. |
+| `TestStoreStatsExactShapeAndAccounting/shape` | Reflection accepts exactly the frozen 24 fields and rejects additions and omissions, while retaining the same fixture/action for each shape subcase. |
+| `TestStoreStatsExactShapeAndAccounting/equation` | The literal unsaturated accepted-work equation holds, including a pre-Apply canceled in-flight event counted as `CanceledQueued`. |
+| `TestStoreClonesBeforeReturn/helper-clone-error` | Unsupported payload clone failure returns PublishRejected plus the exact safe nonnil clone error unwrapped; the independent direct-helper oracle checks type/message/value and unchanged state. |
+| `TestStoreClonesBeforeReturn/helper-validation-error` | Recognized-payload validation failure returns PublishRejected plus the exact safe nonnil validation error unwrapped; the independent direct-helper oracle checks type/message/value and unchanged state. |
+| `TestStoreDuplicateDispositionAndStats/successful-derivation-order` | Successful replay-digest, Fingerprint, and CoalesceKey derivations complete before retention; no independent post-validation helper error is promised. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/long-identity-charge` | A long SourceID with present capability uses its complete dynamic `chargeActiveGapEntry(key, gap)`; an independent literal oracle spells the exact expected byte delta and does not use the fixed 368-byte reserve. |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/once` | NewStore samples `Clock.Now` exactly once for construction and uses that nonzero sample for the initial Snapshot. |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/zero-rejection` | A zero construction clock sample rejects NewStore without ownership transfer. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/once` | Every valid Publish decision samples `Clock.Now` exactly once after pure charge/key work. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/publish-at` | Collision/drop/catchall `firstAt` equals the Publish clock sample, never `Event.ReceivedAt`. |
+| `TestStoreOverflowFirstDetectionTimeStable/clock-now/zero-rejection` | A zero Publish clock sample is sampled exactly once and returns `PublishRejected` with exact Error text `graph store clock rule violated: now=zero`; no errors.Is-stable identity, event/replay/coalesce/diagnostic/generation/byte retention, and exactly one Rejected increment are allowed. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/once` | Each dequeued Apply samples `Clock.Now` once after the final cancellation recheck and passes the same sample to Reconciler and firstDirty. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/received-at` | Apply and firstDirty use the sampled Store clock, never `Event.ReceivedAt`. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/zero-rejection` | A zero Apply clock sample is a fatal invariant before Apply and enters abort accounting. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-prepare/clock-once` | One normal/cancellation diagnostic-prepare operation samples `Clock.Now` exactly once. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-clock/generation-time` | Diagnostic preparation uses its sample only as generation time; pending Gap.At remains the first Publish decision sample. |
+| `TestStoreUsesOneShotTimersWithoutReset/advance/clock-once` | One scheduled semantic firing samples readiness `Clock.Now` exactly once, then calls `Advance(D)` with the deadline from `nextDeadline(after)`. |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned/clock-once` | One SetPinned operation samples `Clock.Now` exactly once and passes that sample to Reconciler SetPinned. |
+| `TestStoreSemanticDeadlinePreemptsBatch/deadline-source` | Semantic D comes exclusively from `nextDeadline(after)`; readiness time and timer payload never become D, and due work calls `Advance(D)`. |
+| `TestStoreUnknownInvariantStopsRun/advance-clock-zero` | A zero Advance operation clock sample is a fatal non-admission invariant; no Advance call or publication occurs, Run returns the exact clock error, queued work becomes AbortedQueued, pending logical counts become AbortedDiagnostics, and ApplyErrors is unchanged. |
+| `TestStoreExpectedAdmissionErrorContinues/pending-prepare-clock-zero` | A zero normal-running pending-diagnostic prepare clock sample is a fatal invariant; no prepare or publication occurs, Run returns the exact clock error, and abort counters are exact. |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned-clock-zero` | A zero Store.SetPinned clock sample in open/running returns a safe nonnil caller error only; no Reconciler, generation, cursor, wake, stats, or lifecycle state changes and Run keeps running. |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error/clock-zero` | A zero cancellation-time final diagnostic prepare sample is terminal finalization failure; Store stops without publication, clears charge, maps pending and unattempted/pre-Apply work to aborted counters, and returns the exact clock error. |
+| `TestStoreUsesOneShotTimersWithoutReset/timer-payload` | Timer payload is wake-only; semantic D comes exclusively from `nextDeadline(after)`, readiness and other operation samples come from `Clock.Now`, `now >= D` calls `Advance(D)`, and the scheduler never calls `Advance(now)` or `Advance(timerPayload)`. |
+
+There are exactly 41 top-level Store tests. Scheduler, pin, hook, lock-order,
+and error-path cases are subrows of those names; no top-level helper or extra
+`TestStore...` name is permitted. This Phase A checkpoint changes only these
+contract documents; it does not create or alter `store.go` or `store_test.go`.
+
 - [ ] **Step 2: Write the failing Store tests**
 
 Write the mapped table using a manual clock and barriers, never sleeps, and make
-no production changes.
+no production changes. Test-only timer probes may expose a poison `Reset` method
+to fail if production attempts a reset; the production `storeTimer` interface
+contains only `C() <-chan time.Time` and `Stop() bool`.
 
 - [ ] **Step 3: Verify RED**
 
-First prove the executable Store manifest contains exactly the 41 frozen names:
+First source-parse the exact test declarations before Store production compiles.
+Run the self-contained parser/AST program in the RED block below (with
+`store_test.go` as its argument), before writing Store production code; the
+Step6 helper is separately rerun for the final fence. It is not a line regex:
+it collects only
+receiverless top-level `*ast.FuncDecl` names, so comment-only names and malformed
+multiline lookalikes do not count; exact sorted equality rejects missing,
+duplicate, or extra declarations. Only after that source fence, run the
+anchored 41-test RED command. A source declaration mismatch blocks RED even when
+the package has no Store production file yet.
+
+The RED source fence is self-contained and runs before any Store production
+compilation. It does not depend on the later sabotage hash setup or on a
+`store.go` file. The temporary helper parses the existing `store_test.go` with
+the Go AST, compares receiverless top-level declarations to the literal sorted
+41-name set, prints the names, and rejects comment-only names, malformed
+multiline lookalikes, duplicates, and extras before cleaning its own directory.
 
 ```bash
-test "$(go test ./internal/graph -list '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' | rg -c '^TestStore')" -eq 41
+red_manifest_dir=$(mktemp -d)
+trap 'rm -rf "$red_manifest_dir"' EXIT
+cat > "$red_manifest_dir/main.go" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"reflect"
+	"sort"
+	"strings"
+)
+
+const wantText = `TestStoreDefaultLimits
+TestStoreExactQueuePartition
+TestStoreQueuedByteLimit
+TestStoreInvalidConfigRejected
+TestStorePublishBeforeRun
+TestStoreSecondRunRejected
+TestStorePublishRejectedWhileStopping
+TestStorePublishRejectedAfterStopped
+TestStoreChannelsNeverClose
+TestStoreClassifiesCriticalEvents
+TestStoreClassifiesNormalEvents
+TestStoreClonesBeforeReturn
+TestStoreDuplicateDispositionAndStats
+TestStoreCoalescesOnlySafeReplacement
+TestStoreCollisionQueuesDiagnostic
+TestStoreNormalOverflowLedger
+TestStoreCriticalOverflowLedger
+TestStoreOverflowPublicationLinearizes
+TestStoreOverflowFirstDetectionTimeStable
+TestStoreFairnessThirtyTwoToOne
+TestStoreBatchPublishesAtHundredMilliseconds
+TestStoreSemanticDeadlinePreemptsBatch
+TestStoreDrainsReadyBeforeAdvance
+TestStoreUsesOneShotTimersWithoutReset
+TestStoreCancellationStopsAcceptance
+TestStoreCancellationDropsQueuedSemantics
+TestStoreAlreadyCanceledRunFinalizes
+TestStoreCancellationPublishesFinalDiagnostics
+TestStoreExpectedAdmissionErrorContinues
+TestStoreUnknownInvariantStopsRun
+TestStorePublicationDoesNotMutateEarlierBorrow
+TestStoreRetainsAtMostPreviousSnapshot
+TestStoreQueueChargeIncludesInflight
+TestStorePendingDiagnosticFloodBeforeRunIsBounded
+TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic
+TestStoreOversizeEventRejected
+TestStoreCoalescingGrowthDropsNewer
+TestStoreInvariantAbortAccountsQueued
+TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration
+TestStoreStatsExactShapeAndAccounting
+TestStoreConcurrentReadersSeeImmutableSnapshots`
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: check-store-manifest store_test.go")
+		os.Exit(2)
+	}
+	want := strings.Fields(wantText)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, os.Args[1], nil, parser.ParseComments)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	got := make([]string, 0, len(file.Decls))
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name != nil && strings.HasPrefix(fn.Name.Name, "TestStore") {
+			got = append(got, fn.Name.Name)
+		}
+	}
+	sort.Strings(want)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		fmt.Fprintf(os.Stderr, "Store manifest mismatch: got=%v want=%v\\n", got, want)
+		os.Exit(1)
+	}
+	for _, name := range got {
+		fmt.Println(name)
+	}
+}
+EOF
+go build -o "$red_manifest_dir/check-store-manifest" "$red_manifest_dir/main.go"
+"$red_manifest_dir/check-store-manifest" internal/graph/store_test.go > "$red_manifest_dir/ast-names"
+test "$(wc -l < "$red_manifest_dir/ast-names")" -eq 41
+rm -rf "$red_manifest_dir"
+trap - EXIT
 ```
 
-Run: `go test ./internal/graph -run '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' -count=1`
+```bash
+go test ./internal/graph -run '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' -count=1
+```
 
 - [ ] **Step 4: Implement the bounded store**
 
 `NewStore` validates config and returns `(*Store, error)`. Defaults are 8192 total,
 2048 critical, and 8 MiB queued logical bytes. Queue charge includes cloned
 events, pending-lane map entries, pending diagnostic entries, and the in-flight
-event until its Apply finishes.
+event until its Apply finishes. The exact schedule is `token=128+chargeEvent`
+per event, replay entry 128 while queued/in-flight, eligible coalescing entry 128
+while queued-only, and arbitrary pending diagnostic
+`chargeActiveGapEntry(key, gap)` including dynamic SourceID/capability. Only the
+fixed normal, critical, and catch-all nil-capability reserve identities charge
+exactly 368 bytes each, 1104 total; unused reserve never appears in queue depth.
+Complete one-event token overflow
+or arithmetic saturation returns `ErrEventTooLarge`; aggregate shortage for a
+token that fits drops the event and opens its normal/critical saturation ledger.
+Charge tests use independent literal oracles, never production helpers.
 
-`pendingDiagnostics` is keyed by gap identity and charged to QueuedByteLimit,
-including Publish before Run. Ordinary unique identities are capped at
-`MaxGaps-3`. If a new identity or its bytes cannot fit, Store allocates nothing
+`pendingDiagnostics` is keyed by gap identity and charged to QueuedByteLimit by
+the complete dynamic `chargeActiveGapEntry(key, gap)`, including Publish before
+Run. Ordinary unique identities are capped at `MaxGaps-3`. If a new identity or its bytes cannot fit, Store allocates nothing
 and increments the fixed pending
 `(SourceAITopGapLedger,nil,GapResource)` catchall count/firstAt; its charge is
 reserved in queue budget. Existing identity and catchall counts saturate at the
 safe integer ceiling. An existing coalescing token wakes Run, so diagnostics add
 no wakeup channel.
 
-Clock and lifecycle seams are private and exact:
+Clock, hooks, and lifecycle seams are private and exact:
 
 ```go
 const storeMaxBatchLatency = 100 * time.Millisecond
@@ -3015,19 +3243,87 @@ type storeRuntime struct {
 func newStore(StoreConfig, *Reconciler, storeRuntime) (*Store, error)
 ```
 
-Production uses a real clock; tests inject a manual clock and barriers. Timers are
-one-shot and never call `Reset`. Reconciler exposes private
-`nextDeadline(after time.Time) (time.Time, bool)` with an exclusive cursor. The
-next timer is the earliest of the first-dirty 100ms deadline and semantic expiry.
-Ready critical/normal work drains under 32:1 fairness before `Advance` at an exact
-deadline. After ready work drains, when `Advance(D)` returns an expected typed
-admission error and commits its permitted diagnostic, Store publishes that
-diagnostic, remembers `D`, and asks `nextDeadline(D)` for the next distinct
-deadline, so it does not busy-loop on the same due deadline. New event ingress
-resets the cursor after insertion, allowing a later expiry credit to unblock the
-previously rejected work when `D` is reconsidered.
+Clock ownership is exact. `NewStore` samples `Clock.Now` once. A zero sample
+returns a safe construction error and transfers no ownership; a nonzero sample
+is passed to `r.Snapshot(constructionNow)`, whose generation is atomically
+exposed as Store's initial publication while `r.current` tracks that published
+generation. The initial Snapshot has nonzero `At` and `Snapshots == 1`. Every
+Store-owned zero `Clock.Now` sample returns or propagates an error whose exact
+safe `Error()` text is `graph store clock rule violated: now=zero`; no stable
+concrete type or `errors.Is` identity is promised.
 
-`NewStore` transfers exclusive Reconciler mutation ownership to Store. Store holds
+For each Publish that reaches a decision after pure clone, validation, replay /
+fingerprint, coalesce-key, and complete-charge work, Store samples `Clock.Now`
+exactly once. A zero sample returns `PublishRejected` with a safe nonnil clock
+error, increments `Rejected` only, and retains neither event nor diagnostic.
+Store-created collision/drop/catch-all `firstAt` is that sample, never
+`Event.ReceivedAt`. Reachable helper failures are only unsupported-payload
+`cloneEvent` and recognized-payload `Event.Validate`; each returns
+`PublishRejected` plus the exact safe error unwrapped. Replay-digest and
+Fingerprint derivation are deterministic after validation, CoalesceKey returns
+`(string, bool)` without an error, validated canCoalesceReplace has no reachable
+Store error, and charge saturation is `ErrEventTooLarge`. Tests use independent
+direct-helper type/message/value oracles for clone and validation and retain
+successful derivation-before-retention coverage for the other helpers.
+
+The only nested lock order is mutation -> queue -> publication. A queue-only
+path releases queue before revalidating lifecycle and ownership and then nesting
+into mutation or publication. `BeforeApply` runs after in-flight charge and
+before cancellation check, with no lock held. The cancellation check is
+adjacent to the hook and is repeated as the final pre-Apply recheck;
+cancellation winning there counts `CanceledQueued`. `BeforePublish` runs with the
+required locks held around prepare, commit, pointer-store, counters, and
+committed-clear. `AfterStop` runs once after stopping disables acceptance and
+timers, with no lock held and before owned resources are disposed.
+
+Production uses a real clock; tests inject a manual clock and barriers. Timers are
+one-shot and never call `Reset`; a test-only poison timer may implement `Reset`
+solely to fail if an implementation attempts it, while production cannot depend
+on that method because it is outside `storeTimer`. Reconciler exposes private
+`nextDeadline(after time.Time) (time.Time, bool)` with an exclusive cursor. The
+next timer is the earlier of the first nonzero unpublished ChangeSet's
+`firstDirty+100ms` and semantic expiry; firstDirty never moves later. Ready
+critical/normal work drains under 32:1 fairness before `Advance` at an exact
+deadline, with saturated critical debt and immediately-serviced late normals.
+Timer checks happen between bounded groups. At D, capture the last accepted
+ordinal, drain through that cutoff, call `Advance(D)`, and keep later ingress
+outside the batch. Publication clears covered dirty state. If normal-running
+`Advance(D)` returns an expected typed admission error, including a zero-change
+result, Store publishes any permitted diagnostic, remembers D, and asks
+`nextDeadline(D)` for
+the next distinct deadline. New ingress resets the cursor after insertion,
+allowing a later expiry credit to unblock previously rejected work.
+
+Semantic `D` comes exclusively from `nextDeadline(after)`; neither a timer
+payload nor the readiness clock sample can become `D`. On every timer or wake,
+Store samples readiness `Clock.Now` exactly once. If `now < D`, it arms a fresh
+one-shot timer for `D-now`; when `now >= D`, it drains and calls `Advance(D)`,
+never `Advance(now)`. That readiness sample is the one clock sample for the
+scheduled Advance operation; Reconciler receives the semantic deadline D.
+
+Each dequeued Apply samples `Clock.Now` once after `BeforeApply` and the final
+cancellation recheck. A zero sample is a fatal invariant before `Apply` and
+enters invariant-abort accounting. Otherwise that same nonzero sample is passed
+to `r.Apply` and seeds `firstDirty` when its ChangeSet is nonzero. Each
+diagnostic preparation, `Advance`, and `SetPinned` samples `Clock.Now` once for
+that operation. A zero `Advance` sample is a fatal non-admission invariant with
+no Advance call or publication; Run returns the exact safe clock error through
+invariant abort, maps queued work to `AbortedQueued`, maps pending logical
+counts to `AbortedDiagnostics`, and leaves `ApplyErrors` unchanged. A zero
+normal-running pending-diagnostic-prepare sample follows the same fatal
+no-prepare/no-publication abort and returns the clock error. A zero SetPinned
+sample in open or running returns a safe nonnil clock error to the caller only;
+it changes no Reconciler, generation, cursor, wake, stats, or lifecycle state and
+Run keeps running. A zero cancellation-time final prepare sample is terminal
+finalization failure: Store stops, publishes nothing, maps pending and
+unattempted/pre-Apply in-flight work to the two aborted counters, clears charge,
+and returns the exact clock error. Pending `Gap.At` remains the first Publish
+decision sample; diagnostic prepare uses its sample only as generation time.
+Timer payloads are wake signals and never substitute for the scheduled deadline
+or a Store clock sample.
+
+`NewStore` atomically installs the initial generation (`Snapshots=1`) and
+transfers exclusive Reconciler mutation ownership to Store. Store holds
 one mutation mutex shared by Run's `Apply`/`Advance` calls and
 `Store.SetPinned`; callers do not invoke those Reconciler mutators directly after
 transfer. `Store.SetPinned` is legal in open or running state, uses
@@ -3039,22 +3335,36 @@ error, including `ErrGhostExpired`, leaves canonical state, generation, revision
 and timer state unchanged.
 
 Store states are open, running, stopping, and stopped. Publish is legal while
-open, exactly one Run transitions open to running, and a second Run errors.
-Stopping or stopped rejects Publish. Channels never close. Cancellation moves to
-stopping under the queue mutex, stops acceptance and timer, does not apply queued
+open, exactly one Run transitions open to running, and every later Run call,
+including after stopped, returns `ErrStoreAlreadyRun`. Publish while stopping
+or stopped returns `PublishRejected` with `ErrStoreNotAccepting`; SetPinned has
+the same exact lifecycle error. Channels never close. Cancellation linearizes
+running -> stopping under the
+queue mutex, stops acceptance and timer, does not apply queued or BeforeApply
 semantics, and accounts and clears queued/in-flight charges. It passes the full
-sorted pending diagnostic set to `prepareStoreDiagnostics`, commits the one
-prevalidated transaction, pointer-stores its candidate generation, then clears
-the committed pending counts and marks stopped. Expected context cancellation
-returns nil after successful batch commit. If prepare hits fatal revision
-exhaustion, use invariant-abort behavior and return `ErrRevisionExhausted`. An
-already-canceled Run follows the same rule.
+sorted pending diagnostic set to `prepareStoreDiagnostics`, prepares and commits
+once, pointer-stores its candidate generation once, then clears only committed
+pending counts and marks stopped. Expected context cancellation returns nil
+after complete batch success only. Any nonnil `prepareStoreDiagnostics` error,
+including a valid `AdmissionError`, is terminal once stopping begins: Store does
+not retry, publishes nothing, maps all pending logical counts to
+`AbortedDiagnostics`, maps unattempted queued and pre-Apply in-flight work to
+`AbortedQueued`, clears dynamic charges, marks stopped, and returns that original
+error. A pre-Apply in-flight event canceled before Apply is included in
+`CanceledQueued` on successful cancellation. An already-canceled Run follows
+the same rule. A committed-before-cancellation event remains `Applied`.
+During normal running (before stopping), an expected typed admission error keeps
+the full pending set and waits for a later retry; only fatal errors enter the
+terminal abort path.
 
-Publish clones, validates, fingerprints, classifies, charges, and derives a lane
-before retention. Linearization is the queue-mutex insertion, replacement,
-duplicate decision, rejection, or drop-ledger increment. Apply linearizes at
-Reconciler transaction commit. Snapshot publication linearizes at atomic Store
-while holding the final publication mutex.
+Publish clones, validates, fingerprints, classifies, and completes charge/key
+derivation before retention. Replay covers queued and in-flight only. Duplicate
+and collision decisions occur before coalescing and coalescing before queue
+insertion; replacement keeps the queue position. Linearization is the queue-
+mutex insertion, replacement, duplicate/collision decision, rejection, or
+drop-ledger increment. Apply linearizes at Reconciler transaction commit.
+Snapshot publication linearizes at atomic Store while holding the final
+publication mutex.
 
 | Outcome | Disposition | Returned error | Stats and diagnostic |
 |---|---|---|---|
@@ -3063,22 +3373,33 @@ while holding the final publication mutex.
 | safe pending replacement | `PublishCoalesced` | nil | Coalesced++ |
 | same key and fingerprint | `PublishDuplicate` | nil | Duplicates++; older retained |
 | same key, different fingerprint | `PublishRejected` | typed collision | Rejected++, Collisions++, pending collision gap |
-| clone, validation, or key failure | `PublishRejected` | typed rejection | Rejected++; no queue mutation |
+| unsupported-payload clone or recognized-payload validation failure | `PublishRejected` | exact safe nonnil helper error, unwrapped | Rejected++; no queue mutation; no stable sentinel/type beyond safe nonnil error |
 | one cloned event exceeds total queue limit or charge arithmetic saturates | `PublishRejected` | `ErrEventTooLarge` | Rejected++; no gap or queue mutation |
+| valid Publish decision samples zero `Clock.Now` | `PublishRejected` | safe nonnil clock error, unwrapped | Rejected++ only; no retention or diagnostic |
 | otherwise admissible normal lacks aggregate channel/bytes | `PublishDroppedNormal` | nil | DroppedNormal++, pending normal gap |
 | otherwise admissible critical lacks aggregate channel/bytes | `PublishDroppedCritical` | nil | DroppedCritical++, pending critical gap |
 | eligible coalescing replacement has admissible total size but positive delta cannot fit | `PublishDroppedNormal` | nil | older retained; DroppedNormal++; pending normal gap |
-| stopping or stopped | `PublishRejected` | lifecycle error | Rejected++ |
+| Publish while stopping or stopped | `PublishRejected` | `ErrStoreNotAccepting` | Rejected++ |
 | Apply committed semantics | n/a | n/a | Applied++ and queued/in-flight charge released |
-| expected Apply admission diagnostic | n/a | typed admission error | ApplyErrors++; diagnostic ChangeSet published; Run continues |
+| dequeued Apply samples zero `Clock.Now` before Apply | n/a | fatal invariant error from Run | no Apply; invariant-abort accounting; dynamic charge cleared; Store stops |
+| `Advance` samples zero `Clock.Now` during Run | n/a | exact safe clock error from fatal non-admission invariant | no Advance call or publication; queued work becomes AbortedQueued; pending logical counts become AbortedDiagnostics; ApplyErrors unchanged; Store stops |
+| normal-running pending diagnostic prepare samples zero `Clock.Now` | n/a | exact safe clock error from fatal non-admission invariant | no prepare or publication; queued work becomes AbortedQueued; pending logical counts become AbortedDiagnostics; Store stops |
+| open/running `Store.SetPinned` samples zero `Clock.Now` | n/a | safe nonnil caller error | no Reconciler, generation, cursor, wake, stats, or lifecycle mutation; Run keeps running |
+| cancellation-time final diagnostic prepare samples zero `Clock.Now` | n/a | exact safe clock error from terminal finalization failure | no publication; pending counts become AbortedDiagnostics; unattempted/pre-Apply in-flight work becomes AbortedQueued; dynamic charge clears; Store stops |
+| expected Apply admission diagnostic during normal running | n/a | typed admission error | ApplyErrors++; diagnostic ChangeSet published; Run continues |
 | unknown Apply invariant error, including revision exhaustion | n/a | invariant error from Run | ApplyErrors++; pending diagnostics become AbortedDiagnostics; accepted/unapplied become AbortedQueued; Run stops without publication |
 | `Store.SetPinned` changed generation | n/a | nil | generation published before return; deadline cursor reset; Run wake token sent |
 | `Store.SetPinned` idempotent no-generation change | n/a | nil | no publication or revision increment |
-| `Store.SetPinned` expected or lifecycle error | n/a | typed error | no canonical, generation, revision, or timer mutation |
-| cancellation discards queued event | n/a | Run returns nil | CanceledQueued++; charge released; semantics unapplied |
+| `Store.SetPinned` expected error | n/a | exact safe Reconciler error | no canonical, generation, revision, or timer mutation |
+| `Store.SetPinned` while stopping or stopped | n/a | `ErrStoreNotAccepting` | no canonical, generation, revision, or timer mutation |
+| `Run` after its first accepted open-to-running transition | n/a | `ErrStoreAlreadyRun` | no new task, timer, generation, or queue mutation |
+| cancellation discards queued event | n/a | Run returns nil only after complete final diagnostic-batch success | CanceledQueued++; charge released; semantics unapplied |
+| cancellation final diagnostic preparation fails | n/a | original nonnil prepare error, including valid `AdmissionError` | no publication; pending counts become AbortedDiagnostics; unattempted queued/pre-Apply in-flight become AbortedQueued; dynamic charge cleared; Store stopped |
 
-`PublishRejected` is a real enum member, not the zero value. Store treats typed
-admission diagnostics as expected and continues. Unknown invariant errors stop
+`PublishRejected` is a real enum member, not the zero value. During normal
+running, Store treats valid typed admission diagnostics as expected and
+continues. Once cancellation enters stopping, any nonnil final diagnostic
+preparation error is terminal as specified above. Unknown invariant errors stop
 Run: Store enters stopping, preserves last committed Reconciler state and last
 published generation, and commits or publishes no pending diagnostics. It
 saturating-sums their counts into `AbortedDiagnostics`, clears their identities and
@@ -3109,76 +3430,440 @@ and first-detection times. Immediately before atomic publication, Run holds the
 queue mutex, prepares the entire sorted diagnostic batch and candidate generation,
 commits once, pointer-stores that generation, clears only those committed pending
 counts, then unlocks. Queue drain alone never resolves lost work. `StoreStats` is
-operational only; gaps remain snapshot partial truth.
+operational only; gaps remain snapshot partial truth. `NewStore` atomically
+installs the initial generation and increments `Snapshots` to one. Each distinct
+generation pointer increments it exactly once; after an owned commit,
+`Reconciler.previous` is re-anchored to the previously published generation, and
+production retains no more than current and previous excluding caller refs.
+`Snapshot` is an atomic load. Cancellation publishes only a differing current
+generation or a committed diagnostic candidate.
 
-- [ ] **Step 5: Verify GREEN and race behavior**
+The exact unsaturated accounting equation is:
+
+```text
+AcceptedCritical + AcceptedNormal
+  == Applied + ApplyErrors + CanceledQueued + AbortedQueued
+     + NormalDepth + CriticalDepth + inflightTokenCount
+```
+
+`CanceledQueued` includes a pre-Apply event whose in-flight charge was already
+reserved but whose cancellation check wins before Apply; only a fully committed
+Apply is `Applied`.
+
+The complete `StoreStats` field set is the declaration above; reflection tests
+reject omissions, additions, or renamed fields, including
+`PendingDiagnosticBytes`, `InFlightBytes`, and `AbortedDiagnostics`.
+`ApplyErrors` increments only when `Apply` returns an error; Publish rejections,
+drops, lifecycle errors, and cancellation do not increment it.
+
+- [ ] **Step 5: Verify GREEN (pre-audit)**
+
+During implementation, each checkpoint permits one focused command for the
+current slice (for example, `go test ./internal/graph -run
+'^TestStoreDefaultLimits$' -count=1`). Do not run a broad package loop or any
+race loop until all 41 exact Store names are green. After all 41 are green, run
+one pre-audit exact 41-test suite. This is the only pre-audit suite; the final
+post-sabotage suite and the single race run are specified in Step 6.
 
 ```bash
 go test ./internal/graph -run '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' -count=1
-go test -race ./internal/graph -run '^TestStore' -count=20
 ```
 
 - [ ] **Step 6: Sabotage and commit**
 
 Run these practical plants one at a time. The assertion plant removes only the
-named decisive assertion.
+named decisive assertion. Every fixture, enqueue/publish action, barrier,
+clock advance, and hook invocation remains in place; an assertion plant may
+weaken or remove only the unique rule-naming assertion for that row.
+
+Before every physical plant and before the mutation-tool run, capture pristine
+SHA-256 hashes and the baseline status for Store production, Store tests, and
+all three Task8 evidence files. After the inverse patch or tool run, hash-check
+the Store source targets first, compare status byte-for-byte, and scan for plant
+markers. Hash-check evidence targets only while they are unchanged; an
+intentional evidence append happens after this proof. Any source hash, status,
+or marker mismatch aborts the task before another plant starts.
+
+```bash
+manifest_dir=$(mktemp -d)
+aitop_task8_pristine_dir=$(mktemp -d)
+aitop_task8_mutation_dir=$(mktemp -d)
+trap 'rm -rf "$manifest_dir" "$aitop_task8_pristine_dir" "$aitop_task8_mutation_dir"' EXIT
+aitop_task8_source_targets=(internal/graph/store.go internal/graph/store_test.go)
+aitop_task8_evidence_targets=(tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md)
+aitop_task8_capture_pristine() {
+  sha256sum "${aitop_task8_source_targets[@]}" > "$aitop_task8_pristine_dir/source.sha256"
+  sha256sum "${aitop_task8_evidence_targets[@]}" > "$aitop_task8_pristine_dir/evidence.sha256"
+  git status --porcelain=v1 > "$aitop_task8_pristine_dir/pristine.status"
+}
+aitop_task8_restore_check() {
+  sha256sum -c "$aitop_task8_pristine_dir/source.sha256" || { echo 'Task8 Store source hash mismatch' >&2; exit 1; }
+  sha256sum -c "$aitop_task8_pristine_dir/evidence.sha256" || { echo 'Task8 evidence hash changed before intentional append' >&2; exit 1; }
+  cmp -s "$aitop_task8_pristine_dir/pristine.status" <(git status --porcelain=v1) || { echo 'Task8 pristine status mismatch' >&2; exit 1; }
+  if rg -n 'TASK8_(PRODUCTION|ASSERTION|MUTATION)_PLANT' "${aitop_task8_source_targets[@]}"; then
+    echo 'Task8 plant marker residue' >&2
+    exit 1
+  fi
+}
+```
+
+Each row is logged in `tests/SABOTAGE_LOG.md` with all required fields:
+prediction, observed behavioral RED or false GREEN, exact focused command,
+restoration proof and hash result, rerun command/result, and conclusion. The
+same fields are required for the mutation-tool attempt; a missing field or
+unbounded output is an abort, not a pass. The source/test hashes are checked
+before any intentional evidence append; evidence hashes are not compared after
+`SABOTAGE_LOG.md` or `LOUDNESS_AUDIT.md` is intentionally updated. Capture a
+new baseline before the next plant.
+
+For each literal sabotage-table row, execute `aitop_task8_capture_pristine`,
+apply that row's exact `apply_patch` production or assertion plant, run that
+row's exact focused command, apply the exact inverse patch, and execute
+`aitop_task8_restore_check`. Append that row's bounded evidence only after the
+restore check succeeds. There is no generic command substitute for a literal
+row action, inverse, focused rerun, or evidence conclusion.
 
 | Test | Production plant | Assertion plant |
 |---|---|---|
-| `TestStoreDefaultLimits` | Default one limit incorrectly. | Remove exact defaults comparison. |
-| `TestStoreExactQueuePartition` | Give normal one critical slot. | Remove exact 6144/2048 assertion. |
-| `TestStoreQueuedByteLimit` | Omit pending map charge. | Remove exact byte boundary assertion. |
-| `TestStoreInvalidConfigRejected` | Accept zero byte limit. | Remove invalid row. |
-| `TestStorePublishBeforeRun` | Reject open-state Publish or reject `Store.SetPinned` before `Run`. | Remove the accepted Publish or before-Run pin disposition. |
-| `TestStoreSecondRunRejected` | Allow a second Run. | Remove second-call error. |
-| `TestStorePublishRejectedWhileStopping` | Accept while stopping. | Remove lifecycle disposition. |
-| `TestStorePublishRejectedAfterStopped` | Accept after stopped. | Remove stopped disposition. |
-| `TestStoreChannelsNeverClose` | Close a channel on cancel. | Remove no-panic send probe. |
-| `TestStoreClassifiesCriticalEvents` | Route terminal state to normal. | Remove that table row. |
-| `TestStoreClassifiesNormalEvents` | Route message to critical. | Remove that table row. |
-| `TestStoreClonesBeforeReturn` | Retain caller pointers. | Stop caller mutation. |
-| `TestStoreDuplicateDispositionAndStats` | Count duplicate as coalesced. | Remove disposition/stat pair. |
-| `TestStoreCoalescesOnlySafeReplacement` | Replace older ordered observation. | Remove reverse-order row. |
-| `TestStoreCollisionQueuesDiagnostic` | Route collision through a one-shot synthetic diagnostic send instead of the ledger. | Remove synthetic-send count and ledger assertion. |
-| `TestStoreNormalOverflowLedger` | Use critical source ID. | Remove source/count assertion. |
-| `TestStoreCriticalOverflowLedger` | Lose one critical drop. | Remove exact count. |
-| `TestStoreOverflowPublicationLinearizes` | Unlock before pointer Store. | Remove interleaving snapshot assertion. |
-| `TestStoreOverflowFirstDetectionTimeStable` | Reset At on increment. | Remove original At comparison. |
-| `TestStoreFairnessThirtyTwoToOne` | Process 33 critical before normal. | Remove exact order. |
-| `TestStoreBatchPublishesAtHundredMilliseconds` | Schedule at 101ms. | Remove exact manual-clock boundary. |
-| `TestStoreSemanticDeadlinePreemptsBatch` | Ignore earlier semantic deadline. | Remove publication time assertion. |
-| `TestStoreDrainsReadyBeforeAdvance` | Advance before ready drain. | Remove exact-deadline event. |
-| `TestStoreUsesOneShotTimersWithoutReset` | Call `Reset`, or fail to cancel/re-arm the one-shot timer after a successful pin wake. | Remove timer-operation log or pin wake/cursor assertion. |
-| `TestStoreCancellationStopsAcceptance` | Move stopping after drain. | Remove barrier Publish rejection. |
-| `TestStoreCancellationDropsQueuedSemantics` | Apply one queued event. | Remove unchanged graph assertion. |
-| `TestStoreAlreadyCanceledRunFinalizes` | Return before final snapshot. | Remove final state/snapshot assertions. |
-| `TestStoreCancellationPublishesFinalDiagnostics` | Clear pending without commit. | Remove final gaps assertion. |
-| `TestStoreExpectedAdmissionErrorContinues` | Stop on typed admission error, or drop Store.SetPinned overdue-unpin cleanup/error atomicity. | Remove later applied event or pin cleanup/no-publication assertion. |
-| `TestStoreUnknownInvariantStopsRun` | Continue on invariant error. | Remove Run error assertion. |
-| `TestStorePublicationDoesNotMutateEarlierBorrow` | Mutate earlier-generation backing during later publication or pin publication. | Remove earlier borrow equality or pin publication count. |
-| `TestStoreRetainsAtMostPreviousSnapshot` | Retain a third generation. | Remove exact generation count. |
-| `TestStoreQueueChargeIncludesInflight` | Release charge before Apply completes. | Remove in-flight boundary probe. |
-| `TestStorePendingDiagnosticFloodBeforeRunIsBounded` | Omit diagnostic charge or ordinary identity cap. | Remove exact depth, bytes, or catchall assertions. |
-| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic` | Sequentially commit the first diagnostic before a later item fails. | Remove only the full canonical-state, epoch, and previous-generation equality comparison. |
-| `TestStoreOversizeEventRejected` | Treat individually oversized event as saturation drop. | Remove ErrEventTooLarge/no-gap assertion. |
-| `TestStoreCoalescingGrowthDropsNewer` | Replace older despite aggregate byte shortage. | Remove older-retained/drop assertion. |
-| `TestStoreInvariantAbortAccountsQueued` | Count aborted queued work as canceled or leave charge retained. | Remove AbortedQueued/bytes assertion. |
-| `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration` | Commit one of several pending diagnostics or publish its generation before revision failure. | Remove only full canonical/revision/epoch/generation equality or AbortedDiagnostics/count/byte assertions. |
-| `TestStoreStatsExactShapeAndAccounting` | Omit PendingDiagnosticBytes or AbortedDiagnostics accounting. | Remove exact struct/value comparison. |
-| `TestStoreConcurrentReadersSeeImmutableSnapshots` | Reuse mutable backing or let SetPinned race Run's Apply/Advance outside the mutation mutex. | Remove cross-reader checksum or pin/run race assertion. |
+| `TestStoreDefaultLimits` | Default one limit incorrectly. | Keep the defaults fixture/action; weaken only the exact default-values assertion. |
+| `TestStoreExactQueuePartition` | Give normal one critical slot. | Keep the partition fixture/action; weaken only the exact 6144/2048 assertion. |
+| `TestStoreQueuedByteLimit` | Omit pending map charge. | Keep the byte-boundary fixture/action; weaken only the exact byte assertion. |
+| `TestStoreInvalidConfigRejected` | Accept zero byte limit. | Keep every invalid-config fixture/action; weaken only the invalid-config rule assertion. |
+| `TestStorePublishBeforeRun/open-publish` | Reject open-state Publish. | Keep the open-state action; weaken only the accepted Publish disposition. |
+| `TestStorePublishBeforeRun/before-run-pin` | Reject `Store.SetPinned` before `Run`. | Keep the before-Run pin action; weaken only its disposition. |
+| `TestStorePublishBeforeRun/initial-generation/skip-publication` | Skip NewStore's initial atomic publication. | Keep the NewStore action; weaken only the initial pointer/time assertion. |
+| `TestStorePublishBeforeRun/initial-generation/snapshots-zero` | Initialize `Snapshots` to zero. | Keep the NewStore action; weaken only the initial `Snapshots == 1` assertion. |
+| `TestStoreSecondRunRejected` | Allow a second Run. | Keep the second-call action; weaken only the second-call error assertion. |
+| `TestStorePublishRejectedWhileStopping` | Accept while stopping. | Keep the stopping-state action; weaken only the lifecycle disposition. |
+| `TestStorePublishRejectedAfterStopped` | Accept after stopped. | Keep the stopped-state action; weaken only the stopped disposition. |
+| `TestStoreChannelsNeverClose` | Close a channel on cancel. | Keep the send probe; weaken only the no-panic/channel-closure assertion. |
+| `TestStoreClassifiesCriticalEvents` | Route terminal state to normal. | Keep the terminal fixture/action; weaken only the critical-lane assertion. |
+| `TestStoreClassifiesNormalEvents` | Route message to critical. | Keep the message fixture/action; weaken only the normal-lane assertion. |
+| `TestStoreClonesBeforeReturn` | Retain caller pointers. | Keep caller mutation; weaken only the clone-isolation assertion. |
+| `TestStoreDuplicateDispositionAndStats` | Count duplicate as coalesced. | Keep the duplicate action; weaken only the disposition/stat pair. |
+| `TestStoreCoalescesOnlySafeReplacement` | Replace older ordered observation. | Keep the reverse-order fixture/action; weaken only the no-replacement assertion. |
+| `TestStoreCollisionQueuesDiagnostic` | Route collision through a one-shot synthetic diagnostic send. | Keep collision and diagnostic actions; weaken only the synthetic-send/ledger assertions. |
+| `TestStoreNormalOverflowLedger` | Use critical source ID. | Keep the normal-overflow action; weaken only the source/count assertion. |
+| `TestStoreCriticalOverflowLedger` | Lose one critical drop. | Keep the critical-overflow action; weaken only the exact count assertion. |
+| `TestStoreOverflowPublicationLinearizes` | Unlock before pointer Store. | Keep the interleaving action; weaken only the snapshot linearization assertion. |
+| `TestStoreOverflowPublicationLinearizes/before-publish/lock-order` | Invoke `BeforePublish` outside the required lock order. | Keep the overflow and hook actions; weaken only the hook lock-order assertion. |
+| `TestStoreOverflowPublicationLinearizes/before-publish/atomic-publication` | Run `BeforePublish` outside prepare/commit/pointer-store/counter/clear atomic publication. | Keep the overflow and hook actions; weaken only the hook phase assertion. |
+| `TestStoreOverflowFirstDetectionTimeStable` | Reset At on increment. | Keep the repeated-drop action; weaken only the original-At comparison. |
+| `TestStoreOverflowFirstDetectionTimeStable/clock-now/zero-rejection` | Bypass the zero-clock check for a Publish decision. | Keep the zero-clock action; weaken only the exact zero-error/disposition/counter/no-retention oracle. |
+| `TestStoreFairnessThirtyTwoToOne` | Process 33 critical before normal. | Keep the 33-item action; weaken only the exact-order assertion. |
+| `TestStoreBatchPublishesAtHundredMilliseconds` | Schedule at 101ms. | Keep the manual-clock action; weaken only the exact 100ms boundary assertion. |
+| `TestStoreSemanticDeadlinePreemptsBatch` | Ignore earlier semantic deadline. | Keep the competing-deadline action; weaken only the publication-time assertion. |
+| `TestStoreDrainsReadyBeforeAdvance` | Advance before ready drain. | Keep the exact-deadline event; weaken only the ready-before-Advance assertion. |
+| `TestStoreUsesOneShotTimersWithoutReset/no-reset` | Call `Reset` on the production timer interface. | Keep the poison timer action; weaken only the timer-operation log assertion. |
+| `TestStoreUsesOneShotTimersWithoutReset/pin-wake` | Fail to cancel and re-arm the one-shot timer after a successful pin wake. | Keep the pin wake action; weaken only the cursor/re-arm assertion. |
+| `TestStoreCancellationStopsAcceptance` | Move stopping after drain. | Keep the barrier Publish action; weaken only the acceptance-rejection assertion. |
+| `TestStoreCancellationStopsAcceptance/after-stop/exactly-once` | Invoke `AfterStop` twice. | Keep cancellation and hook invocations; weaken only the exactly-once assertion. |
+| `TestStoreCancellationStopsAcceptance/after-stop/lock-free` | Hold a Store lock while invoking `AfterStop`. | Keep cancellation and hook invocation; weaken only the lock-free assertion. |
+| `TestStoreCancellationStopsAcceptance/after-stop/after-disable` | Invoke `AfterStop` before acceptance/timer disable. | Keep cancellation, state, timer, and hook actions; weaken only the no-live-timer/nonaccepting-state assertion. |
+| `TestStoreCancellationStopsAcceptance/after-stop/before-disposal` | Dispose owned resources before invoking `AfterStop`. | Keep cancellation, disposal, and hook actions; weaken only the before-disposal assertion. |
+| `TestStoreCancellationDropsQueuedSemantics` | Apply one queued event. | Keep the queued event action; weaken only the unchanged-graph assertion. |
+| `TestStoreAlreadyCanceledRunFinalizes` | Return before final snapshot. | Keep the canceled Run action; weaken only the final state/snapshot assertions. |
+| `TestStoreCancellationPublishesFinalDiagnostics` | Clear pending without commit. | Keep the pending-diagnostic action; weaken only the final-gaps assertion. |
+| `TestStoreExpectedAdmissionErrorContinues/advance-admission` | Stop Run on a typed `Advance` admission error. | Keep the later event action; weaken only the later-applied assertion. |
+| `TestStoreExpectedAdmissionErrorContinues/pin-cleanup` | Drop `Store.SetPinned` overdue-unpin cleanup and error atomicity. | Keep the pin action; weaken only the cleanup/no-publication assertion. |
+| `TestStoreUnknownInvariantStopsRun` | Continue on invariant error. | Keep the invariant-error action; weaken only the Run-error assertion. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow/run-publication` | Mutate earlier-generation backing during later Run publication. | Keep the Run publication action; weaken only earlier-borrow equality. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow/pin-publication` | Mutate earlier-generation backing during pin publication. | Keep the pin action; weaken only the pin publication count and borrow-equality assertions. |
+| `TestStorePublicationDoesNotMutateEarlierBorrow/distinct-publication` | Increment Snapshots for an identical generation pointer. | Keep the repeated publication actions; weaken only the distinct-pointer count assertion. |
+| `TestStoreRetainsAtMostPreviousSnapshot` | Retain a third generation. | Keep all publication actions; weaken only the exact generation-count assertion. |
+| `TestStoreQueueChargeIncludesInflight` | Release charge before Apply completes. | Keep the in-flight barrier/probe; weaken only the charge-boundary assertion. |
+| `TestStoreQueueChargeIncludesInflight/before-apply/charged-inflight` | Run `BeforeApply` before charging in-flight. | Keep the hook/barrier action; weaken only the charged-before-hook assertion. |
+| `TestStoreQueueChargeIncludesInflight/before-apply/lock-free` | Hold a Store lock while invoking `BeforeApply`. | Keep the hook/barrier action; weaken only the lock-free assertion. |
+| `TestStoreQueueChargeIncludesInflight/before-apply/cancel-adjacent` | Move the cancellation check away from `BeforeApply` without a final recheck. | Keep the hook/barrier cancellation action; weaken only the adjacency/final-recheck assertion. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/diagnostic-charge` | Omit pending diagnostic charge. | Keep the flood action; weaken only the exact byte-depth assertion. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/identity-cap` | Omit the ordinary pending identity cap. | Keep the flood action; weaken only identity-depth and catchall assertions. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/long-identity-charge` | Charge a long SourceID with present capability as the fixed 368-byte reserve. | Keep the long-identity fixture/action; weaken only the independent literal byte-charge assertion. |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/once` | Sample `Clock.Now` twice during NewStore construction. | Keep the construction action; weaken only the exact one-sample/initial-time assertion. |
+| `TestStorePublishBeforeRun/initial-generation/clock-now/zero-rejection` | Accept a zero construction clock sample. | Keep the zero-clock action; weaken only the no-ownership-transfer/error assertion. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/once` | Sample `Clock.Now` twice for one valid Publish decision. | Keep the Publish action; weaken only the exact one-sample assertion. |
+| `TestStorePendingDiagnosticFloodBeforeRunIsBounded/clock-now/publish-at` | Use `Event.ReceivedAt` for collision/drop/catchall `firstAt`. | Keep the clock and event actions; weaken only the firstAt-source/no-gap assertion. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/once` | Sample `Clock.Now` twice for one dequeued Apply. | Keep the Apply barrier/action; weaken only the exact one-sample/same-now assertion. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/received-at` | Use `Event.ReceivedAt` for Reconciler Apply and firstDirty. | Keep the Apply action; weaken only the Store-clock-source assertion. |
+| `TestStoreQueueChargeIncludesInflight/apply-clock/zero-rejection` | Call Apply with a zero Store clock sample. | Keep the zero-clock action; weaken only the fatal-before-Apply/abort assertion. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-prepare/clock-once` | Sample `Clock.Now` twice for one diagnostic-prepare operation. | Keep the diagnostic action; weaken only the exact call-count/value assertion. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-clock/generation-time` | Use pending Gap.At as the diagnostic generation time. | Keep the diagnostic action; weaken only the generation-time versus firstAt assertion. |
+| `TestStoreUsesOneShotTimersWithoutReset/advance/clock-once` | Sample readiness `Clock.Now` twice for one scheduled semantic firing. | Keep the timer/Advance action; weaken only the exact call-count/deadline-value assertion. |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned/clock-once` | Sample `Clock.Now` twice for one SetPinned operation. | Keep the pin action; weaken only the exact call-count/Reconciler-now assertion. |
+| `TestStoreSemanticDeadlinePreemptsBatch/deadline-source` | Derive semantic D from readiness `Clock.Now`. | Keep the deadline/timer action; weaken only the nextDeadline-source/Advance(D) assertion. |
+| `TestStoreUnknownInvariantStopsRun/advance-clock-zero` | Call Advance with a zero Store clock sample. | Keep the zero-clock action; weaken only the fatal-before-Advance, exact-error, publication, and abort-counter assertions. |
+| `TestStoreExpectedAdmissionErrorContinues/pending-prepare-clock-zero` | Accept a zero normal-running pending-diagnostic prepare clock sample. | Keep the zero-clock action; weaken only the fatal-no-prepare, exact-error, publication, and abort-counter assertions. |
+| `TestStoreUsesOneShotTimersWithoutReset/set-pinned-clock-zero` | Accept a zero Store.SetPinned clock sample. | Keep the zero-clock action; weaken only the safe-error/no-mutation/Run-continues assertions. |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error/clock-zero` | Accept a zero cancellation-time final diagnostic prepare clock sample. | Keep the zero-clock action; weaken only the terminal-stop, no-publication, charge-clear, original-error, and abort-counter assertions. |
+| `TestStoreUsesOneShotTimersWithoutReset/timer-payload` | Treat the timer payload as scheduled D. | Keep the timer action; weaken only the payload-not-authority and exact `Advance(D)` assertions. |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic` | Sequentially commit the first diagnostic before a later item fails. | Keep the later-item failure action; weaken only the full canonical-state, epoch, and previous-generation equality comparison. |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-queue` | Nest publication before queue. | Keep the later-item failure action; weaken only the lock-order assertion. |
+| `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic/lock-order-mutation` | Nest publication before mutation. | Keep the later-item failure action; weaken only the lock-order assertion. |
+| `TestStoreOversizeEventRejected` | Treat an individually oversized event as a saturation drop. | Keep the oversized-event action; weaken only the `ErrEventTooLarge` and no-gap assertions. |
+| `TestStoreCoalescingGrowthDropsNewer` | Replace older despite aggregate byte shortage. | Keep the growth action; weaken only the older-retained/drop assertion. |
+| `TestStoreInvariantAbortAccountsQueued` | Count aborted queued work as canceled. | Keep the invariant-abort action; weaken only the `AbortedQueued` assertion. |
+| `TestStoreInvariantAbortAccountsQueued/charge-release` | Leave aborted queue charge retained. | Keep the invariant-abort action; weaken only the final byte-depth assertion. |
+| `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration/batch-atomic` | Commit the first diagnostic before a later item fails revision admission. | Keep the later-item failure action; weaken only full canonical/revision/epoch equality. |
+| `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration/no-generation-publish` | Publish the candidate generation before revision failure. | Keep the generation action; weaken only borrowed-generation equality and no-publication assertion. |
+| `TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration/abort-accounting` | Lose `AbortedDiagnostics` while aborting pending identities. | Keep the abort action; weaken only exact diagnostic count and byte assertions. |
+| `TestStoreStatsExactShapeAndAccounting/pending-bytes` | Omit `PendingDiagnosticBytes` accounting. | Keep Stats actions; weaken only the exact struct/value comparison for pending bytes. |
+| `TestStoreStatsExactShapeAndAccounting/aborted-diagnostics` | Omit `AbortedDiagnostics` accounting. | Keep Stats actions; weaken only the exact struct/value comparison for aborted diagnostics. |
+| `TestStoreStatsExactShapeAndAccounting/shape-add` | Add a StoreStats field. | Keep reflection and Stats actions; weaken only the exact 24-field shape assertion. |
+| `TestStoreStatsExactShapeAndAccounting/shape-omit` | Omit a StoreStats field. | Keep reflection and Stats actions; weaken only the exact 24-field shape assertion. |
+| `TestStoreStatsExactShapeAndAccounting/equation` | Misclassify pre-Apply canceled in-flight work. | Keep the cancellation barrier/action; weaken only the literal accepted-work equation assertion. |
+| `TestStoreClonesBeforeReturn/helper-clone-error` | Wrap an unsupported-payload clone error. | Keep the invalid-input actions; weaken only the direct-helper type/message/value and safe non-state assertions. |
+| `TestStoreClonesBeforeReturn/helper-validation-error` | Wrap a recognized-payload validation error. | Keep the invalid-input actions; weaken only the direct-helper type/message/value and safe non-state assertions. |
+| `TestStoreDuplicateDispositionAndStats/successful-derivation-order` | Retain an event before replay-digest, Fingerprint, and CoalesceKey derivation completes. | Keep duplicate/coalesce actions; weaken only the derivation-before-retention assertion. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-sort-omit` | Omit canonical sort before prepare. | Keep the deliberately noncanonical pending fixture and publication; weaken only the independent prepare-input/output order assertion. |
+| `TestStoreCancellationPublishesFinalDiagnostics/diagnostic-sort-reverse` | Reverse canonical sort before prepare. | Keep the deliberately noncanonical pending fixture and publication; weaken only the independent prepare-input/output order assertion. |
+| `TestStoreCancellationPublishesFinalDiagnostics/final-prepare-error` | Retry a valid `AdmissionError` from final diagnostic preparation during cancellation. | Keep the cancellation fixture/action; weaken only original-error identity, stopped, no-publication, charge-clear, `AbortedQueued`, and `AbortedDiagnostics` assertions. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots/backing` | Reuse mutable backing across published generations. | Keep concurrent reader actions; weaken only the cross-reader checksum assertion. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots/mutation-lock` | Let `SetPinned` race Run's `Apply`/`Advance` outside the mutation mutex. | Keep pin/run actions; weaken only the pin/run race assertion. |
+| `TestStoreConcurrentReadersSeeImmutableSnapshots/lock-order` | Acquire locks outside mutation -> queue -> publication order. | Keep concurrent readers and mutation actions; weaken only the complete lock-order assertion. |
 
 Restore and record every pair:
 
-Before the final commit, rerun the exact 41-name Store manifest fence above. A
-zero-match or count-mismatch result blocks GREEN even if the anchored suite exits
-successfully.
+Before the final commit, run the bounded mutation escalation and Phase D
+loudness sweep below. Every physical plant is restored before the final fence;
+the final exact 41-test suite is run once after all restorations, and the final
+race suite is run exactly once with `-count=20`. The pre-audit exact 41-test
+suite in Step 5 is the only earlier post-GREEN full Store suite; the Step 3 RED
+run is pre-implementation and is not a GREEN verification.
+
+The source fence is an AST comparison, not a line-regex. This complete
+disposable program parses `store_test.go`, collects only receiverless top-level
+`TestStore...` declarations, prints the sorted names, and compares them to the
+literal 41-name manifest. Comments cannot create a name; malformed multiline
+lookalikes fail parsing or produce no `*ast.FuncDecl`; duplicate or extra
+declarations fail the sorted equality.
 
 ```bash
-test "$(go test ./internal/graph -list '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' | rg -c '^TestStore')" -eq 41
+cat > "$manifest_dir/main.go" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"reflect"
+	"sort"
+	"strings"
+)
+
+var want = []string{
+	"TestStoreDefaultLimits",
+	"TestStoreExactQueuePartition",
+	"TestStoreQueuedByteLimit",
+	"TestStoreInvalidConfigRejected",
+	"TestStorePublishBeforeRun",
+	"TestStoreSecondRunRejected",
+	"TestStorePublishRejectedWhileStopping",
+	"TestStorePublishRejectedAfterStopped",
+	"TestStoreChannelsNeverClose",
+	"TestStoreClassifiesCriticalEvents",
+	"TestStoreClassifiesNormalEvents",
+	"TestStoreClonesBeforeReturn",
+	"TestStoreDuplicateDispositionAndStats",
+	"TestStoreCoalescesOnlySafeReplacement",
+	"TestStoreCollisionQueuesDiagnostic",
+	"TestStoreNormalOverflowLedger",
+	"TestStoreCriticalOverflowLedger",
+	"TestStoreOverflowPublicationLinearizes",
+	"TestStoreOverflowFirstDetectionTimeStable",
+	"TestStoreFairnessThirtyTwoToOne",
+	"TestStoreBatchPublishesAtHundredMilliseconds",
+	"TestStoreSemanticDeadlinePreemptsBatch",
+	"TestStoreDrainsReadyBeforeAdvance",
+	"TestStoreUsesOneShotTimersWithoutReset",
+	"TestStoreCancellationStopsAcceptance",
+	"TestStoreCancellationDropsQueuedSemantics",
+	"TestStoreAlreadyCanceledRunFinalizes",
+	"TestStoreCancellationPublishesFinalDiagnostics",
+	"TestStoreExpectedAdmissionErrorContinues",
+	"TestStoreUnknownInvariantStopsRun",
+	"TestStorePublicationDoesNotMutateEarlierBorrow",
+	"TestStoreRetainsAtMostPreviousSnapshot",
+	"TestStoreQueueChargeIncludesInflight",
+	"TestStorePendingDiagnosticFloodBeforeRunIsBounded",
+	"TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic",
+	"TestStoreOversizeEventRejected",
+	"TestStoreCoalescingGrowthDropsNewer",
+	"TestStoreInvariantAbortAccountsQueued",
+	"TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration",
+	"TestStoreStatsExactShapeAndAccounting",
+	"TestStoreConcurrentReadersSeeImmutableSnapshots",
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: check_store_manifest store_test.go")
+		os.Exit(2)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, os.Args[1], nil, parser.ParseComments)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	got := make([]string, 0, len(file.Decls))
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name == nil || !strings.HasPrefix(fn.Name.Name, "TestStore") {
+			continue
+		}
+		got = append(got, fn.Name.Name)
+	}
+	sort.Strings(want)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		fmt.Fprintf(os.Stderr, "Store manifest mismatch: got=%v want=%v\\n", got, want)
+		os.Exit(1)
+	}
+	for _, name := range got {
+		fmt.Println(name)
+	}
+}
+EOF
+go build -o "$manifest_dir/check-store-manifest" "$manifest_dir/main.go"
+"$manifest_dir/check-store-manifest" internal/graph/store_test.go > "$manifest_dir/ast-names"
+test "$(wc -l < "$manifest_dir/ast-names")" -eq 41
 ```
 
+Run the Step6 code blocks in one shell so the disposable `manifest_dir` remains
+available for the final fence; its trap removes it when the shell exits. The
+complete sorted `go test -list` comparison, anchored exact suite, package gate,
+Linux/386 compile, vet, and diff check are intentionally run only in that one
+final post-sabotage fence below.
+
+Run bounded Task8 mutation escalation once after the pre-audit GREEN suite.
+Record `go version`, `go version -m` tool metadata, command, exit status, and
+bounded stdout/stderr in `tests/SABOTAGE_LOG.md`. The only allowed tool failure
+is the previously audited exact-pin, exact-Go-version
+`go/types.(*StdSizes).Sizeof` nil-receiver package-loading crash; any other
+failure, timeout, missing metadata, or unexplained survivor blocks GREEN.
+A status-zero report is accepted only when its anchored `passed`, `failed`,
+`duplicated`, `skipped`, and total integers are parsed exactly. `failed` means a
+surviving mutant, so both `failed` and `skipped` must be zero; `passed` and
+`duplicated` are recorded. For this pinned tool, `total` is defined as
+`passed + failed + skipped`; duplicated mutants are excluded from total. Require
+`total > 0`, `passed > 0`, `failed == 0`, `skipped == 0`, and that exact equation.
+The prediction, observation, and conclusion must be recorded. A nonzero status
+is accepted only by the exact crash branch below.
+The status-2 branch parses the tab-separated `go version -m` `mod` line by
+whitespace fields and requires `$1 == "mod"`, the exact go-mutesting module at
+`v0.0.0-20210610104036-6d9217011a00`, and the exact module checksum
+`h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=`; it does not require a
+separate nonexistent go.mod checksum.
+
 ```bash
-git add internal/graph/store.go internal/graph/store_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
+aitop_task8_capture_pristine
+GOBIN="$aitop_task8_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task8_mutation_tool="$aitop_task8_mutation_dir/go-mutesting"
+test -x "$aitop_task8_mutation_tool"
+go version > "$manifest_dir/go-version"
+go version -m "$aitop_task8_mutation_tool" > "$manifest_dir/tool-version"
+set +e
+timeout 120s "$aitop_task8_mutation_tool" --exec-timeout=15 internal/graph/store.go > "$manifest_dir/task8-mutating.log" 2>&1
+aitop_task8_mutation_status=$?
+set -e
+printf '%s\n' "$aitop_task8_mutation_status" > "$manifest_dir/mutation-status"
+aitop_task8_mutation_accept=0
+aitop_task8_mod_metadata_ok=$(awk '$1 == "mod" && $2 == "github.com/zimmski/go-mutesting" && $3 == "v0.0.0-20210610104036-6d9217011a00" && $4 == "h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=" {print "yes"}' "$manifest_dir/tool-version" | tail -1)
+if [ "$aitop_task8_mutation_status" -eq 0 ]; then
+  aitop_task8_summary=$(sed -nE 's/^The mutation score is [0-9.]+ \(([0-9]+) passed, ([0-9]+) failed, ([0-9]+) duplicated, ([0-9]+) skipped, total is ([0-9]+)\)$/\1 \2 \3 \4 \5/p' "$manifest_dir/task8-mutating.log" | tail -1)
+  if [ -z "$aitop_task8_summary" ]; then
+    aitop_task8_mutation_outcome='REJECT: missing exact passed/failed/duplicated/skipped summary'
+  else
+    aitop_task8_passed=$(printf '%s\n' "$aitop_task8_summary" | awk '{print $1}')
+    aitop_task8_failed=$(printf '%s\n' "$aitop_task8_summary" | awk '{print $2}')
+    aitop_task8_duplicated=$(printf '%s\n' "$aitop_task8_summary" | awk '{print $3}')
+    aitop_task8_skipped=$(printf '%s\n' "$aitop_task8_summary" | awk '{print $4}')
+    aitop_task8_total=$(printf '%s\n' "$aitop_task8_summary" | awk '{print $5}')
+    aitop_task8_expected_total=$((aitop_task8_passed + aitop_task8_failed + aitop_task8_skipped))
+    if [ "$aitop_task8_total" -le 0 ] || [ "$aitop_task8_passed" -le 0 ] || [ "$aitop_task8_failed" -ne 0 ] || [ "$aitop_task8_skipped" -ne 0 ] || [ "$aitop_task8_total" -ne "$aitop_task8_expected_total" ]; then
+      aitop_task8_mutation_outcome="REJECT: passed=$aitop_task8_passed failed=$aitop_task8_failed duplicated=$aitop_task8_duplicated skipped=$aitop_task8_skipped total=$aitop_task8_total expected_total=$aitop_task8_expected_total"
+    else
+      aitop_task8_mutation_accept=1
+      aitop_task8_mutation_outcome="ACCEPT: passed=$aitop_task8_passed failed=0 duplicated=$aitop_task8_duplicated skipped=0 total=$aitop_task8_total"
+    fi
+  fi
+elif [ "$aitop_task8_mutation_status" -eq 2 ] && ! rg -ni 'timeout|timed out|signal: killed' "$manifest_dir/task8-mutating.log" && rg -q 'go/types\.\(\*StdSizes\)\.Sizeof' "$manifest_dir/task8-mutating.log" && cmp -s "$manifest_dir/go-version" <(printf '%s\n' 'go version go1.27.0-X:nodwarf5 linux/amd64') && [ "$aitop_task8_mod_metadata_ok" = yes ]; then
+  aitop_task8_mutation_accept=1
+  aitop_task8_mutation_outcome='ACCEPT: exact pinned active-Go StdSizes loader crash'
+else
+  aitop_task8_mutation_outcome='REJECT: unapproved status, timeout, or crash signature'
+fi
+# Restore all tool mutations first, then prove exact hashes/status/marker residue.
+aitop_task8_restore_check
+{
+  printf '%s\n' 'Task8 mutation prediction: no unexplained failed or skipped mutants and no unapproved tool error.'
+  printf 'Task8 mutation observation: status=%s outcome=%s\n' "$aitop_task8_mutation_status" "$aitop_task8_mutation_outcome"
+  printf '%s\n' 'Task8 mutation focused command: timeout 120s go-mutesting --exec-timeout=15 internal/graph/store.go'
+  printf '%s\n' 'Task8 mutation restoration proof: source SHA-256/status/marker check passed before evidence append.'
+  printf '%s\n' 'Task8 mutation rerun: final AST/go-list/exact-41/package/386/vet fence below.'
+  printf 'Task8 mutation conclusion: %s\n' "$aitop_task8_mutation_outcome"
+  cat "$manifest_dir/go-version"
+  cat "$manifest_dir/tool-version"
+  printf 'Task8 mutation exit status: %s\n' "$(cat "$manifest_dir/mutation-status")"
+  tail -c 65536 "$manifest_dir/task8-mutating.log"
+} >> tests/SABOTAGE_LOG.md
+rm -rf "$aitop_task8_mutation_dir"
+if [ "$aitop_task8_mutation_accept" -ne 1 ]; then
+  echo "$aitop_task8_mutation_outcome" >&2
+  exit 1
+fi
+```
+
+After every physical and tool mutation is restored, perform the Task8-local
+Phase D sweep. Audit every assertion and assertion helper in
+`internal/graph/store_test.go`, including every new subrow, fixture/action
+path, hook barrier, and independent oracle. Include `Fatalf`, `Errorf`, `Fatal`,
+helper failure calls, and assertion-library calls. Append one literal
+file:line row per assertion site to `tests/LOUDNESS_AUDIT.md` with all four
+boxes: present-tense rule name, enough offending state to debug without rerun,
+unique greppable phrase, and present-tense wording. Repair every failed box;
+an `EXEMPTION:` names the exact covering assertion and file:line. Generic
+coverage claims do not satisfy this audit.
+
+```bash
+rg -n 'Fatalf|Errorf|\.Fatal\(|require\.|assert\.' internal/graph/store_test.go
+git diff --name-only -- internal/graph/store.go internal/graph/store_test.go
+git diff --check
+test -z "$(git diff --name-only -- internal/graph/store.go internal/graph/store_test.go)"
+```
+
+Only after all plants are restored, the loudness audit is repaired, and the
+residue check is clean, run the final exact 41-test suite once and exactly one
+race run. Then repeat the package, Linux/386, vet, and diff checks. This is the
+single final post-sabotage pass.
+
+```bash
+"$manifest_dir/check-store-manifest" internal/graph/store_test.go > "$manifest_dir/ast-names"
+test "$(wc -l < "$manifest_dir/ast-names")" -eq 41
+go test ./internal/graph -list '^TestStore' | sed -n '/^TestStore/p' | sort -u > "$manifest_dir/go-list"
+sort -u "$manifest_dir/ast-names" > "$manifest_dir/ast-sorted"
+cmp -s "$manifest_dir/ast-sorted" "$manifest_dir/go-list"
+go test ./internal/graph -run '^TestStore(DefaultLimits|ExactQueuePartition|QueuedByteLimit|InvalidConfigRejected|PublishBeforeRun|SecondRunRejected|PublishRejectedWhileStopping|PublishRejectedAfterStopped|ChannelsNeverClose|ClassifiesCriticalEvents|ClassifiesNormalEvents|ClonesBeforeReturn|DuplicateDispositionAndStats|CoalescesOnlySafeReplacement|CollisionQueuesDiagnostic|NormalOverflowLedger|CriticalOverflowLedger|OverflowPublicationLinearizes|OverflowFirstDetectionTimeStable|FairnessThirtyTwoToOne|BatchPublishesAtHundredMilliseconds|SemanticDeadlinePreemptsBatch|DrainsReadyBeforeAdvance|UsesOneShotTimersWithoutReset|CancellationStopsAcceptance|CancellationDropsQueuedSemantics|AlreadyCanceledRunFinalizes|CancellationPublishesFinalDiagnostics|ExpectedAdmissionErrorContinues|UnknownInvariantStopsRun|PublicationDoesNotMutateEarlierBorrow|RetainsAtMostPreviousSnapshot|QueueChargeIncludesInflight|PendingDiagnosticFloodBeforeRunIsBounded|DiagnosticBatchFailureOnLaterItemIsAtomic|OversizeEventRejected|CoalescingGrowthDropsNewer|InvariantAbortAccountsQueued|RevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration|StatsExactShapeAndAccounting|ConcurrentReadersSeeImmutableSnapshots)$' -count=1
+go test -race ./internal/graph -run '^TestStore' -count=20
+go test ./internal/graph -count=1
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1
+go vet ./internal/graph
+git diff --check
+```
+
+The final Task8 implementation/evidence commit stages exactly four Phase B
+files. `tests/RISK_MODEL.md` was committed in Phase A and is intentionally not
+staged again:
+
+```bash
+git add internal/graph/store.go internal/graph/store_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
+git diff --cached --check
+diff -u \
+  <(git diff --cached --name-only | sort) \
+  <(printf '%s\n' internal/graph/store.go internal/graph/store_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md | sort)
+test -z "$(git diff --name-only)"
+test -z "$(git ls-files --others --exclude-standard)"
 git commit -m "feat: publish bounded graph snapshots"
 ```
 

@@ -936,9 +936,11 @@ incarnation proof, contribution conflict, count, history, retained bytes,
 published bytes, topology cycle, or endpoint identity. Valid returns true only
 for these constants. Error
 text contains only the fixed class. Unwrap returns ErrAdmission only for a nonnil
-valid kind. Store continues only after errors.Is, errors.As to a nonnil typed
-error, and Valid all succeed; nil or forged kinds are fatal invariants. A merged
-context conflict is contribution-conflict and uses the source metrics collision
+valid kind. During normal running, Store continues only after errors.Is,
+errors.As to a nonnil typed error, and Valid all succeed; nil or forged kinds are
+fatal invariants. Once cancellation enters stopping, any nonnil final diagnostic
+preparation error is terminal and is returned unchanged. A merged context conflict
+is contribution-conflict and uses the source metrics collision
 gap.
 
 Collision diagnostics use source/exact event capability/GapCollision;
@@ -1039,12 +1041,132 @@ the session node `completed`.
 
 The store owns active nodes, verified edges, a short in-memory state-transition
 ring, rolling message counts, ghost lifetimes, and selection pins. It does not
-write a database or copy transcript content. Limits are 4096 retained nodes,
-16384 retained edges, 256 state transitions per node, and 8192 queued events.
-The queue reserves 2048 slots for identity, topology, terminal, and gap events;
-the other 6144 hold normal metrics, nonterminal state, heartbeat, and message work.
-Reaching an admission limit opens an active telemetry gap. It never silently
-evicts an active node.
+write a database or copy transcript content. Reaching an admission limit opens
+an active telemetry gap. It never silently evicts an active node.
+
+The public Store surface is frozen exactly as follows:
+
+```go
+type StoreConfig struct {
+	EventQueue      int
+	CriticalReserve int
+	QueuedByteLimit uint64
+}
+
+type PublishDisposition uint8
+
+const (
+	PublishRejected PublishDisposition = iota + 1
+	PublishAcceptedCritical
+	PublishAcceptedNormal
+	PublishCoalesced
+	PublishDuplicate
+	PublishDroppedNormal
+	PublishDroppedCritical
+)
+
+type StoreStats struct {
+	NormalCapacity         int
+	CriticalCapacity       int
+	NormalDepth            int
+	CriticalDepth          int
+	CoalescedPending       int
+	PendingDiagnostics     int
+	QueuedByteCapacity     uint64
+	QueuedByteDepth        uint64
+	PendingDiagnosticBytes uint64
+	InFlightBytes          uint64
+	AcceptedCritical       uint64
+	AcceptedNormal         uint64
+	Coalesced             uint64
+	Duplicates             uint64
+	Collisions             uint64
+	Rejected               uint64
+	Applied                uint64
+	ApplyErrors            uint64
+	CanceledQueued         uint64
+	AbortedQueued          uint64
+	AbortedDiagnostics     uint64
+	DroppedNormal          uint64
+	DroppedCritical        uint64
+	Snapshots              uint64
+}
+
+var ErrStoreAlreadyRun = errors.New("store already run")
+var ErrStoreNotAccepting = errors.New("store not accepting")
+
+func DefaultStoreConfig() StoreConfig
+func NewStore(StoreConfig, *Reconciler) (*Store, error)
+func (s *Store) Publish(Event) (PublishDisposition, error)
+func (s *Store) Run(context.Context) error
+func (s *Store) SetPinned(id NodeID, pinned bool) error
+func (s *Store) Snapshot() *Snapshot
+func (s *Store) Stats() StoreStats
+```
+
+`DefaultStoreConfig` returns exactly `EventQueue=8192`,
+`CriticalReserve=2048`, and `QueuedByteLimit=8*1024*1024`. Store defines
+`ErrStoreAlreadyRun` and `ErrStoreNotAccepting`; both are stable sentinels and
+must be preserved through wrapping with `errors.Is`. `ErrEventTooLarge` is the
+stable oversize sentinel. A key collision is a nonnil typed `*AdmissionError`
+with `Kind == AdmissionCollision`, and remains discoverable through both
+`errors.As` and `errors.Is(err, ErrAdmission)`.
+
+`NewStore` rejects a nil Reconciler, `EventQueue < 2`,
+`CriticalReserve <= 0`, `CriticalReserve >= EventQueue`, and
+`QueuedByteLimit < 1104` (the fixed diagnostic reserve). Validation happens
+before any ownership transfer; every failed construction leaves the Reconciler
+caller-owned. The normal capacity is `EventQueue-CriticalReserve` (6144 and
+2048 under the defaults). One normal diagnostic, one critical diagnostic, and
+one catch-all diagnostic entry are permanently reserved at exactly 368 bytes
+each, 1104 bytes total. Unused reserve is not reported in either queue depth.
+
+Clock ownership begins at construction. `NewStore` samples the injected
+`Clock.Now` exactly once. A zero construction sample is a safe construction
+error and transfers no Reconciler ownership. For a nonzero sample,
+`NewStore` calls `r.Snapshot(constructionNow)` and atomically exposes that
+generation as the initial Store publication while tracking `r.current` as the
+published generation; its Snapshot has a nonzero `At` and `Snapshots == 1`.
+Every Store-owned zero `Clock.Now` sample returns or propagates an error whose
+exact safe `Error()` text is `graph store clock rule violated: now=zero`. This
+is a literal message contract only: no stable concrete error type or
+`errors.Is` identity is promised.
+
+The queued-byte schedule is part of the contract. For an accepted event the
+complete event token is `128 + chargeEvent(event)`. A replay-map entry costs 128
+bytes while the event is queued or in flight, and an eligible coalescing-map
+entry costs 128 bytes only while that event is queued. An arbitrary pending
+diagnostic identity costs the complete dynamic `chargeActiveGapEntry(key, gap)`,
+including SourceID and the present capability. Only each fixed reserved
+normal, critical, and catch-all identity with nil capability has the exact
+368-byte charge; those three entries reserve 1104 bytes total. The event token
+and all mandatory per-event entries are completed before retention. In-flight
+charge remains until `Apply` finishes; an in-flight item is never coalescible.
+`ErrEventTooLarge` is returned only when one complete token cannot fit the total
+limit or its arithmetic saturates. An aggregate shortage for a token that fits
+individually is a normal or critical drop, with its bounded diagnostic ledger,
+not an oversize error. Tests use independent literal charge oracles and never
+call production charge helpers.
+
+For every Publish that reaches a decision after pure clone, validation, key, and
+charge work, Store samples `Clock.Now` exactly once. A zero sample returns
+`PublishRejected` with the exact safe nonnil clock error, increments `Rejected`
+only, and retains neither the event nor a diagnostic. Collision, normal-drop,
+critical-drop, and catch-all `firstAt` values use that sample, never
+`Event.ReceivedAt`.
+
+The reachable helper error graph is narrow. `cloneEvent` can fail on an
+unsupported payload before validation, and `Event.Validate` can fail on a
+recognized payload with invalid fields; Store returns each exact safe helper
+error unwrapped with `PublishRejected` and unchanged state. After successful
+validation, replay-digest and `Fingerprint` derivation are deterministic,
+`CoalesceKey` returns only `(string, bool)`, and `canCoalesceReplace` has no
+reachable Store error because both retained inputs were validated (direct
+invalid-helper calls may still return validation errors). Charge saturation and
+complete-token overflow use the separately frozen `ErrEventTooLarge`. No stable
+sentinel or typed-error promise exists for clone or validation beyond their
+exact safe nonnil errors; typed collision and lifecycle sentinels retain their
+stated identities.
 
 Retained capacity is owned where the maps live: 4096 nodes including ghosts,
 16384 edges including messages and ghosts, 4096 active gaps, and 65536 replay
@@ -1148,65 +1270,157 @@ after actor-incarnation retirement is durably represented by its retained proof;
 the corresponding stable dedup witnesses still remain. History exhaustion fails
 closed rather than guessing a watermark or pruning replay truth.
 
-Ingress coalescing is intentionally narrow. Nodes, messages, topology, terminal,
-gap, immutable, sidecar, and sequenced protocol events never coalesce. Only
-unsequenced mutable-observation or occupancy metrics, nonterminal state, and
-same-source heartbeat events enter candidate lanes. Replacement requires the same
-full source lane, strict newer ordered timestamp or receiver arrival, no mixed
-observation regime, and complete preservation of older metric fields. Duplicate
-key plus equal semantic fingerprint keeps the older event; the same key with a
-different fingerprint is a collision.
+Ingress has one ownership and ordering pipeline: clone, validate, fingerprint,
+classify, and complete the event charge and replay/coalesce keys before any
+retention. Pending replay covers queued and in-flight events only. Duplicate or
+collision decisions happen before coalescing, and coalescing happens before
+queue insertion. Equal replay key plus equal fingerprint keeps the older event;
+the same key with a different fingerprint is a collision. In-flight work is
+never coalesced, and an accepted replacement keeps the older queue position.
+
+The classification matrix is exact:
+
+| Event kind | Lane | Coalescing |
+|---|---|---|
+| `NodeObserved` | critical | never |
+| `MetricsObserved` | normal | eligible only for an unsequenced mutable observation/occupancy lane |
+| `StateObserved` | critical when terminal; normal when nonterminal | eligible only when nonterminal and otherwise compatible |
+| `RelationshipObserved` | critical | never |
+| `MessageObserved` | normal | never |
+| `ExitObserved` | critical | never |
+| `HeartbeatObserved` | normal | eligible only for a compatible same-source lane |
+| `GapObserved` | critical | never |
+| `LaunchIntent` | critical | never |
+| `SessionBind` | critical | never |
+
+Only unsequenced mutable-observation or occupancy metrics, nonterminal state,
+and same-source heartbeat events can enter candidate lanes. Replacement
+requires one full source lane, strict newer ordered timestamp or receiver
+arrival, no mixed observation regime, and complete preservation of every older
+metric field. Pending diagnostic identities are bounded to ordinary
+`MaxGaps-3`; overflow allocates no identity and increments the fixed catch-all
+ledger. Counts saturate safely and every ledger preserves its first detection
+time.
 
 Critical work is node, relationship, exit, gap, launch intent, session bind, and
 terminal state. Metrics, nonterminal state, heartbeat, and message work is normal.
-After 32 critical items, one ready normal item runs. Dirty changes publish within
-100ms. Normal and critical overflow have distinct cumulative active gaps with
-first-drop timestamps. Pending drop evidence is merged under the same final mutex
-as atomic snapshot publication, never by recursively enqueueing a gap. The full
-sorted pending diagnostic set prepares as one all-or-nothing Reconciler
-transaction and candidate generation. Store commits once, pointer-stores that
-generation, then clears the committed counts. A later-item failure cannot publish
-an earlier diagnostic. Operational Store statistics may expose capacities,
-depths, accepted, rejected, applied,
-coalesced, duplicate, collision, dropped, errored, canceled, and publication
-totals, plus coalescing/pending-diagnostic counts, queued/pending/in-flight bytes,
-and separate aborted queued/diagnostic accounting. They are not a second
-snapshot-partial surface. The receiver never blocks a sender and never
-claims unconditional retention under unbounded input.
+After 32 critical items, one ready normal item runs. Critical debt saturates at
+32; a ready normal item that is late runs immediately. Timer checks occur between
+bounded groups. The receiver never blocks a sender and never claims
+unconditional retention under unbounded input.
 
-Pending diagnostics are queue-charged and bounded to ordinary `MaxGaps-3`
-identities even before Run. A new diagnostic that cannot fit increments one
-queue-reserved gap-ledger catchall without allocating an identity. Existing counts
-saturate safely. Existing coalescing work wakes Run; diagnostics create no wakeup
-channel.
+The full sorted pending diagnostic set prepares as one all-or-nothing Reconciler
+transaction. Store commits once, pointer-stores the resulting generation once,
+and clears only the committed identities and counts. A later-item failure cannot
+publish an earlier diagnostic. If an expected admission result leaves the batch
+uncommitted, the full pending set is retained and Run waits for a later retry;
+an invariant failure aborts the full set. Normal and critical overflow, collision,
+and catch-all evidence retain cumulative saturating counts and stable firstAt
+values. Pending diagnostics are never emitted by recursively calling Publish.
+Canonical diagnostic order is the existing gap order: `SourceID` ascending,
+nil capability before present capability, present `Capability` ascending, then
+`GapKind` ascending. The same order is used for every pending batch and every
+published diagnostic slice.
+
+Pending diagnostics are queue-charged by their complete dynamic
+`chargeActiveGapEntry(key, gap)` and bounded to ordinary `MaxGaps-3` identities
+even before Run. A new diagnostic that cannot fit increments one queue-reserved
+gap-ledger catchall without allocating an identity. Existing counts saturate
+safely. Existing coalescing work wakes Run; diagnostics create no wakeup channel.
 
 Store has open, running, stopping, and stopped states, one Run, never-closed
-channels, and a deterministic injected clock with one-shot timers. Reconciler
-deadline discovery uses the exclusive `nextDeadline(after time.Time)` cursor.
-After ready work drains, when `Advance(D)` returns an expected typed admission
-error and commits its permitted diagnostic, Store publishes that diagnostic,
-remembers `D`, and schedules the next distinct deadline with `nextDeadline(D)`;
-it never retries equal `D` in a busy loop. New event ingress resets the cursor
-after insertion, so a later expiry can release credit and the previously rejected
-work can be reconsidered. On cancellation, Store stops acceptance, discards queued
-semantics with accounting, commits pending
-diagnostics as one prevalidated batch, and publishes its candidate snapshot when
-that prepare succeeds. Fatal
-revision exhaustion during cancellation follows invariant abort and returns the
-error. Expected admission diagnostics do not stop Run. Unknown invariant abort
-preserves last Reconciler state and generation, discards pending diagnostics and
-queued semantics, and accounts them separately as aborted. Duplicate and
-collision outcomes have separate dispositions and counters.
+channels, and a deterministic injected clock with one-shot timers. A scheduler
+cursor remembers the first dirty, nonzero unpublished ChangeSet and never moves
+to a later dirty time. Publication clears exactly the covered dirty state. The
+next timer is the earlier of `firstDirty+100ms` and the semantic deadline.
+
+At deadline `D`, Store captures the last accepted ordinal, drains ready work
+through that cutoff, then calls `Advance(D)`. Ingress after the cutoff belongs to
+the next batch and resets the deadline cursor. Ready work is always drained
+before `Advance`; equal deadlines perform drain, `Advance`, and one publication.
+When normal running `Advance(D)` returns an expected typed admission error,
+Store publishes any permitted diagnostic, remembers `D`, and asks exclusive
+`nextDeadline(D)` for
+the next distinct deadline, including after a zero-change result. It never
+retries equal `D` in a busy loop. New ingress resets the cursor after insertion,
+so a later expiry credit can unblock previously rejected work.
+
+Semantic `D` comes exclusively from `nextDeadline(after)`; neither a timer
+payload nor the readiness clock sample can become `D`. On every timer or wake,
+Store takes one readiness `Clock.Now` sample. If `now < D`, it arms a fresh
+one-shot timer for `D-now`; when `now >= D`, it drains and calls `Advance(D)`,
+never `Advance(now)`. That readiness sample is the one clock sample for the
+scheduled Advance operation; the Reconciler receives the semantic deadline D.
+
+Each dequeued Apply samples `Clock.Now` exactly once after `BeforeApply` and the
+final cancellation recheck. A zero sample is a fatal invariant before `Apply`;
+the event enters invariant-abort accounting. Otherwise the same nonzero sample
+is passed to `r.Apply` and seeds `firstDirty` when its ChangeSet is nonzero.
+Each diagnostic preparation, `Advance`, and `SetPinned` operation samples
+`Clock.Now` exactly once for that operation. A zero `Advance` sample is a fatal
+non-admission invariant: no Advance call or publication occurs, Run returns the
+exact safe clock error through invariant abort, queued work becomes
+`AbortedQueued`, pending logical counts become `AbortedDiagnostics`, and
+`ApplyErrors` is unchanged. A zero normal-running pending-diagnostic-prepare
+sample is the same fatal invariant with no prepare or publication. A zero
+SetPinned sample in open or running returns a safe nonnil clock error to the
+caller only; it mutates no Reconciler, generation, cursor, wake, stats, or
+lifecycle state and Run keeps running. A zero cancellation-time final prepare
+sample is terminal finalization failure: Store stops, publishes nothing, maps
+pending and unattempted/pre-Apply in-flight work to the two aborted counters,
+clears charge, and returns the exact clock error. Pending diagnostic `Gap.At`
+remains the first Publish decision sample; preparation uses its one sample only
+as generation time. Timer payloads are wake signals and never replace the
+scheduled deadline or any Store clock sample.
+
+Timers use `NewTimer` one-shot instances only: no `Reset`, and timer payloads
+never substitute for the scheduled `D`. Timer checks happen between bounded
+groups. Cancellation linearizes `running -> stopping` under the queue mutex,
+stops acceptance and the timer, discards queued and pre-Apply semantics, and
+then finalizes. A committed-before-cancellation event remains `Applied`.
+Successful cancellation counts queued work and a pre-Apply in-flight event whose
+cancellation check wins before Apply as `CanceledQueued`. Any nonnil
+`prepareStoreDiagnostics` error during cancellation, including a valid
+`AdmissionError`, is terminal: Store does not retry, publishes nothing, maps all
+pending logical counts to `AbortedDiagnostics`, maps unattempted queued and
+pre-Apply in-flight work to `AbortedQueued`, clears dynamic charges, leaves Store
+stopped, and returns the original error. Cancellation returns nil only after a
+complete batch success. During normal running, expected admission diagnostics
+retain the full pending set and wait for retry; unknown invariant errors stop it
+and preserve the last committed state and published generation.
+
+Store states are open, running, stopping, and stopped. Exactly one Run call may
+transition open to running; every later Run call, including after stopped,
+returns `ErrStoreAlreadyRun`. Publish and SetPinned while stopping or stopped
+return `ErrStoreNotAccepting` (Publish also returns `PublishRejected`).
 
 Store exposes `SetPinned(id NodeID, pinned bool) error` and takes exclusive
 mutation ownership of the Reconciler when `NewStore` succeeds. Callers do not
-invoke Reconciler `Apply`, `Advance`, or `SetPinned` directly afterward. One
-mutation mutex covers Run's Apply/Advance and Store.SetPinned. Pinning is legal
-while Store is open or running and uses `Clock.Now`; stopping or stopped rejects
-it. A successful generation change commits and publishes before return, resets
-the deadline cursor, and sends a nonblocking wake token for one-shot timer
-recomputation. An idempotent no-generation change does not publish. Any error,
-including `ErrGhostExpired`, changes and publishes nothing.
+invoke Reconciler `Apply`, `Advance`, or `SetPinned` directly afterward. The
+only nested lock order is mutation -> queue -> publication. Queue-only paths
+release the queue lock and revalidate lifecycle and ownership before nesting
+into mutation or publication. `BeforeApply` runs after the event is charged
+in-flight, with no lock held, immediately before the cancellation check.
+The check is adjacent to the hook and is repeated as the final pre-Apply
+recheck; cancellation winning there discards the event as `CanceledQueued`.
+`BeforePublish` runs with the required locks held around prepare, commit,
+pointer-store, counters, and committed-clear. `AfterStop` runs exactly once,
+after stopping has disabled acceptance and timers, with no lock held and before
+owned resources are disposed.
+
+Pinning is legal while Store is open or running and uses `Clock.Now`; stopping or
+stopped rejects it. A successful generation change commits and publishes before
+return, resets the deadline cursor, and sends a nonblocking wake token for
+one-shot timer recomputation. An idempotent no-generation change does not
+publish. Any error, including `ErrGhostExpired`, changes and publishes nothing.
+
+`NewStore` atomically installs the initial generation and sets `Snapshots=1`.
+Each distinct pointer publication increments `Snapshots` once. Store-published
+generation and `Reconciler.previous` remain aligned; after an owned commit,
+`previous` is re-anchored to the previously published generation, so production
+retains at most current and previous excluding caller references. `Snapshot` is
+an atomic load. Cancellation publishes only a differing current generation or
+a successfully committed diagnostic candidate.
 
 An individually oversized or charge-overflow event is rejected with
 event-too-large and no gap. Aggregate shortage drops otherwise admissible work and records
@@ -1214,6 +1428,26 @@ normal/critical saturation. Coalescing growth that cannot fit keeps the older
 event and drops the newer. Invariant abort accounts remaining accepted work as
 aborted, distinct from context-canceled queued work, and preserves the last
 snapshot.
+
+The exact unsaturated accounting identity is:
+
+```text
+AcceptedCritical + AcceptedNormal
+  == Applied + ApplyErrors + CanceledQueued + AbortedQueued
+     + NormalDepth + CriticalDepth + inflightTokenCount
+```
+
+The `CanceledQueued` term includes pre-Apply in-flight work canceled before the
+Apply call; committed-before-cancellation work remains `Applied`.
+
+`Stats` is operational only and is not a second snapshot-partial surface. Its
+fields are exactly the `StoreStats` declaration above, including pending
+diagnostic bytes, in-flight bytes, and separate aborted queued/diagnostic
+counts. `ApplyErrors` increments only when `Apply` returns an error; Publish
+rejections, drops, lifecycle errors, and cancellation do not increment it.
+Every canonical diagnostic batch is sorted by the existing diagnostic sort order
+before prepare, commit, pointer-store, and committed-clear; that order is
+SourceID, nil-before-present capability, capability, then GapKind.
 
 ### Runtime ownership
 
