@@ -32,11 +32,11 @@ Same-epoch discipline: mutate, watch RED, restore, watch GREEN, next. Two sessio
 | PF-C1 | Claude tokens formula drops `cache_read_input_tokens` | claude collector RED | RED: `claude-tokens-are-last-turn-occupancy violated: got 12610 want 115728` (+ synthetic test RED) | Load-bearing on the subagent-built collector. |
 | PF-T1 | `theme.FromMap` starts from `Theme{}` instead of `Nightfable()` | theme RED | RED: `builtin-nightfable-matches-the-theme-file violated: 2 of 23 fields differ` | Load-bearing on the subagent-built loader. |
 
-| PF-C3 | Tail widening disabled (break after the first window) | TestTailWidensPastAGiantToolResult RED | RED: `claude-tail-widens-past-giant-line violated: ok=true model="" tokens=0` | Load-bearing. Born from a live flicker: a 212 KB tool result filled the window and the row painted `—`. |
+| PF-C3 | Tail widening disabled (break after the first window) | TestTailWidensPastAGiantToolResult RED | RED: `claude-tail-widens-past-giant-line violated: ok=true model="" tokens=0` | Load-bearing. Born from a live flicker: a 212 KB tool result filled the window and the row painted `blank`. |
 | PF-C4 | Re-parse stops merging onto the previous cache entry | TestReparseKeepsKnownModelWhenWindowHoldsOnlyToolOutput RED | RED: `claude-reparse-keeps-known-values violated: model="" tokens=0` | Load-bearing; append-only growth cannot blank a known value. |
 | PF-C5 | Oversized line returns instead of continue | TestOversizedLineIsSkippedNotFatal RED | RED: `claude-scan-survives-oversized-line violated: title=""` | Load-bearing; longest live line today is 618 KB against a 1 MiB ceiling. |
 
-Also watched in this epoch, outside the table: `TestTrackerZeroDeltaIsKnownZeroNotUnknown` turned RED against Grok's original `CPUPercent` (zero delta reported as unknown) before the fix; that was a real bug, every quiet agent painted `—`.
+Also watched in this epoch, outside the table: `TestTrackerZeroDeltaIsKnownZeroNotUnknown` turned RED against Grok's original `CPUPercent` (zero delta reported as unknown) before the fix; that was a real bug, every quiet agent painted `blank`.
 
 Restore after each plant: `go test ./...` green (tally in `tests/TALLY.txt`).
 
@@ -899,3 +899,574 @@ The pinned 2019 `golang.org/x/tools` loader panicked while checking `/usr/lib/go
 | T6-R02 / net-zero protocol gap transaction | Disabled final transaction-delta normalization. RED: open+resolve from an absent base returned Gap+Visibility, advanced visibility/gap epoch, and published a new generation despite no final gap. | Returned only when the spurious Gap flag appeared; focused row GREEN. | Final gap overlays normalize against canonical base before revisions, Partial, epochs, and generation publication. |
 
 Clean-pass review result: two production RED observations, two false-GREEN assertion weakenings, four restored edits, zero survivors. Task 6 final cumulative result: 33 valid pairs and 66 restored physical edits. The seven earlier non-verdict attempts remain excluded from this count.
+
+### Task 7 lifecycle Phase C/D checkpoint (2026-08-28; historical, superseded by the 58-pair final closeout)
+
+The active Task 7 production surface is `internal/graph/reconcile.go`; every
+plant below was made with `apply_patch` and restored with its inverse before the
+next focused run. A compile-only plant and an invariant-invalid shape plant are
+listed as non-verdicts, not kills.
+
+| ID / owning test | Production plant and observed result | Assertion weakening and observed result | Conclusion |
+|---|---|---|---|
+| T7-C19 / `TestReconcileGhostPinBeforeDeadline` | Inverted the pre-deadline pin assignment. Focused test RED on pin state, deadline scheduling, and idempotence. | Disabled the pin, deadline, and repeat-idempotence predicates while the plant remained active. Focused test PASSed with the ghost unpinned and scheduled. | Load-bearing; all predicates restored. |
+| T7-C20 / `TestReconcileGhostPinAfterDeadline` | Inverted the inclusive overdue comparison. Focused test RED because exact/overdue calls returned nil and mutated the owner. | Disabled both exact and overdue atomicity predicates. Focused test PASSed with the illegal pin accepted. | Load-bearing; both predicates restored. |
+| T7-C21 / `TestReconcileGhostUnpinAfterDeadlineRemoves` | Scoped ghost expiry to an empty ID set. Focused test RED because the pinned target and same-deadline target remained. | Disabled the full-owner removal predicates in the main, already-unpinned, and isolation rows. Focused test PASSed with the target retained. | Load-bearing; all predicates restored. |
+| T7-C22 / `TestReconcileAcceptsStrictlyNewerIncarnation` | Preserved `Pinned=true` during a proven switch. Focused test RED in all three proof rows. | Disabled the amended full switch oracle. Focused test PASSed while the resumed node stayed pinned. | Load-bearing; full oracle restored. |
+| T7-C24 / `TestReconcileEndpointIncarnationMismatchRejected` | Allowed an edge when only one visible endpoint Node record was absent. Focused test RED when a tombstoned target accepted a message. | Disabled the same-incarnation tombstone proof oracle and kept the endpoint plant active. Focused test PASSed, demonstrating the proof predicate is decisive. | Load-bearing; endpoint and proof predicates restored. |
+| T7-C26 / `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop` | Disabled the same-incarnation absent-node proof guard. Focused test RED when a distinct tombstone key recreated the node. | Disabled the distinct-key proof predicate while the plant remained active. Focused test PASSed. | Load-bearing; proof oracle restored. |
+| T7-C27 / `TestEdgePublicShapeOmitsEndpointIncarnations` | Set a message public Relationship field after aggregate folding. Focused test RED on public message shape. | Disabled the message Relationship/Trace shape predicate while the plant remained active. Focused test PASSed. | Load-bearing; shape predicate restored. |
+
+| T7-C23 / `TestReconcileOldIncarnationEdgeIsolation` | Rewrote the resumed message guard to the old source incarnation. Focused test RED on the guard-only COW check and current-incarnation join. | Disabled the guard-only COW and current-join predicates while the plant remained active. Focused test PASSed. | Load-bearing; both predicates restored. |
+| T7-C25 / `TestReconcileResumeRemovesOrGhostsPriorEdges` | Skipped relationship removal in `stageResumeEdges`. Focused test RED with the old ghost relationship retained. | Disabled the resume removal, expiry/index, and MaxEdges predicates while the plant remained active. Focused test PASSed. | Load-bearing; all predicates restored. |
+| T7-C22 / `TestReconcileResumeCancelsGhost` | Preserved `Pinned=true` during a proven switch. Focused test RED on the visible resume row. | Disabled the pin predicates in both visible and absent resume rows while the plant remained active. Focused test PASSed. | Load-bearing; both rows restored. |
+
+### Task 7 pre-19 named pair checkpoint (historical, superseded by the 58-pair final closeout)
+
+| ID / owning test | Production plant and observed result | Assertion weakening and observed result | Conclusion |
+|---|---|---|---|
+| T7-C01 / `TestReconcileNativeSpawn` | Set relationship lifecycle to `LifecycleGhost` after folding. Focused test RED on the native fold lifecycle assertion. | Disabled only that lifecycle predicate while the plant remained active. Focused test PASSed. | Load-bearing; lifecycle assignment restored. |
+| T7-C02 / `TestReconcileSidecarSpawn` | Forced sidecar public provenance to native. Initial broad row survived because native corroboration legitimately wins; added an isolated sidecar-only row and replanted. Focused test RED on sidecar-only provenance. | Disabled the isolated provenance predicate while the plant remained active. Focused test PASSed. | Load-bearing after decisive sidecar-only replant; all edits restored. |
+| T7-C03 / `TestReconcilePublicLaunchRejected` | Changed the public-launch admission kind for the trace-handshake source to `AdmissionEndpointIdentity`. Focused test RED on the typed admission rule. | Changed only that candidate's expected kind to the mutated kind while the plant remained active. Focused test PASSed. | Load-bearing; admission-kind oracle restored. |
+| T7-C04 / `TestReconcileServiceCrossLink` | Allowed a service self-edge to proceed past the self-edge guard. Focused test RED on the self-edge admission rule. | Returned early from the self-edge assertion when no error appeared. Focused test PASSed with the illegal service edge path. | Load-bearing; self-edge oracle restored. |
+| T7-C05 / `TestReconcileRankingCycleOnlyOpensGap` | Allowed the named cycle candidate past `rankingCycle`. Focused test RED because the candidate returned nil instead of a cycle diagnostic. | Returned early when the candidate error disappeared. Focused test PASSed with the cycle mutation. | Load-bearing; candidate cycle oracle restored. |
+| T7-C06 / `TestReconcileMessageDuplicateReplayNoop` | Replaced the exact-fingerprint replay no-op with a new fingerprint transaction. Focused test RED on generation/history/index immutability. | Disabled the complete replay no-op predicate while the plant remained active. Focused test PASSed with the extra transaction. | Load-bearing; replay owner image restored. |
+| T7-C07 / `TestReconcileMessageDeliveryCountsMixed` | Replaced the greatest-delivery `Latest` assignment with `DeliveryUnknown`. Focused test RED on the digest/timestamp tie fold. | Disabled only the `Latest` predicate while the plant remained active. Focused test PASSed. | Load-bearing; latest-delivery oracle restored. |
+| T7-C08 / `TestReconcileMessageSlidingWindowExpiry` | Skipped expiry for a two-contribution message edge. Focused test RED at the first exact deadline. | Disabled the first-expiry owner/fold predicate and returned from the two-contribution branch while the plant remained active. Focused test PASSed. | Load-bearing; D-minus/D/index owner checks restored. |
+| T7-C09 / `TestReconcileSuccessVanishedAndFailedGhostDeadlines` | Used the failure TTL for one completed ghost source. Focused test RED on the exact completed deadline. | Changed only that completed fixture's expected TTL while the plant remained active. Focused test PASSed. | Load-bearing; success/failure TTL oracle restored. |
+| T7-C10 / `TestReconcileGhostFadeWindows` | Halved the completed midpoint progress for one terminal clock. Focused test RED on the completed midpoint and supplied-time rows. | Skipped the completed midpoint row and removed the supplied-time progress value predicate while the plant remained active. Focused test PASSed. | Load-bearing; fade clock oracle restored. |
+| T7-C11 / `TestReconcileEdgePartialFromNilCapabilityGap` | Ignored the named nil-capability source in edge-gap matching. Focused test RED on relationship/message Partial. | Returned before the open-gap owner predicate when Partial stayed false. Focused test PASSed. | Load-bearing; nil-capability final-overlay oracle restored. |
+| T7-C12 / `TestReconcileEdgePartialFromExactCapabilityGap` | Ignored the exact spawn capability for one source. Focused test RED on the spawn-open Partial row. | Disabled the exact-capability table predicate while the plant remained active. Focused test PASSed. | Load-bearing; source/capability isolation oracle restored. |
+| T7-C13 / `TestReconcileRelationshipProvenanceMatrix` | Forced one matrix native source's public provenance to sidecar. Focused test RED on native precedence. | Disabled only the matrix native-precedence predicate while the plant remained active. Focused test PASSed. | Load-bearing; provenance fold oracle restored. |
+| T7-C14 / `TestReconcileResolvingOneSourceKeepsOtherEdgePartial` | Skipped edge Partial recomputation on the final source-gap resolution. Focused test RED with Partial and edge epoch retained. | Disabled only the final-clear predicate while the plant remained active. Focused test PASSed. | Load-bearing; multi-source resolution oracle restored. |
+| T7-C15 / `TestReconcileUnrelatedGapDoesNotMarkEdgePartial` | Marked every edge Partial for one unrelated source. Focused test RED on source isolation. | Skipped the unrelated-source case while the plant remained active. Focused test PASSed. | Load-bearing; unrelated source oracle restored. |
+| T7-C16 / `TestReconcileRelationshipContributionHistoryLimitFailsClosed` | Applied an inclusive history boundary to the later legal retry. Focused test RED when credit-qualified replay was rejected. | Returned from the retry row on that rejection while the plant remained active. Focused test PASSed. | Load-bearing; later-credit retry oracle restored. |
+| T7-C17 / `TestReconcileRelationshipContributionByteLimitFailsClosed` | Fired the edge clone hook on retained-byte rejection before cloning. Focused test RED on both no-clone rows. | Disabled both clone-count predicates while the plant remained active. Focused test PASSed. | Load-bearing; preflight/no-clone oracle restored. |
+| T7-C18 / `TestReconcileMessageContributionByteLimitFailsClosed` | Fired the edge clone hook on message retained-byte rejection before cloning. Focused test RED on both message no-clone rows. | Disabled both clone-count predicates while the plant remained active. Focused test PASSed. | Load-bearing; message preflight/index oracle restored. |
+| T7-A1 / same-D savepoint in `TestReconcileSuccessVanishedAndFailedGhostDeadlines` | Reduced the deferred retry bound to one iteration. Focused same-D subrow RED because the expected semantic diagnostic disappeared and deferred work was stranded. | Returned from the subrow when the diagnostic disappeared while the plant remained active. Focused subrow PASSed. | Load-bearing; bounded fixed-point retry oracle restored. |
+| T7-A2 / deferred witness delete/restore in `TestReconcileRelationshipContributionHistoryLimitFailsClosed` | Applied an inclusive history boundary to the legal post-credit retry. Focused test RED when the witness/contribution retry was rejected. | Returned from the retry row on that rejection while the plant remained active. Focused test PASSed. | Load-bearing; fingerprint restoration/retry oracle restored. |
+| T7-A6 / preflight-before-clone in `TestReconcileRelationshipContributionByteLimitFailsClosed` and `TestReconcileMessageContributionByteLimitFailsClosed` | Fired `edgeCloneHook` on retained-byte rejection before clone for relationship and message preflights. Both focused tests RED on nonzero clone counts. | Disabled only the rejection clone-count predicates while each plant remained active. Both focused tests PASSed. | Load-bearing; no-clone preflight oracles restored. |
+| T7-A3 / orphan GapSequence suppression in `TestReconcileSuccessVanishedAndFailedGhostDeadlines` | Staged a pending sequence gap after its candidate lane had been deleted. Focused drained-message subrow RED on the orphan GapSequence. | Disabled the orphan-gap predicate while the plant remained active. Focused subrow PASSed. | Load-bearing; final-owner pending-gap filter restored. |
+| T7-A4 / final-public State/Metrics normalization in `TestReconcileMessageSlidingWindowExpiry` | Added a Metrics delta to the same-D net-public-change path. Focused create-expire subrow RED on the extra Metrics change. | Updated only that expected ChangeSet to accept the injected Metrics delta while the plant remained active. Focused subrow PASSed. | Load-bearing; final-public revision normalization restored. |
+| T7-A5 / Store final-overlay Partial recomputation in `TestReconcileEdgePartialFromNilCapabilityGap` | Suppressed `stageEdgePartialUpdates` in Store diagnostics. Focused Store subrow RED on relationship/message Partial. | Disabled the Store Partial predicate while the plant remained active. Focused subrow PASSed. | Load-bearing; Store edge overlay recomputation restored. |
+
+The first C27 plant initialized both private edge maps and failed during
+retained-charge validation before reaching the shape assertion; it was restored
+and replaced with the public-field plant above. No production mutation remains.
+Task 7 Phase C/D checkpoint before clean-pass review fixes records 40 complete production RED/assertion
+false-GREEN pairs: 28 unique named targets (27 frozen Task 7 names plus the
+inherited amended incarnation test) and 12 explicitly labeled audit extras
+(A1-A6 and B1-B6). Every pair was restored and followed by focused GREEN;
+there are zero unpaired targets, duplicate manifest names, surviving valid
+plants, or wrong-reason cases. Temporary syntax/build and invariant-invalid
+shape attempts are explicitly non-verdicts and excluded from the count.
+
+### Task 7 audit batch B (historical, superseded by the current 79-pair closeout)
+
+| ID / owning branch | Production plant and observed result | Assertion weakening and observed result | Conclusion |
+|---|---|---|---|
+| T7-B1 / same-Advance relationship credit | Changed the buffered-event savepoint history decrement to an increment. The exact same-Advance deletion-credit row RED with a history/computed-history mismatch. | Returned from the row when the mismatch appeared. The planted test PASSed. | Load-bearing; savepoint history credit restored. |
+| T7-B2 / target-scoped overdue unpin | Routed `stageGhostExpiryFor` through the unscoped cleanup path. Same-deadline isolation RED because the unrelated ghost was removed. | Reduced the isolation oracle to the target removal predicate while the plant remained active. The focused row PASSed. | Load-bearing; target scope restored. |
+| T7-B3 / tombstone same-incarnation proof | Inverted the absent-node same-incarnation guard. Distinct tombstone replay RED with nil admission. | Disabled the distinct-key proof predicate while the plant remained active. The node replay subrow PASSed. | Load-bearing; strict-newer/tombstone proof restored. |
+| T7-B4 / guard-only public epoch/backing | Used transient edge-overlay presence instead of public edge-value delta to advance `edgeEpoch`. Guard COW RED on epoch and public-slice reuse. | Disabled the epoch/backing predicates while the plant remained active. The guard subrow PASSed. | Load-bearing; private-only public normalization restored. |
+| T7-B5 / private fleet batch | Omitted one relationship history unit for the acyclic fleet relationship IDs. Fleet helper RED on its exact history golden. | Changed only the helper's expected history golden while the plant remained active. The fleet test PASSed. | Load-bearing; shared batch history/fleet topology restored. |
+| T7-B6 / full owner epochs | Added a second gap-epoch increment for the nil-capability source. Partial owner test RED on exact epoch deltas. | Updated the nil-gap epoch expectations while the plant remained active. The focused test PASSed. | Load-bearing; four-epoch owner image restored. |
+
+### Task 7 pinned mutation-tool escalation (historical, superseded by the current 79-pair closeout)
+
+```text
+tool: github.com/zimmski/go-mutesting/cmd/go-mutesting
+version: v0.0.0-20210610104036-6d9217011a00
+module checksum: h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+invocation: go-mutesting --exec-timeout=15 internal/graph/reconcile.go
+exit: 2 before source mutation
+```
+
+The pinned loader panicked in `go/types.(*StdSizes).Sizeof` with a nil
+receiver while loading the Go 1.27 standard library. No automated mutant,
+score, survivor, or timeout exists. The executable was isolated under
+`/tmp/tmp.AGPDfQ3KjK`; no tool mutation remains. The physical pairs above are
+the executable fallback evidence.
+
+### Task 7 Phase D loudness checkpoint (historical, superseded by the current 689-site FINAL audit)
+
+An AST-adjacent source sweep over `internal/graph/reconcile_test.go` found 557
+`Fatalf`/`Errorf` assertion sites. Every site has a present-tense rule phrase
+(`rule`, `contract`, `invariant`, `atomicity`, `ownership`, `shape`, or an
+equivalent named condition) and prints offending state. Possible non-loud
+sites: 0. No exemptions. The Task 7 additions use unique phrases such as
+`ghost pin`, `tombstone`, `endpoint-incarnation`, `guard`, `no-dangle`, and
+`public message edge shape`.
+
+### Task 7 final evidence closeout checkpoint (historical, superseded by the current 79-pair closeout)
+
+Mechanical checks report 28 unique named targets plus 12 audit extras and four
+clean-pass review-fix pairs, total 44 complete pairs. The exact 27-name manifest plus inherited amended incarnation test
+contains 28 unique names with no omissions or duplicates. Source residue scan
+for temporary mutation markers (`false &&`, `leaked`, inverse guard assignments,
+and wrong delivery/TTL assignments) is empty. The final exact-manifest command
+passed three times, the inherited amendment passed three times, full graph and
+race suites passed, Linux/386 compile passed, `go vet ./...` and `git diff
+--check` passed. `go test ./...` leaves only the unrelated live Claude home
+transcript canary failure (`1 live sidecars`, `0 resolved a transcript`).
+
+### Task 7 clean-pass review fixes (historical, superseded by the current 79-pair closeout)
+
+These four additional pairs were run after the Phase C/D evidence closeout.
+Each production plant was applied with `apply_patch`, produced the named
+focused RED, was paired with a decisive assertion weakening that produced a
+false GREEN, and was fully restored before the next pair. The exact 27-name
+manifest is unchanged.
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R1 / `TestReconcileResumeRemovesOrGhostsPriorEdges/late-relationship-against-terminal-endpoint-remains-ghost` | Replaced the transaction-local endpoint-terminal lifecycle choice with unconditional `LifecycleActive`. Focused row RED: the distinct late relationship against the terminal endpoint became Active. | Disabled only the folded-edge lifecycle assertion while the plant remained active. Focused row PASSed, demonstrating that assertion is decisive. | Relationship lifecycle is derived from transaction-local visible endpoint terminal state; the late fold remains Ghost. |
+| T7-R2a / `TestReconcileGhostUnpinAfterDeadlineRemoves/overdue-unpin-clears-survivor-partial-after-gap-cleanup` | Disabled the final-overlay node/edge Partial recomputation after target-scoped overdue unpin cleanup. Focused row RED: the final gap disappeared but the surviving relationship and message edges remained Partial. | Disabled only the final survivor Partial/gap predicate while the plant remained active. Focused row PASSed. | Overdue unpin cleanup recomputes surviving node and edge projections after deleting the final GapSequence. |
+| T7-R2b / `TestReconcileResumeCancelsGhost/resume-clears-survivor-partial-after-gap-cleanup` | Disabled the final-overlay node/edge Partial recomputation after proven resume cleanup. Focused row RED: the final gap disappeared but both surviving edges remained Partial. | Disabled only the final survivor Partial/gap predicate while the plant remained active. Focused row PASSed. | Proven resume cleanup recomputes surviving node and edge projections in the same transaction. |
+| T7-E1 / `TestEdgePublicShapeOmitsEndpointIncarnations` | Temporarily added the public `Edge.SourceIncarnation` field in `internal/graph/types.go`. Focused test RED at the forbidden-incarnation reflection assertion: `field=SourceIncarnation`. | Disabled only that reflection rejection while the field plant remained active. Focused test PASSed, proving the reflection guard is decisive. | Restored the test predicate and `types.go` exactly; public Edge exposes no endpoint-incarnation fields while private edge records retain guards. |
+
+Clean-pass review-fix cumulative evidence: 44 complete physical pairs (the
+previous 40 plus R1, R2a, R2b, and the second C27 endpoint-field proof), zero surviving plants, zero wrong-reason
+plants, and zero residue after restoration. These additions are subrows only;
+the exact 27 top-level Task 7 test names remain unchanged.
+
+### Task 7 PASS-1 retry fixes (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R3 / `TestReconcileEdgePartialFromNilCapabilityGap/gap-before-new-relationship` and `TestReconcileEdgePartialFromExactCapabilityGap/gap-before-existing-relationship-contribution` | Omitted the relationship fold’s `edgePartialWithGaps(record, r.gaps, txn.gaps)` assignment. Both focused rows RED: a transaction-local nil or exact-capability gap left the new/existing relationship edge `Partial=false`. | Disabled the new-row Partial assertion while the production omission remained active. The focused row PASSed falsely, proving the assertion is decisive. | Restored the edge Partial derivation after relationship contribution folding; both new and existing relationship rows pass with the final gap overlay. |
+| T7-R4 / `TestReconcileResumeRemovesOrGhostsPriorEdges/state-observed-terminal-ghosts-relationship-edges` | Suppressed terminal edge ghosting in the common state projection path. Focused row RED: terminal `StateObserved` left spawn and service relationships Active and left `edgeEpoch` unchanged, while the message remained Active as expected. | Disabled the exact lifecycle/revision/epoch oracle while the plant remained active. The focused row PASSed falsely. | Restored common terminal projection ghosting; StateObserved, ExitObserved, and buffered terminal paths use idempotent transaction-local incident-edge ghosting without duplicate revisions. |
+
+An initial R3 sabotage patch accidentally matched the analogous message-fold
+Partial assignment rather than the relationship assignment; the focused
+relationship row stayed GREEN, so that attempt is a discarded wrong-target
+non-verdict. The message assignment was restored before the intended
+relationship plant, which produced the RED above. No plant remains.
+
+PASS-1 retry-fix cumulative evidence: 46 complete physical pairs (the prior
+44 plus R3 and R4), zero surviving valid plants, and zero production or test
+mutation residue.
+
+### Task 7 PASS-1 retry fix addendum (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R5 / `TestReconcileGhostUnpinAfterDeadlineRemoves/resume-preserves-then-removes-all-incarnation-metrics` | Restricted final ghost cleanup to the removed node’s current incarnation for metric owners. Focused row RED after inc-b removal: the prior inc-a metric contribution remained in `metricContributions`, violating all-incarnation actor cleanup. | Disabled the subrow’s metric-owner, history/retained-charge, and later no-metrics-resurrection predicates while the plant remained active. Focused row PASSed falsely. | Restored actor-wide metric contribution removal with candidate-overlay checks; node/state/sequence/health cleanup remains incarnation-scoped, and later strict-newer resume does not resurrect old telemetry. |
+
+The first fixture attempt reused the inc-b start time for the later inc-c
+resume and was corrected to a strictly newer start time before the production
+RED, so it is not a verdict plant. PASS-1 retry-fix cumulative evidence is now
+47 complete physical pairs (the prior 46 plus R5), with no surviving valid
+plant or residue. The earlier final evidence count remains a pre-R5 checkpoint;
+no loudness/global artifact was regenerated in this pass.
+
+### Task 7 PASS-1 retry fix F4 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R6a / `TestReconcileResumeRemovesOrGhostsPriorEdges/resume-edge-history-credit` | Omitted candidate relationship-edge history credit from `preflightIncarnationSwitch`. The fixed-at-construction HistoryLimit probe RED with typed `history-limit`; final history was admissible only after `stageResumeEdges` removed the old relationship contribution. | Disabled the exact final-owner history/public-graph/charge oracle while the omission remained active. Focused row PASSed falsely. | Preflight subtracts every candidate/base relationship contribution that `stageResumeEdges` will delete, with no message crediting or unsigned underflow. |
+| T7-R6b / `TestReconcileResumeRemovesOrGhostsPriorEdges/resume-edge-retained-byte-credit` | Omitted candidate relationship-edge retained charge from preflight. The calibrated retained-byte probe RED with typed `retained-bytes`; the final owner set fits only after the same-transaction relationship deletion. | Disabled the exact final-owner retained/public/history oracle while the omission remained active. Focused row PASSed falsely. | Retained preflight prices the final edge overlay and accepts the exact calibrated deletion-credit case. |
+| T7-R6c / `TestReconcileResumeRemovesOrGhostsPriorEdges/resume-edge-published-byte-credit` | Omitted candidate relationship-edge public projection credit from preflight. The calibrated large-node published-byte probe RED with typed `published-bytes`; the final public graph fits only after deleting the old relationship edge. | Disabled the exact final-owner published/public-graph/charge oracle while the omission remained active. Focused row PASSed falsely. | Published preflight uses the final candidate node/edge/gap overlay, preserving the ordinary diagnostic reserve and rejecting over-limit candidates atomically. |
+
+The one-byte-below-final byte boundary was not claimed as a separate verdict:
+the calibrated seed’s public owner set is larger than the final owner set, so a
+limit below final would reject during fixture construction. The exact final
+owner limits and typed preflight failures above are the load-bearing F4 rows.
+
+PASS-1 retry-fix cumulative evidence: 50 complete physical pairs (the prior
+47 plus R6a, R6b, and R6c), zero surviving valid plants, and zero production or
+test mutation residue.
+
+### Task 7 PASS-1 retry fix F5 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R7 / `TestReconcileMessageSlidingWindowExpiry/same-advance-create-expire-and-limit-delete-insert/expiry-credit-in-one-advance` | Omitted final normalization of `txn.messageExpiryIndex`. The strengthened pre-commit oracle RED with a base-absent expiry key mapped to nil, even though the message edge and history were net-zero. | Disabled the pre-commit index tombstone assertion and removed only the committed index-cardinality predicate; the focused row PASSed falsely while exact history/charge/generation checks remained active. | Restored `messageExpiryRefEqual` normalization: base-absent nil entries disappear, while base-present deletions, insertions, and changed refs remain representable; empty overlays become nil. |
+
+PASS-1 retry-fix cumulative evidence: 51 complete physical pairs (the prior
+50 plus R7), zero surviving valid plants, and zero production or test mutation
+residue. No loudness/global artifact was regenerated in this pass.
+
+### Task 7 final evidence closeout (historical, superseded by the current R23 evidence closeout)
+
+The second C27 production/assertion pair is explicit in the review-fix table
+above. It temporarily added `Edge.SourceIncarnation` in
+`internal/graph/types.go`; `TestEdgePublicShapeOmitsEndpointIncarnations`
+failed at `reconcile_test.go:6911` with `field=SourceIncarnation`. With only
+the forbidden-incarnation reflection predicate disabled, that same focused
+test passed falsely. Both the test predicate and `types.go` were restored, and
+`types.go` is clean. C27 therefore has two valid physical pairs: the earlier
+public-message-shape pair and this endpoint-field reflection pair.
+
+The regenerated Task 7 FINAL loudness section in `tests/LOUDNESS_AUDIT.md`
+contains 624 literal primary rows (619 `t.Fatalf`, 5 `t.Errorf`) at the current
+`internal/graph/reconcile_test.go:<line>` sites, plus five separately listed
+benchmark/helper failure calls. Its mechanical primary-table count is 624,
+with 624 unique current file:line entries; direct non-formatted Fatal/Error/
+Fail calls and assertion-library calls are both zero.
+
+Final physical-pair accounting is explicitly `40 original + 28 review-fix =
+68 complete pairs`: 28 unique named targets (the 27 frozen names plus the
+inherited amended incarnation test), 12 audit extras A1-A6/B1-B6, and
+twenty-eight clean-pass review fixes (R1, R2a, R2b, the second C27 endpoint-field
+proof, R3, R4, R5, R6a, R6b, R6c, R7, R8, R9, R10a, R10b, R10c, R10d, R7b,
+R11a, R11b, R12a, R12b, R13a, R13b, R13c, R13d, R14, and R15). There are no unpaired targets, duplicate
+manifest names, surviving plants, wrong-reason plants, or temporary mutation
+markers after restoration.
+
+The current exact pinned mutation-tool rerun used a disposable directory and
+removed the executable before completion:
+
+```text
+GOBIN="$task7_tool_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+go version
+go version -m "$task7_tool_dir/go-mutesting"
+"$task7_tool_dir/go-mutesting" --exec-timeout=15 internal/graph/reconcile.go
+```
+
+Observed current metadata and result (rerun after R14/R15):
+
+```text
+INSTALL_STATUS=0
+ACTIVE_GO:
+go version go1.27.0-X:nodwarf5 linux/amd64
+TOOL_BUILD_METADATA:
+/tmp/tmp.W11ovdUsbQ/go-mutesting: go1.27.0-X:nodwarf5
+	path	github.com/zimmski/go-mutesting/cmd/go-mutesting
+	mod	github.com/zimmski/go-mutesting v0.0.0-20210610104036-6d9217011a00 h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+	dep	github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
+	dep	github.com/jessevdk/go-flags v1.4.0 h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
+	dep	github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+	dep	github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
+	dep	github.com/zimmski/go-tool v0.0.0-20150119110811-2dfdc9ac8439 h1:yHqsjUkj0HWbKPw/6ZqC0/eMklaRpqubA199vaRLzzE=
+	dep	github.com/zimmski/osutil v0.0.0-20190128123334-0d0b3ca231ac h1:uiFRlKzyIzHeLOthe0ethUkSGW7POlqxU3Tc21R8QpQ=
+	dep	golang.org/x/tools v0.0.0-20191018212557-ed542cd5b28a h1:UuQ+70Pi/ZdWHuP4v457pkXeOynTdgd/4enxeIO/98k=
+	dep	gopkg.in/yaml.v2 v2.2.2 h1:ZCJp+EgiOT7lHqUV2J862kp8Qj64Jo6az82+3Td9dZw=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	DefaultGODEBUG=containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,httpcookiemaxnum=0,httplaxcontentlength=1,httpmuxgo121=1,httpservecontentkeepheaders=1,multipathtcp=0,netedns0=0,panicnil=1,randseednop=0,rsa1024min=0,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,tracebacklabels=0,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509sslcertoverrideplatform=0,x509usepolicies=0
+	build	CGO_ENABLED=1
+	build	CGO_CFLAGS=
+	build	CGO_CPPFLAGS=
+	build	CGO_CXXFLAGS=
+	build	CGO_LDFLAGS=
+	build	GOARCH=amd64
+	build	GOEXPERIMENT=nodwarf5
+	build	GOOS=linux
+	build	GOAMD64=v1
+MUTATION_COMMAND: go-mutesting --exec-timeout=15 internal/graph/reconcile.go
+MUTATION_STATUS=2
+```
+
+The complete current loader failure began:
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5cd852]
+go/types.(*Checker).handleBailout(...)
+    /usr/lib/go/src/go/types/check.go:404 +0x91
+go/types.(*StdSizes).Sizeof(0x0, {0xad9228, 0xae4d20})
+    /usr/lib/go/src/go/types/sizes.go:229 +0x312
+go/types.(*Config).sizeof(...)
+    /usr/lib/go/src/go/types/sizes.go:334
+go/types.representableConst.func1(...)
+    /usr/lib/go/src/go/types/const.go:89 +0x1d9
+go/types.representableConst(...)
+    /usr/lib/go/src/go/types/const.go:105 +0x1d9
+golang.org/x/tools/go/packages.(*loader).loadPackage(...)
+    /home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:835 +0x854
+```
+
+The process exited 2 before source mutation. No mutant, score, survivor, or
+timeout was produced; this is not a mutation-score verdict. The temporary
+binary was removed and no tool residue remains.
+
+Final writer gates after R14-R15 restoration:
+
+```text
+exact 27 manifest x3: PASS
+inherited TestReconcileAcceptsStrictlyNewerIncarnation x3: PASS
+go test ./internal/graph -count=1: PASS
+go test -race ./internal/graph -count=1: PASS
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1: PASS
+go vet ./...: PASS
+git diff --check: PASS
+go test ./... -count=1: FAIL only at internal/overlay/claude/TestLiveClaudeHomeCanary
+```
+
+The full-repository failure remains the known external live Claude transcript
+canary (`1 live sidecars`, `0 resolved a transcript`); all other packages pass.
+The final worktree has exactly five dirty tracked files:
+`internal/graph/reconcile.go`, `internal/graph/reconcile_test.go`,
+`tests/LOUDNESS_AUDIT.md`, `tests/RISK_MODEL.md`, and
+`tests/SABOTAGE_LOG.md`. `internal/graph/types.go` is clean. Source scans find
+no temporary plant markers, and no pinned-tool executable or other tool
+residue remains in the worktree.
+
+### Task 7 PASS-1 retry fix C3 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R9 / `TestReconcileResumeRemovesOrGhostsPriorEdges/resume-live-message-guard-retained-credit` | Omitted retained-charge replacement pricing for the private live-message guard rewrite. The fixed-limit short-new-incarnation row RED with typed `retained-bytes` while the old guarded message remained live. | Disabled the exact guard/index/history/public-edge/backing/revision/charge oracle while the retained-pricing omission remained active. Focused row PASSed falsely. | Restored overlay-aware preflight pricing: each incident message edge subtracts its old private guard charge and adds the exactly rewritten guard charge; no history or public credit is granted and canonical records remain untouched. |
+
+PASS-1 retry-fix cumulative evidence is now 53 complete physical pairs (the
+prior 52 plus R9), with no surviving valid plant or source residue. Loudness
+and global evidence counts remain intentionally unchanged in this pass.
+
+### Task 7 PASS-1 retry fix C1 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R8 / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/equal-deadline-metrics-lanes-retain-all-staged-contributions` | Replaced the nil-only initialization of `txn.metricContributions` with a singleton map assignment. The equal-deadline two-lane row RED: source A’s Usage owner and public Usage field disappeared when source B’s TokenRate lane drained. | Disabled the complete two-lane owner/public/sequence/fingerprint/history/retained-charge oracle while the overwrite remained active. Focused row PASSed falsely. | Restored nil-only map initialization and keyed assignment; both staged metric lanes survive savepoint cloning and fold into the final actor projection without phantom history debit. |
+
+PASS-1 retry-fix cumulative evidence is now 52 complete physical pairs (the
+prior 51 plus R8), with no surviving valid plant or source residue. Loudness
+and global evidence counts remain intentionally unchanged in this pass.
+
+### Task 7 PASS-1 retry fix C2 and refreshed F5 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning row | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R10a / `TestReconcileMessageSlidingWindowExpiry/same-advance-create-expire-and-limit-delete-insert/due-buffered-message-consumes-with-full-edge-slot` | Disabled the Advance-only inclusive due cutoff. The full-edge-slot row RED with typed `count-limit`; the due MessageDirect event attempted normal edge admission instead of being consumed. | Disabled the exact final-owner consumption/gap/sequence/charge oracle while the cutoff remained disabled. Focused row PASSed falsely. | Restored due-message short-circuit before edge lookup, MaxEdges, revision, history, byte preflight, cloning, contribution, and index staging. |
+| T7-R10b / `.../due-buffered-message-exhausted-topology-revision` | With the cutoff disabled and topology revision exhausted, the isolated row RED with `ErrRevisionExhausted`. | Disabled only its no-diagnostic/final-owner oracle while the plant remained active; focused row PASSed. | Due buffered messages bypass topology admission checks while the final sequence-gap visibility change remains valid. |
+| T7-R10c / `.../due-buffered-message-calibrated-retained-limit` | With the cutoff disabled, the calibrated retained boundary RED with typed `retained-bytes` during normal message staging. | Disabled only the retained final-owner oracle while the plant remained active; focused row PASSed. | Due consumption performs no transient contribution/retained-byte admission and commits the exact final owner charge. |
+| T7-R10d / `.../due-buffered-message-calibrated-published-limit` | With the cutoff disabled, the calibrated published boundary RED with typed `published-bytes` during normal message staging. | Disabled only the published final-owner oracle while the plant remained active; focused row PASSed. | Due consumption performs no transient public-edge projection and commits without a diagnostic gap. |
+| T7-R7b / `TestReconcileMessageSlidingWindowExpiry/same-advance-create-expire-and-limit-delete-insert/message-expiry-normalization-preserves-real-deltas` | Disabled `messageExpiryRefEqual` pruning. The direct private normalization row RED with a base-absent nil index tombstone retained. | Disabled only the direct normalization owner/index assertion while the plant remained active; focused row PASSed. | Refreshed R7b remains load-bearing after C2: base-absent nil entries prune, while base-present deletion, insertion, and changed-reference entries remain representable. |
+
+The exact-history sibling is intentionally not counted as an independent R10
+pair: when the cutoff is disabled, normal message staging immediately expires
+the same due message in that fixture, producing a net-zero history path rather
+than an isolated HistoryLimit rejection. It remains a fixed-cutoff final-owner
+regression row. PASS-1 retry-fix cumulative evidence is now 58 complete
+physical pairs (the prior 53 plus R10a-d and refreshed R7b), with zero
+surviving valid plants or residue.
+
+### Task 7 N1 revision-category retry fixes (historical, superseded by the current 79-pair closeout)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R11a / `TestReconcileRelationshipProvenanceMatrix/protocol-drain-base-absent-edge-uses-final-topology-revision` | Reintroduced the staging-time `isNew` revision guard in `stageRelationshipObserved`. The focused protocol drain RED with `err=graph revision exhausted`, no edge, and the seq3 owner still buffered while `visibilityRevision` was at its ceiling. | Disabled only the final base-absent topology/sequence/fingerprint/history/charge/revision oracle with a constant-false guard; the focused row passed falsely even though the transaction returned the revision error. | Removed the relationship staging-time revision gate. Final normalization alone classifies the base-absent edge insertion as `Topology`, while preserving both folded contributions and exact protocol owners. |
+| T7-R11b / `TestReconcileMessageSlidingWindowExpiry/protocol-drain-base-absent-edge-uses-final-topology-revision` | Reintroduced the staging-time `isNew` revision guard in `stageMessageObserved`. The focused protocol drain RED with `err=graph revision exhausted`, no message edge/index, and the seq3 owner still buffered at the visibility ceiling. | Disabled only the final message edge/index/sequence/fingerprint/history/charge/revision oracle with a constant-false guard; the focused row passed falsely while the revision error remained. | Removed the message staging-time revision gate. Final normalization classifies the base-absent message edge as `Topology`, and both message contributions plus expiry-index owners commit with exact charge/history. |
+
+Both R11 production plants were restored before the paired focused GREEN runs. These two pairs are included in the current 68-pair closeout.
+
+### Task 7 N2 deferred-diagnostic byte fallback (historical, superseded by the current 79-pair closeout)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R12a / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/same-D-deferred-cycle-diagnostic-byte-fallback/retained-limit` | Replaced the deferred-savepoint retained-byte fallback with the canonical resource diagnostic path. The calibrated long-source cycle row RED with `AdmissionRetainedBytes`; cleanup, deferred fingerprint deletion, and the original `AdmissionTopologyCycle` were discarded. | Ignored any non-nil `prepareAdvance` error in the retained-limit subrow and returned before the final-owner oracle. The focused row passed falsely while the canonical retained-byte diagnostic remained. | Restored a cloned pre-diagnostic savepoint fallback: all deferred diagnostics are restaged to the reserved catchall, the due message cleanup and fingerprint deletion survive, final owners fit, and `AdmissionTopologyCycle` remains the returned deferred error. |
+| T7-R12b / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/same-D-deferred-cycle-diagnostic-byte-fallback/published-limit` | Replaced the deferred-savepoint published-byte fallback with the canonical resource diagnostic path. The calibrated long-source cycle row RED with `AdmissionPublishedBytes`; the same-D savepoint was discarded. | Ignored any non-nil `prepareAdvance` error in the published-limit subrow and returned before the final-owner oracle. The focused row passed falsely while the canonical published-byte diagnostic remained. | Restored the same reserved catchall fallback and final-overlay preflight for published bytes; the due message/index cleanup, retained relationship, buffered cycle, exact revisions/epochs, and original typed deferred error commit together. |
+
+Both R12 production plants were restored before the focused GREEN run. The retained and published boundaries share one fallback implementation but remain separate complete physical pairs because each independently exercises its calibrated global admission gate; no plant or marker remains.
+
+### Task 7 N3 private relationship-batch parity (historical, superseded by the current 79-pair closeout)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R13a / `TestReconcileNativeSpawn/batch-protocol-seq3-buffers-rather-than-publishes` | Replaced the shared `stageApplyEvent` call with direct relationship staging in `prepareRelationshipBatch`. The protocol batch row RED: seq3 published immediately, no buffered owner remained, and later seq2 could not perform the required drain. | Disabled the initial and later protocol final-owner predicates with constant-false guards. The focused row passed falsely with the bypassed batch path. | Batch staging uses the universal protocol sequence gate, clone-owned buffering, one finalization, and later public seq2 drain. |
+| T7-R13b / `TestReconcileNativeSpawn/batch-observation-cursor-stale-replay-collision` | Ignored the transaction cursor overlay in observation classification. The stale distinct-key row RED because the older observation replaced the staged newer cursor. | Removed only the staged-cursor timestamp comparison; replay and collision checks still ran, and the focused row passed falsely. | Observation cursor classification reads the candidate overlay before canonical state and preserves stale-witness/replay/collision behavior. |
+| T7-R13c / `TestReconcilePublicLaunchRejected/private-batch-typed-diagnostic` | Raw-rejected `EdgeLaunch` during relationship-batch shape validation. The private batch row RED with an untyped relationship-shape error instead of `AdmissionContributionConflict` and its canonical gap. | Returned early on the raw batch error before the typed-admission oracle. The focused row passed falsely while launch was still rejected at the wrong gate. | Relationship-only batch validation admits launch-shaped events to shared semantic dispatch, which emits the typed canonical diagnostic without rejected owners. |
+| T7-R13d / `TestReconcileNativeSpawn/batch-later-item-failure-atomic` | Continued after an expected semantic admission in the batch loop. The later-item row RED with nil error and a committed valid prefix instead of a canonical launch diagnostic. | Returned early when the batch error was nil, bypassing atomicity and retry assertions; the focused row passed falsely. | Any expected item or drained-child admission discards the accumulated batch transaction and prepares the diagnostic from canonical state, leaving the valid prefix retryable. |
+
+All four R13 production plants were restored before their focused GREEN runs. The private tombstoned-endpoint path and representative fleet regression also pass with the shared staging boundary; no production or test plant remains.
+
+### Task 7 PASS-1 review fixes R14/R15 (historical, superseded by the current 79-pair closeout)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R14 / `TestReconcileResumeCancelsGhost/resume-after-transient-state-expiry-preserves-ring-at-state-ceiling` | Reverted incarnation-switch State-change detection to treat any nonempty transition ring as a State change. The exact state-ceiling row RED with `graph revision exhausted` even though the current State and preserved transition elements were unchanged. | Returned early on a non-nil resume error before the ring/state-revision oracle. The focused row passed falsely while the State revision gate still rejected the resume. | Preflight compares public State, terminal timestamps, and transition elements before pricing State revision; a preserved ring alone does not consume State revision headroom. |
+| T7-R15 / `TestReconcileNativeSpawn/protocol-node-private-owner-does-not-advance-node-epoch` | Reverted final node-epoch pricing to increment whenever `txn.nodes` was nonnil. The private identity-owner protocol drain row RED with `nodeEpoch` incremented and public Node slice backing replaced despite byte-identical Nodes. | Removed only the node-epoch and public-node-backing predicates. The focused row passed falsely while the private owner rewrite still changed the epoch. | Finalization increments node epoch only for final public Node membership/value deltas; private source-set rewrites reuse public Node backing while the drained edge advances edge epoch. |
+
+Both R14/R15 production plants were restored before focused GREEN. No production or test plant remains; both pairs are included in the current 68-pair closeout.
+
+### Task 7 reserve-isolation fix R16 (historical, superseded by the current R23 evidence closeout)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R16a / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/reserved-diagnostic-does-not-release-ordinary-reserve` | Removed the independent nonreserved base-headroom checks before deferred diagnostics. Both retained and published calibrated rows RED with the original `AdmissionCountLimit`, proving the successful high-charge semantic overlay was incorrectly allowed to consume ordinary reserve. | Accepted the original count error and disabled only the final semantic-owner reserve/sequence/fingerprint/charge oracle; both focused rows passed falsely while semantic work had escaped the global resource fallback. | Restored base final-overlay ordinary pricing before diagnostic staging. The same rows now return the calibrated retained or published resource diagnostic, preserve semantic buffers/fingerprints/owners, and commit only the reserved resource gap. |
+| T7-R16b / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/mixed-reserved-and-ordinary-diagnostics-use-catchall` | Disabled the post-staging ordinary-subset check and fallback. Both retained and published rows RED with a typed ordinary topology-collision gap plus a catchall count of one, instead of aggregating both deferred diagnostics into the reserved catchall. | Removed the catchall count and no-ordinary-gap assertions while retaining the remaining owner checks; both focused rows passed falsely with the typed ordinary diagnostic still published. | Restored independent nonreserved final pricing and all-deferred restaging from the diagnostic base. Mixed reserved plus ordinary failures now preserve the deterministic topology-cycle error while publishing one reserved catchall with count two and no typed residual gap. |
+
+R16a and R16b were each run as production RED, decisive assertion false-GREEN, full restore, and focused GREEN pairs. The cumulative evidence at this checkpoint was `40 original + 30 review-fix = 70 complete pairs`: the prior 68-pair closeout plus R16a and R16b. The 28 unique named targets (27 frozen names plus the inherited amended incarnation test) and 12 A/B audit extras remain unchanged; there are no surviving plants, wrong-reason plants, unpaired targets, or residue.
+
+### Task 7 final evidence closeout after R16 (historical, superseded by the current R23 evidence closeout)
+
+The restored tree at the R16 checkpoint had exactly `40 original + 30 review-fix = 70 complete physical pairs`: 28 unique named targets (27 frozen names plus the inherited amended incarnation test), 12 explicitly labeled audit extras A1-A6/B1-B6, and review-fix pairs through R16a/R16b. No valid plant, survivor, wrong-reason case, unpaired target, or mutation marker remained.
+
+The R16 checkpoint literal loudness audit recorded `internal/graph/reconcile_test.go` at 637 primary sweep rows (632 `t.Fatalf`, 4 direct `t.Errorf`, and the required `fmt.Errorf` substring match counted by the exact sweep), plus 5 literal `b`/`tb` helper rows. Its mechanical source/table/unique comparison was 637/637/637, with zero missing, stale, or duplicate file:line entries; direct non-formatted Fatal/Error/Fail calls and assertion-library calls were zero.
+
+The exact pinned mutator rerun used a disposable directory and removed its binary before completion:
+
+```text
+tool_dir="$(mktemp -d)"
+GOBIN="$tool_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+go version
+go version -m "$tool_dir/go-mutesting"
+"$tool_dir/go-mutesting" --exec-timeout=15 internal/graph/reconcile.go
+MUTATION_STATUS=2
+unlink "$tool_dir/go-mutesting"
+rmdir "$tool_dir"
+```
+
+Observed metadata:
+
+```text
+go version go1.27.0-X:nodwarf5 linux/amd64
+/tmp/tmp.yRpX6o7GHO/go-mutesting: go1.27.0-X:nodwarf5
+path github.com/zimmski/go-mutesting/cmd/go-mutesting
+mod github.com/zimmski/go-mutesting v0.0.0-20210610104036-6d9217011a00 h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+dep github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
+dep github.com/jessevdk/go-flags v1.4.0 h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
+dep github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+dep github.com/stretchr/testify v1.4.0 h1:2E4SXV/wtOkTonXsotYi4li6zVWxYlZuYNCXe9XRJyk=
+dep github.com/zimmski/go-tool v0.0.0-20150119110811-2dfdc9ac8439 h1:yHqsjUkj0HWbKPw/6ZqC0/eMklaRpqubA199vaRLzzE=
+dep github.com/zimmski/osutil v0.0.0-20190128123334-0d0b3ca231ac h1:uiFRlKzyIzHeLOthe0ethUkSGW7POlqxU3Tc21R8QpQ=
+dep golang.org/x/tools v0.0.0-20191018212557-ed542cd5b28a h1:UuQ+70Pi/ZdWHuP4v457pkXeOynTdgd/4enxeIO/98k=
+dep gopkg.in/yaml.v2 v2.2.2 h1:ZCJp+EgiOT7lHqUV2J862kp8Qj64Jo6az82+3Td9dZw=
+build -buildmode=exe
+build -compiler=gc
+build DefaultGODEBUG=containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,gotestjsonbuildtext=1,httpcookiemaxnum=0,httplaxcontentlength=1,httpmuxgo121=1,httpservecontentkeepheaders=1,multipathtcp=0,netedns0=0,panicnil=1,randseednop=0,rsa1024min=0,tlsmlkem=0,tlssecpmlkem=0,tlssha1=1,tracebacklabels=0,updatemaxprocs=0,urlmaxqueryparams=0,urlstrictcolons=0,winreadlinkvolume=0,winsymlink=0,x509negativeserial=1,x509rsacrt=0,x509sha256skid=0,x509sslcertoverrideplatform=0,x509usepolicies=0
+build CGO_CFLAGS=
+build CGO_CPPFLAGS=
+build CGO_LDFLAGS=
+build CGO_ENABLED=1
+build GOARCH=amd64
+build GOEXPERIMENT=nodwarf5
+build GOOS=linux
+build GOAMD64=v1
+```
+
+The process exited 2 before source mutation. The full loader failure signature began:
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5cd852]
+go/types.(*Checker).handleBailout(0x18fef2196e00, 0x18fef2385c50)
+    /usr/lib/go/src/go/types/check.go:404 +0x91
+go/types.(*StdSizes).Sizeof(0x0, {0xad9228, 0xae4dc0})
+    /usr/lib/go/src/go/types/sizes.go:229 +0x312
+go/types.(*Config).sizeof(...)
+    /usr/lib/go/src/go/types/sizes.go:334
+go/types.representableConst.func1(...)
+    /usr/lib/go/src/go/types/const.go:89 +0x1d9
+go/types.representableConst(...)
+    /usr/lib/go/src/go/types/const.go:105 +0x36c
+golang.org/x/tools/go/packages.(*loader).loadPackage(0x18fef1e44180, 0x18fef221e020)
+    /home/aegis/go/pkg/mod/golang.org/x/tools@v0.0.0-20191018212557-ed542cd5b28a/go/packages/packages.go:835 +0x854
+```
+
+No mutation score or verdict is reported: the tool failed in its loader before producing mutants. The temporary binary and directory were removed; no tool residue remains.
+
+Final writer gates after R16 restoration:
+
+```text
+exact 27 manifest x3: PASS
+inherited TestReconcileAcceptsStrictlyNewerIncarnation x3: PASS
+go test ./internal/graph -count=1: PASS
+go test -race ./internal/graph -count=1: PASS
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1: PASS
+go vet ./...: PASS
+git diff --check: PASS
+go test ./... -count=1: PASS
+```
+
+The full repository passed in this run; the previously observed external Claude transcript canary did not reproduce. The final worktree has exactly five dirty tracked files: `internal/graph/reconcile.go`, `internal/graph/reconcile_test.go`, `tests/LOUDNESS_AUDIT.md`, `tests/RISK_MODEL.md`, and `tests/SABOTAGE_LOG.md`; `internal/graph/types.go` is clean.
+
+### Task 7 R17 resume source-owner reset (pair evidence, 2026-08-28)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R17a / `TestReconcileResumeCancelsGhost/resume-clears-state-source-owner-before-and-after-gap-reopen` | Reintroduced switching-path copies of `stateSources` and `terminalSources`. The focused State-family row failed with `Partial=true` after the inc-b switch despite cleared public State and deleted inc-a owners. | Disabled the source-reset/`Partial` oracle while that production plant remained active. The focused row passed falsely; the reopened old exact State gap still had the stale private owner. | Switching retains only `metricSources`; State/terminal source maps are initialized empty, and old exact-gap resolve/reopen operations do not mark inc-b Partial. |
+| T7-R17b / `TestReconcileResumeCancelsGhost/resume-clears-terminal-source-owner-before-and-after-gap-reopen` | Reintroduced the same copies. The focused Terminal-family row failed with `Partial=true` after the inc-b switch despite cleared public terminal metadata and deleted inc-a owners. | The same weakened source-reset/`Partial` oracle passed falsely while the reopened old exact Terminal gap remained able to taint inc-b. | Non-switching updates clone State/terminal source maps; incarnation switches leave them empty while preserving metric provenance and exact revision/epoch/charge/history accounting. |
+
+R17 production RED was observed before the source fix, the decisive assertion false-GREEN was observed with both the production plant and weakened test active, and both were restored before the focused GREEN run. No R17 production/test plant or mutation marker remains.
+
+### Task 7 review fixes R18-R20 (pair evidence, 2026-08-28)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R18 / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/same-D-pending-gap-count-limit-reserves-resource` | Removed the CountLimit routing from the first early `pricePendingGaps` site. The focused row returned `txn=nil` with `count-limit` instead of a reserved GapLedger transaction. | Disabled the initial non-nil/typed resource-transaction assertion while the plant remained active; the row passed falsely without proving due-group preservation. | Both early pending-gap pricing CountLimit paths route through `prepareAdvanceResourceAdmission`; the reserved diagnostic transaction keeps the ordinary gap, all due sequence/deferred owners, fingerprints, and deterministic retry intact. |
+| T7-R19 / `TestReconcileMessageSlidingWindowExpiry/expired-buffered-message-absent-endpoint-consumes-at-window` | Reintroduced endpoint admission before the inclusive expiry cutoff. Exact-window Advance returned `endpoint-identity` and left the buffered message undrained. | Disabled the final-owner consumption/index/endpoint oracle while the production ordering remained wrong; the focused row passed falsely. | Representable expiry and digest validation plus the inclusive Advance cutoff run before self/endpoint admission; expired buffered messages drain and retain replay witnesses without message/index/endpoint diagnostics, while live Apply retains endpoint checks. |
+| T7-R20 / `TestReconcileResumeCancelsGhost/multi-child-savepoint-retains-transition-capacity` | Replaced the savepoint transition clone with `append([]Transition(nil), values...)`. The focused row showed the transaction-local transition slice at `len/cap=1/1` instead of `1/4`. | Removed only the transaction-local `cap == TransitionLimit` assertion while the compact-copy plant remained active; the row passed falsely because commit-time copying masked the loss. | `cloneTransitions(input, limit)` is used across transaction, resume, node-record, reconciler projection, and commit copies; transition elements and lengths stay unchanged while capacity remains the configured limit and later growth is admitted with exact charges. |
+
+R18, R19, and R20 production RED, decisive assertion false-GREEN, and restoration pairs were each observed in focused runs. No temporary production plant, weakened assertion, or mutation marker remains.
+
+### Task 7 global replay/deferred-owner fixes R21-R23 (pair evidence, 2026-08-28)
+
+| ID / owning subrow | Production plant and observed RED | Assertion weakening and observed false GREEN | Restored conclusion |
+|---|---|---|---|
+| T7-R21a / `TestReconcileMessageDuplicateReplayNoop/candidate-buffer-exact-replay-other-lane-does-not-borrow` | Replaced the candidate-buffer scan with an empty witness set. The cross-lane exact replay attempted a new lane and returned `endpoint-identity`. | Disabled the cross-lane exact no-op/transaction-preservation assertion while the restricted scan remained active; the focused row passed falsely. | Replay classification scans every candidate buffered lane, including committed buffers, before lane admission; exact cross-lane replay neither borrows nor creates a lane. |
+| T7-R21b / `TestReconcileNativeSpawn/batch-staged-candidate-buffer-replay-classification` | Ignored staged-only sequence-record keys in the derived scan. The staged exact replay duplicated/mutated the candidate buffer instead of remaining a no-op. | Disabled the staged exact and changed-payload collision assertions while the staged-overlay omission remained active; the focused NativeSpawn row passed falsely. | The sorted union includes transaction sequence overlays, with explicit nil entries authoritative; staged exact replays are no-ops and staged conflicts win as collisions. |
+| T7-R21c / `TestReconcileMessageDuplicateReplayNoop/candidate-buffer-exact-and-conflicting-owners-collision-wins` | Returned immediately on the first exact buffered witness. The exact-plus-conflicting-owner fixture incorrectly accepted the replay as a no-op. | Disabled the collision-wins assertion while early exact return remained active; the focused replay suite passed falsely. | All candidate witnesses are inspected before classification: any differing fingerprint produces `AdmissionCollision`, regardless of witness order; multiple exact witnesses remain a no-op. |
+| T7-R22 / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/deferred-rejection-retains-foreign-same-key-fingerprint` | Reduced deferred deletion to committed-key presence only. The foreign same-key fingerprint was deleted and history debited. | Disabled the fingerprint/history retention oracle while key-only deletion remained active; the focused row passed falsely. | Deferred deletion requires the rejected event’s matching committed fingerprint, no staged replacement/deletion, and exactly one exact witness at the rejected lane and ID; foreign/shared/ambiguous ownership is retained. |
+| T7-R23 / `TestReconcileSuccessVanishedAndFailedGhostDeadlines/deferred-own-lane-ghost-expiry-drops-pending-without-diagnostic` | Restored fallback to the committed sequence record when the candidate overlay explicitly contained nil. Ghost-expiry cleanup then retried the deleted lane and returned `contribution-conflict` with a diagnostic gap. | Disabled the no-error and final owner/diagnostic assertions while the nil-overlay fallback remained active; the focused row passed falsely. | Deferred retry treats explicit nil sequence ownership as authoritative, drops the pending item with progress, preserves its lifetime fingerprint, and commits exact ghost cleanup without diagnostic or retry residue; absent base+overlay remains an invariant error. |
+
+R21a/b/c, R22, and R23 production RED, decisive assertion false-GREEN, and restoration pairs were each observed in focused runs. No temporary production plant, weakened assertion, or mutation marker remains.
+
+### Task 7 FINAL evidence closeout after R23 (current, 2026-08-28)
+
+The restored current tree has exactly `40 original + 39 review-fix = 79 complete physical pairs`: 28 unique named targets (27 frozen names plus the inherited amended incarnation test), 12 explicitly labeled audit extras A1-A6/B1-B6, R18, R19, R20, R21a/R21b/R21c, R22, and R23. R20 is reconciler-only; `internal/graph/types.go` is clean and remains outside the production scope fence. R17 remains one physical production/assertion pair with two required State-family and Terminal-family subrows (R17a/R17b), not two counted pairs. No valid plant, survivor, wrong-reason case, unpaired target, duplicate manifest name, or mutation marker remains.
+
+The final literal loudness audit was regenerated from the current `internal/graph/reconcile_test.go`: 689 primary assertion rows (685 `t.Fatalf` and 4 `t.Errorf`), plus 6 literal helper rows (1 `fmt.Errorf` and 5 `b`/`tb`). The mechanical source/table/unique comparison is 689/689/689, with zero missing, stale, or duplicate current file:line entries; all four loudness boxes are present, direct non-formatted Fatal/Error/Fail calls are zero, and assertion-library calls are zero.
+
+The exact pinned mutation-tool rerun used a disposable directory and removed its binary before completion:
+
+```text
+GOBIN="$task7_r23_mutator_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+go version
+go version -m "$task7_r23_mutator_dir/go-mutesting"
+"$task7_r23_mutator_dir/go-mutesting" --exec-timeout=15 internal/graph/reconcile.go
+MUTATION_STATUS=2
+unlink "$task7_r23_mutator_dir/go-mutesting"
+rmdir "$task7_r23_mutator_dir"
+```
+
+Observed active metadata:
+
+```text
+go version go1.27.0-X:nodwarf5 linux/amd64
+path github.com/zimmski/go-mutesting/cmd/go-mutesting
+mod github.com/zimmski/go-mutesting v0.0.0-20210610104036-6d9217011a00 h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=
+build -buildmode=exe
+build -compiler=gc
+build CGO_ENABLED=1
+build GOARCH=amd64
+build GOOS=linux
+build GOEXPERIMENT=nodwarf5
+```
+
+The process exited 2 before source mutation after the known loader panic:
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+go/types.(*StdSizes).Sizeof(0x0, {0xad9228, 0xae4d20})
+golang.org/x/tools/go/packages.(*loader).loadPackage(...)
+```
+
+This R23 current-source rerun again produced `MUTATION_STATUS=2` before any mutant or score, with the active binary reporting `go1.27.0-X:nodwarf5`, the pinned `go-mutesting` module/version and checksum, and the `go/types.(*StdSizes).Sizeof(0x0, ...)` loader panic. The disposable executable and directory were removed and the residue check passed.
+
+No automated mutation score, survivor, or timeout exists because loading failed before mutants were produced. The disposable binary and directory were removed; no mutator residue remains.
+
+Final writer gates after R23 restoration:
+
+```text
+gofmt: PASS
+exact 27 manifest x3: PASS
+inherited TestReconcileAcceptsStrictlyNewerIncarnation x3: PASS
+go test ./internal/graph -count=1: PASS
+go test -race ./internal/graph -count=1: PASS
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1: PASS
+go vet ./...: PASS
+git diff --check: PASS
+go test ./... -count=1: PASS
+```
+
+The final worktree has exactly five dirty tracked files: `internal/graph/reconcile.go`, `internal/graph/reconcile_test.go`, `tests/LOUDNESS_AUDIT.md`, `tests/RISK_MODEL.md`, and `tests/SABOTAGE_LOG.md`; `internal/graph/types.go` is clean. Source scans confirm no temporary R18-R23 plants, weakened assertions, invalid production assignments, or tool residue.
+
+### Task 7 final three-pass clean streak (2026-08-29)
+
+Three sequential, independent Sol defect audits ran against the restored R23
+tree. Pass 1 rechecked replay and candidate-buffer ownership, pass 2 emphasized
+lifecycle, Partial, cleanup, and public COW, and pass 3 re-read the complete
+Task 7 contract, five-file scope, and evidence gates. Each returned a clean
+verdict with zero actionable correctness, false-green, or evidence findings.
+No audit edited the worktree. The clean streak is `3/3`.
