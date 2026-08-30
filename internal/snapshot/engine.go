@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"aitop/internal/classify"
+	"aitop/internal/graph"
 	"aitop/internal/join"
 	"aitop/internal/overlay/claude"
 	"aitop/internal/overlay/codex"
@@ -24,6 +25,7 @@ type OverlayFn func() ([]types.Overlay, error)
 // pointer every proc tick; the TUI only ever reads the latest.
 type Snapshot struct {
 	Rows       []types.Row
+	Graph      *graph.Snapshot
 	Host       proc.HostSample
 	At         time.Time
 	OverlayAt  time.Time // last successful overlay refresh
@@ -34,18 +36,19 @@ type Snapshot struct {
 }
 
 type Engine struct {
-	ProcRoot   string
-	GrokHome   string
-	ClaudeHome string
-	CodexHome  string
-	HBDir      string
-	ForksDir   string
-	Overlay    OverlayFn         // tests inject a spy
-	Prices     *price.Table      // nil = no estimates
-	Inference  *inference.Poller // nil = no model-server probes
-	Interval   time.Duration
-	cpu        *proc.Tracker
-	host       *proc.Host
+	ProcRoot      string
+	GrokHome      string
+	ClaudeHome    string
+	CodexHome     string
+	HBDir         string
+	ForksDir      string
+	Overlay       OverlayFn // tests inject a spy
+	GraphSnapshot func() *graph.Snapshot
+	Prices        *price.Table      // nil = no estimates
+	Inference     *inference.Poller // nil = no model-server probes
+	Interval      time.Duration
+	cpu           *proc.Tracker
+	host          *proc.Host
 
 	snap      atomic.Pointer[Snapshot]
 	overlays  atomic.Value // []types.Overlay
@@ -137,6 +140,9 @@ func (e *Engine) tickProc() {
 		At:      t0,
 		TickDur: time.Since(t0),
 		Seq:     e.seq,
+	}
+	if e.GraphSnapshot != nil {
+		s.Graph = e.GraphSnapshot()
 	}
 	if v := e.overlayAt.Load(); v != nil {
 		s.OverlayAt = v.(time.Time)
