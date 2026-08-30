@@ -981,6 +981,271 @@ pin, hook, lock-order, and error-path cases are subrows and do not add names.
 | `TestStoreStatsExactShapeAndAccounting` | `GF-T8-STATS` |
 | `TestStoreConcurrentReadersSeeImmutableSnapshots` | `GF-T8-PUBLICATION`, `GF-T8-PIN`, `GF-T8-LIFECYCLE` |
 
+#### Task 9 collector registry and Shadow graph: eight-axis risk model
+
+Task 9 uses nine risk groups. Every group owns at least one exact top-level test,
+one nested subrow, or both:
+
+- `GF-T9-SCHEMA`: Input schemas are bounded canonical declarations. Registry
+  never infers observed-version compatibility or an operational partial state; a
+  still-running concrete collector owns transient capability-gap open/resolved
+  publication.
+- `GF-T9-DESCRIPTOR`: Descriptor capture is once-only, deeply owned, fully
+  validated before source-incarnation generation, and canonical by ID/runtime,
+  schema, and capability.
+- `GF-T9-REGISTRY`: Registry is single-use, starts all collectors concurrently
+  once, waits all, never restarts or cancels a sibling for a collector return, and
+  serializes the shared caller sink.
+- `GF-T9-HEALTH`: Concurrent Health snapshots have exact pending/running/stopped
+  transitions, sort and clone ownership, and bounded exact safe diagnostics.
+- `GF-T9-TERMINAL`: Active collector return emits the exact unresolved
+  actorless `GapCollector` episode at one injected time and a deterministic
+  protocol identity; cancellation emits none.
+- `GF-T9-HEARTBEAT`: Native-poll heartbeats validate the whole batch, deduplicate
+  and sort complete lanes, and use exact restart-stable observation encoders with
+  restart-distinct full source and EventID.
+- `GF-T9-SHADOW`: Shadow construction and single-use Run own Reconciler, Store,
+  Registry, cancellation, waiting, and deterministic error joining without
+  bypassing Store publication.
+- `GF-T9-ENGINE`: Successful proc ticks read at most one graph pointer directly,
+  retain prior-frame stability, and do not alter occupancy rows. Engine lifecycle
+  remains Task 10.
+- `GF-T9-ERROR`: Nil and typed-nil dependencies, invalid bytes, clock zero,
+  collector errors, and sink errors fail without panic or raw-byte/error-text
+  leakage while preserving only the explicitly required identities.
+
+**Invariants**
+
+- Descriptor ID/runtime, schema, and capability sets are canonical and internally
+  owned. SourceID alone is globally unique; the same ID under another runtime
+  rejects because Reconciler gap keys are SourceID-scoped.
+- The full descriptor batch is captured and validated before exactly one distinct
+  nonzero incarnation is generated per collector in canonical order.
+- Registry passes every collector one serialized sink. Its collector-facing,
+  terminal, and native-helper wrappers have distinct exact texts, zero-based
+  canonical indices, safe `Unwrap`, and no cause text. With nil error,
+  `PublishDisposition(0)`, all seven declared values from `PublishRejected` through
+  `PublishDroppedCritical`, and undeclared `PublishDisposition(255)` pass through
+  unchanged and do not become Registry failures. Returned collector-facing wrappers
+  do not become Registry infrastructure.
+- Terminal and heartbeat envelopes, encoder field labels/order/types, domains,
+  normalization, and source-incarnation inclusion/omission are byte-exact.
+- Shadow uses one clock for initial Store publication and Registry terminal time;
+  Engine copies the graph pointer without graph mutation or clone.
+
+**State transitions**
+
+- Registry moves pending to running immediately before each one-time Run call. Its
+  goroutine samples `ctx.Err()` exactly once immediately after return and marks
+  stopped at that linearization. Nonnil permanently means normal cancellation;
+  nil permanently means terminal even if cancellation follows. Nil context does
+  not consume use; concurrent or repeated Run returns `errRegistryAlreadyRun`.
+- Already-canceled Registry context still enters every collector once, waits all,
+  and ends normally without gaps. A nil post-return context sample causes immediate
+  terminal processing in that goroutine while siblings may run. One terminal never
+  cancels siblings.
+- A running collector owns transient capability gap open/resolved transitions.
+  Registry terminal gaps open once and never auto-resolve.
+- Shadow nil context does not consume use. One Run owns a shared child context;
+  normal Registry completion leaves Store running, non-cancellation infrastructure
+  failure cancels the sibling, and Shadow always waits both before return.
+
+**Boundaries**
+
+- Schema name accepts exactly 1 through 128 bytes of valid control-free UTF-8;
+  version accepts 1 through `math.MaxUint16`. Empty schema set, empty schema name,
+  empty capability element, invalid enum value, and exact duplicates reject;
+  empty capability set is valid.
+- Zero collectors, one collector, repeated SourceID with equal or different runtime,
+  zero/duplicate source incarnation, zero lanes, duplicate lanes,
+  one bad lane after one valid lane, zero time, and all-zero 16-/32-byte results
+  are explicit cases.
+- Diagnostics stop at 256 bytes without splitting UTF-8 or retaining controls.
+  `randomSourceIncarnation` calls `Reader.Read` once: every `n != 8` rejects
+  regardless of error, full length plus error rejects, and only full nil-error
+  input reaches big-endian/nonzero validation.
+
+**Malformed inputs**
+
+- Nil and typed-nil sink, collector, clock, and generator reject before method
+  dispatch. Invalid descriptor/lane bytes never appear in returned errors or
+  Health. A short/read-error/zero random value rejects safely.
+- Heartbeat validation rejects nil/typed-nil sink before zero time and zero time
+  before the full lane batch. Only valid sink plus nonzero time plus zero lanes is
+  a nil result. Invalid native authority, SourceID/runtime/incarnation, actor, and
+  actor incarnation fail full-batch validation before any sink call.
+- Collector and sink errors containing invalid UTF-8, controls, or secrets map to
+  exact safe diagnostic classes; sink wrappers expose indices and `Unwrap` only.
+
+**Concurrency**
+
+- Registry Run admission, collector state, the one post-return context sample,
+  per-goroutine terminal processing, error collection, and Health reads are
+  race-safe. Exactly one concurrent Run wins. Every collector starts before the
+  Registry can complete, and Registry waits every call.
+- The internal sink mutex limits caller-sink concurrency to one across collector
+  and terminal publications. It is never held while waiting for collectors.
+- Shadow starts Store and Registry on one child context, cancels once on
+  infrastructure failure, waits both, and resolves concurrent/repeated Run with a
+  stable sentinel. Tests use channel barriers; no sleep is a correctness oracle.
+- Engine provider invocation and pointer assignment occur once within a successful
+  tick, and previously published frames remain immutable.
+
+**Persistence and replay**
+
+- N/A for durable persistence: Task 9 writes only process-memory state and adds no
+  disk format, migration, or restart store.
+- Replay identity remains covered as an integration contract: two Registries with
+  identical descriptor/capabilities and terminal time differ only in assigned
+  source incarnation, and terminal SourceRef/EventID are distinct. Equal native
+  evidence across that restart retains Key, Digest, DedupKey, and Fingerprint while
+  full heartbeat SourceRef and EventID remain distinct.
+
+**Integration contracts**
+
+- Registry treats `InputSchema` as a declaration. Concrete collectors, not
+  Registry, determine runtime version support and publish their own transient
+  capability gaps.
+- Registry calls `EventSink.Publish` serially and accepts the exact nine-value
+  nil-error table (zero, seven declared, and undeclared 255) as opaque sink-owned
+  success. A collector-facing wrapper returned by Run remains
+  operational Health error only. Registry Run contains only terminal
+  clock/terminal-sink infrastructure errors after all collectors finish, joined in
+  canonical order.
+- Sink wrappers are exact and zero-based:
+  `graph registry collector sink rule violated: collector-index=%d`,
+  `graph registry terminal sink rule violated: collector-index=%d gap-index=%d`,
+  and `graph native heartbeat sink rule violated: lane-index=%d`. Each unwraps the
+  cause without copying its text.
+- Terminal events satisfy frozen Event validation and reduce scalar empty
+  capability to nil. Heartbeat observation replay relies on Task 3's omission of
+  EventID and source incarnation from observation replay identity.
+- Shadow validates runtime dependencies before configs, calls `NewReconciler`,
+  `newStore`, and `newRegistry` in that order, passes one shared clock to Store and
+  Registry, exposes the Store Snapshot pointer, and routes collector evidence
+  through Store. Snapshot Engine integration reads only a graph pointer; Task 10
+  owns `Start(ctx)`.
+
+**Regression traps, all nine-prefix sweep**
+
+- boundary: populated by schema byte/version extrema, empty capability set versus
+  empty element, global SourceID duplicates across runtimes, zero
+  collectors/lanes/time/incarnation, short/full/error 8-byte random reads,
+  all-zero normalization, and bounded diagnostics.
+- concurrency: populated by one-winner Registry/Shadow Run, all-collector start and
+  wait barriers, the one post-return context-sample linearization, concurrent
+  Health, immediate terminal handling, serialized sink, sibling cancellation/wait,
+  and prior-frame Engine stability.
+- contract: populated by exact public/private API, 29 graph plus one snapshot test
+  ownership, 37 unique nested paths, descriptor call-once/clone rules, three exact
+  sink wrapper boundaries, terminal envelope, shared Shadow clock, and Task 10
+  lifecycle deferral.
+- encoding: populated by raw-byte schema ordering, exact canonical encoder labels,
+  literal `mutable-observation`, order, binary uint64 and 12-byte time fields,
+  source-incarnation omission or inclusion, lowercase key hex, and pure zero
+  normalizers.
+- framework: populated by Go interface typed nil, `context.Canceled` provenance,
+  stable private already-run sentinels, `errors.Join` ordering, safe custom
+  `Unwrap`, and the pinned mutator's exact `go/types.(*StdSizes).Sizeof` branch.
+- io: populated only by the injected sink and `io.Reader`: ordered heartbeat
+  validation prevents partial emission, sink failure stops later calls, and short
+  or errored random reads reject after one `Read`. No filesystem or network I/O is
+  added.
+- persistence: N/A - Task 9 has no durable storage. Restart behavior is an
+  in-memory replay/identity contract covered under encoding and integration.
+- resource: populated by exactly-once collector goroutines, cancellation and wait,
+  zero-collector completion, no restart, sink serialization without lock-held
+  waits, and Shadow sibling reclamation.
+- state: populated by private `validCollectorState`, pending/running/stopped Health,
+  exact post-return cancellation/terminal classification, diagnostic replacement
+  precedence, unresolved terminal gaps, transient open/resolved collector gaps,
+  and Registry/Shadow single-use admission.
+
+### Task 9 exact 30-name Coverage Matrix (Phase A fence)
+
+Every exact top-level name is package-qualified. Slash suffixes in the next table
+are nested subrows and do not add top-level declarations.
+
+| Exact test | Task 9 risk groups |
+|---|---|
+| `graph.TestRegistryRejectsInvalidDescriptor` | `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestRegistryRejectsDuplicateDescriptor` | `GF-T9-DESCRIPTOR` |
+| `graph.TestInputSchemaShapeAndValidation` | `GF-T9-SCHEMA`, `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestCollectorStateVocabulary` | `GF-T9-HEALTH` |
+| `graph.TestCollectorHealthShapeSortCloneAndSanitization` | `GF-T9-HEALTH`, `GF-T9-ERROR` |
+| `graph.TestCollectorDescriptorSchemasAndCapabilitiesCanonical` | `GF-T9-SCHEMA`, `GF-T9-DESCRIPTOR` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings` | `GF-T9-REGISTRY`, `GF-T9-HEALTH`, `GF-T9-ERROR` |
+| `graph.TestRegistryStopsOnContextCancellation` | `GF-T9-REGISTRY`, `GF-T9-HEALTH` |
+| `graph.TestRegistryReturnOpensUnresolvedCapabilityGaps` | `GF-T9-REGISTRY`, `GF-T9-TERMINAL` |
+| `graph.TestRegistryDoesNotRestartReturnedCollector` | `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestRegistryContextCancellationDoesNotInventFailureGap` | `GF-T9-REGISTRY`, `GF-T9-HEALTH`, `GF-T9-TERMINAL` |
+| `graph.TestRegistryCollectorHealthSeparateFromActorHeartbeats` | `GF-T9-SCHEMA`, `GF-T9-HEALTH`, `GF-T9-HEARTBEAT` |
+| `graph.TestRegistryTerminalGapEnvelope` | `GF-T9-TERMINAL`, `GF-T9-ERROR` |
+| `graph.TestRegistryTerminalGapUsesManualClock` | `GF-T9-TERMINAL`, `GF-T9-ERROR` |
+| `graph.TestRegistryRestartChangesProtocolIdentity` | `GF-T9-TERMINAL`, `GF-T9-DESCRIPTOR` |
+| `graph.TestRegistryTerminalGapSinkFailureStopsCollectorEmission` | `GF-T9-REGISTRY`, `GF-T9-TERMINAL`, `GF-T9-ERROR` |
+| `graph.TestRegistrySourceIncarnationAssignmentValidated` | `GF-T9-DESCRIPTOR`, `GF-T9-TERMINAL`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsEmitsOnePerUniqueActorLane` | `GF-T9-HEARTBEAT` |
+| `graph.TestPublishNativePollHeartbeatsZeroLanesPublishesNothing` | `GF-T9-HEARTBEAT` |
+| `graph.TestPublishNativePollHeartbeatsRejectsInvalidLane` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsRejectsZeroTimeBeforeEmission` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsRejectsNilSinkBeforeEmission` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsStopsOnSinkError` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity` | `GF-T9-HEARTBEAT` |
+| `graph.TestPublishNativePollHeartbeatsCollectorRestartPreservesReplayIdentity` | `GF-T9-HEARTBEAT` |
+| `graph.TestShadowRejectsInvalidReconcileConfig` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `graph.TestShadowRejectsInvalidStoreConfig` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `snapshot.TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` | `GF-T9-ENGINE`, `GF-T9-SHADOW` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices` | `GF-T9-SHADOW`, `GF-T9-REGISTRY` |
+| `graph.TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+
+### Task 9 required nested Coverage Matrix
+
+These are exactly 37 unique nested paths. Phase C assigns them 39 nested physical
+pairs: the wait oracle and concurrent-Run oracle each receive a second distinct
+plant on their existing path. Together with the 30 primary paths, Task 9 owns
+exactly 69 physical production/assertion sabotage pairs.
+
+| Exact nested subrow | Task 9 risk groups |
+|---|---|
+| `graph.TestRegistryRejectsInvalidDescriptor/nil-dependencies` | `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestRegistryRejectsInvalidDescriptor/typed-nil-dependencies` | `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestRegistryRejectsInvalidDescriptor/full-batch-before-incarnation` | `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestRegistryRejectsDuplicateDescriptor/same-id-different-runtime` | `GF-T9-DESCRIPTOR` |
+| `graph.TestInputSchemaShapeAndValidation/name-and-version-bounds` | `GF-T9-SCHEMA`, `GF-T9-DESCRIPTOR` |
+| `graph.TestCollectorDescriptorSchemasAndCapabilitiesCanonical/descriptor-once-owned-clone` | `GF-T9-DESCRIPTOR`, `GF-T9-HEALTH` |
+| `graph.TestCollectorDescriptorSchemasAndCapabilitiesCanonical/canonical-order-and-empty-set` | `GF-T9-SCHEMA`, `GF-T9-DESCRIPTOR` |
+| `graph.TestRegistrySourceIncarnationAssignmentValidated/canonical-order` | `GF-T9-DESCRIPTOR`, `GF-T9-TERMINAL` |
+| `graph.TestRegistrySourceIncarnationAssignmentValidated/random-reader` | `GF-T9-DESCRIPTOR`, `GF-T9-ERROR` |
+| `graph.TestRegistryStopsOnContextCancellation/zero-collectors` | `GF-T9-REGISTRY`, `GF-T9-HEALTH` |
+| `graph.TestRegistryStopsOnContextCancellation/already-canceled-still-runs-once` | `GF-T9-REGISTRY`, `GF-T9-HEALTH` |
+| `graph.TestRegistryDoesNotRestartReturnedCollector/nil-context-does-not-consume` | `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestRegistryDoesNotRestartReturnedCollector/concurrent-and-repeated-run` | `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings/concurrent-start-and-wait` | `GF-T9-REGISTRY` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings/serialized-sink` | `GF-T9-REGISTRY` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings/nil-error-dispositions` | `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings/infrastructure-error-join` | `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestRegistryCollectorFailureDoesNotStopSiblings/collector-sink-error-boundary` | `GF-T9-REGISTRY`, `GF-T9-HEALTH`, `GF-T9-ERROR` |
+| `graph.TestCollectorHealthShapeSortCloneAndSanitization/concurrent-states` | `GF-T9-HEALTH` |
+| `graph.TestCollectorHealthShapeSortCloneAndSanitization/exact-diagnostic-classes` | `GF-T9-HEALTH`, `GF-T9-ERROR` |
+| `graph.TestRegistryContextCancellationDoesNotInventFailureGap/post-return-context-sample` | `GF-T9-REGISTRY`, `GF-T9-HEALTH`, `GF-T9-TERMINAL` |
+| `graph.TestRegistryCollectorHealthSeparateFromActorHeartbeats/transient-open-resolved` | `GF-T9-SCHEMA`, `GF-T9-HEALTH`, `GF-T9-TERMINAL` |
+| `graph.TestRegistryTerminalGapUsesManualClock/zero-clock` | `GF-T9-TERMINAL`, `GF-T9-ERROR` |
+| `graph.TestRegistryTerminalGapEnvelope/all-zero-event-id-normalization` | `GF-T9-TERMINAL` |
+| `graph.TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity/all-zero-normalizers` | `GF-T9-HEARTBEAT` |
+| `graph.TestPublishNativePollHeartbeatsRejectsInvalidLane/typed-nil-and-full-batch` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestPublishNativePollHeartbeatsStopsOnSinkError/safe-wrapper` | `GF-T9-HEARTBEAT`, `GF-T9-ERROR` |
+| `graph.TestShadowRejectsInvalidReconcileConfig/construction-order` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `graph.TestShadowRejectsInvalidReconcileConfig/runtime-dependencies` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `graph.TestShadowRejectsInvalidStoreConfig/construction-order` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `graph.TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions/clock-once-and-zero` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `snapshot.TestShadowGraphPublicationLeavesOccupancyRowsUnchanged/tick-pointer-only` | `GF-T9-ENGINE`, `GF-T9-SHADOW` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices/collector-publication` | `GF-T9-SHADOW`, `GF-T9-REGISTRY` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices/zero-collector-run` | `GF-T9-SHADOW`, `GF-T9-REGISTRY` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait` | `GF-T9-SHADOW`, `GF-T9-REGISTRY`, `GF-T9-ERROR` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
+| `graph.TestShadowPublishesRequiredEmptyGraphSlices/shared-clock-terminal-time` | `GF-T9-SHADOW`, `GF-T9-REGISTRY`, `GF-T9-TERMINAL` |
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.
@@ -1018,7 +1283,7 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-REPLAY-1` | `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventReplayAndCollisionComposition`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
 | `GF-REPLAY-2` | `graph.TestObservationDedupTimestampFirst`, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
 | `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
-| `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestGraphPublicationLeavesOccupancyRowsUnchanged` |
+| `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` |
 | `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
 | `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor` |
 

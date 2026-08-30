@@ -626,53 +626,181 @@ events. This replaces the hard-coded sequential collector list in
 `snapshot.Engine.collectOverlays` for graph data. Occupancy overlays continue to
 work during migration.
 
-Each collector declares the exact runtime schema versions and capabilities it
-understands. An unknown version disables only unsupported capabilities and marks
-that collector partial. Collectors have context cancellation, bounded work, and
-independent health. One failed collector cannot stop another collector or paint.
-The engine gains `Start(ctx)` and deterministic shutdown; no new uncancellable
-ticker or goroutine is allowed.
+Each collector declares the exact runtime schemas and capabilities it understands,
+but Registry treats `InputSchema` only as a captured declaration. Concrete running
+collectors own compatibility with observed schema versions. When a collector sees
+an unsupported version, it publishes a transient capability-scoped
+`GapObserved` open and, if support later recovers while it is still running, the
+matching resolved event. Registry neither infers version compatibility nor exposes
+an operational "partial" health state. Collectors have context cancellation,
+bounded work, and independent health. One failed collector cannot stop another
+collector or paint.
 
-Registry starts every collector exactly once and waits for all of them. A
-collector return while context remains active is terminal and opens one unresolved
-gap per declared capability, or one nil-capability gap when none are declared.
-Registry does not restart or auto-resolve it. Context cancellation is normal and
-opens no failure gap. A running collector may publish its own transient open and
-resolved gaps.
+Descriptor capture is deterministic and owned. Registry rejects a nil or typed-nil
+sink, collector, clock, or incarnation generator without panic and without echoing
+rejected bytes. It calls each collector's `Descriptor` exactly once and deep-clones
+its schemas and capabilities. A schema name is valid UTF-8, control-free, 1 through
+128 bytes; its `uint16` version is 1 through `math.MaxUint16`. Descriptor ID and
+runtime use the frozen SourceID and runtime validators. Schemas are nonempty,
+sorted by raw name bytes and then numeric version, and exact duplicates are
+invalid. The capability set may be empty; an element may not be empty, and present
+elements are closed, lexically sorted, and unique. Collector `SourceID` is globally
+unique regardless of runtime; equal IDs always reject because Reconciler gap keys
+are SourceID-scoped. Registry captures and validates the complete descriptor batch
+before it asks for any source incarnation, then sorts collectors by ID and runtime.
+Runtime remains the total-order tie breaker even though valid IDs cannot tie.
 
-Input schemas have bounded nonempty names and positive versions. Descriptor
-schemas are nonempty canonical sets. Capabilities may be empty; present values are
-closed, sorted, and duplicate-free, and empty means terminal return emits one
-nil-capability gap. Collector health states are
-pending, running, and stopped; snapshots sort, clone capability slices, and expose
-only bounded sanitized diagnostics. Pending/running diagnostics are empty.
+Registry is single-use. A nil context returns
+`graph registry context rule violated: context=nil` without consuming the use. A
+concurrent or repeated `Run` returns private stable
+`errRegistryAlreadyRun` with text
+`graph registry lifecycle rule violated: already-run` and never calls a collector
+again. An already-canceled nonnil context still calls every
+collector once with that canceled context, waits for every return, opens no gap,
+and returns nil. Zero collectors is valid: `Health` is a nonnil empty slice and
+`Run` returns immediately. Otherwise Registry invokes every collector concurrently
+exactly once and waits for all of them. It passes an internally serialized sink, so
+the caller sink need not be concurrency-safe. With nil error, the exact table
+`PublishDisposition(0)`, `PublishRejected`, `PublishAcceptedCritical`,
+`PublishAcceptedNormal`, `PublishCoalesced`, `PublishDuplicate`,
+`PublishDroppedNormal`, `PublishDroppedCritical`, and undeclared
+`PublishDisposition(255)` are opaque sink-owned successes which pass through
+unchanged; Registry never validates or interprets the disposition. Only a nonnil
+sink error fails that emission. The
+collector-facing wrapper uses the collector's zero-based canonical index and exact
+safe text `graph registry collector sink rule violated: collector-index=%d`,
+unwraps the cause, and never incorporates cause text. If `Collector.Run` returns
+that wrapper, it remains only an operational collector error; by itself it is never
+Registry Run infrastructure.
 
-Registry uses an injected clock and one cryptographic nonzero protocol source
-incarnation per collector. Terminal gaps are exact actorless schema-1 protocol
-events at one injected time, sorted by capability, with deterministic IDs over
-full source, scalar capability emptiness/value, and time. No declared capability
-uses scalar empty `GapObserved.Capability`, which reduces to nil in the public
-gap. A new Registry gets new replay identity. Sink failure sanitizes health and
-stops later terminal-gap emission for that collector, and leaves siblings
-running. Registry never auto-resolves terminal
-gaps; only a still-running collector owns transient recovery.
+Immediately after every `Collector.Run` return, its goroutine samples `ctx.Err()`
+exactly once. A nonnil result permanently classifies the return as normal Registry
+cancellation: Registry marks Health stopped at that linearization, emits no gap,
+samples no terminal clock, and leaves the diagnostic empty. A nil result
+permanently classifies the return as terminal even if the context cancels later.
+Registry marks Health stopped at the same linearization, seeds return- or
+error-class diagnostic, and immediately processes that collector's terminal clock
+and sorted events in the same goroutine while siblings may remain running. An
+early `context.Canceled` return while sampled `ctx.Err()` is nil is therefore a
+terminal collector error. Terminal return opens one unresolved collector gap per
+declared capability, or one nil-capability gap when none are declared. Registry
+does not restart or auto-resolve it. One terminal collector never cancels siblings.
+Collector errors are reflected only in health. After waiting for all collectors,
+`Run` returns only infrastructure errors from terminal clock or terminal sink
+handling, joined deterministically in canonical collector order.
+
+Collector health is race-safe and sorted by ID then runtime. Registry owns the
+descriptor data, and every `Health` result contains a nonnil, independently cloned
+capability slice. Private `validCollectorState` returns true exactly for pending,
+running, and stopped and false for every other value; every health transition uses
+and validates it. State is pending at construction, running immediately before the
+collector call, and stopped at the one post-return context-sample linearization.
+Pending and running diagnostics are empty. Registry cancellation leaves the
+stopped diagnostic empty. Terminal processing initially uses exact
+`collector stopped: class=return` for nil return or
+`collector stopped: class=error` for collector error, including early
+`context.Canceled`; only a later zero clock or terminal sink failure may replace it
+with `collector stopped: class=clock` or `collector stopped: class=sink`. No
+diagnostic includes raw collector or sink bytes.
+
+Registry assigns exactly one distinct nonzero protocol source incarnation per
+collector in canonical collector order. Its production helper calls `Reader.Read`
+exactly once with an 8-byte buffer. It rejects `n != 8` regardless of error,
+rejects a full-length read with nonnil error, never retries, decodes big-endian,
+and rejects zero. Each terminal-classified return samples the injected clock
+exactly once. A zero sample emits no terminal events, does not stop siblings,
+replaces health with the clock-class diagnostic, and contributes the exact safe
+Registry error `graph registry clock rule violated: now=zero`. A terminal sink
+error uses zero-based canonical collector and sorted-gap indices and exact text
+`graph registry terminal sink rule violated: collector-index=%d gap-index=%d`,
+unwraps the original cause without its text, replaces health with sink class,
+stops later terminal events for that collector, and leaves siblings running.
+
+Every terminal gap is schema 1 `EventGapObserved` in `SourceProtocol` mode with
+the descriptor ID/runtime, assigned source incarnation, native authority, nil
+sequence, `ReceivedAt` equal to the one sampled time, and no observation,
+SourceTime, trace, actor, actor incarnation, target, or target incarnation. Data is
+`GapObserved{Capability: capabilityOrEmpty, Kind: GapCollector, Status: GapOpen,
+Count: 1}`. The scalar empty capability reduces to nil in the public gap. Registry
+never auto-resolves terminal gaps; only a still-running collector owns transient
+recovery.
+
+Terminal event identity uses the existing canonical length-prefixed field encoder
+in this exact order: string `Domain=aitop.graph.registry-terminal-gap.v1`, string
+`Source.Mode`, string `Source.Ref.ID`, string `Runtime`, uint64 big-endian
+`Incarnation`, uint64 big-endian `Authority`, one-byte `Capability.Present`, the
+optional string `Capability.Value`, and 12-byte seconds/nanoseconds
+`ReceivedAt`. Event ID is the first 16 bytes of SHA-256; an all-zero result sets
+its final byte to 1. Registry-restart comparison holds descriptor, capabilities,
+and injected terminal time identical; only assigned source incarnation differs,
+and both terminal event SourceRef incarnation and EventID must therefore differ.
 
 Native collectors pass the actor lanes from each successful poll to the shared
 `PublishNativePollHeartbeats` helper. Registry never invents that actor set. The
-helper validates the complete batch before emission, requires native authority,
-deduplicates identical full lanes, sorts deterministically, and emits one ordered
-`SourceObservation` heartbeat per unique actor/incarnation/source lane. The
-injected receiver time is both arrival and observation time. Domain-separated
-length-prefixed SHA-256 over the stable native-health lane supplies observation
-key and digest. That stable encoding includes Source ID, runtime, authority,
-actor, actor incarnation, and the fixed health mode/domain, but excludes collector
-Source.Incarnation. Event identity hashes the complete lane, including source
-incarnation, plus receiver time; observation replay excludes EventID. Thus equal
-poll evidence across collector restart keeps equal DedupKey and Fingerprint while
-the emitted full SourceRef still distinguishes Task 6 health epochs. Zero lanes
-emits nothing. Nil sink, invalid lane, or zero time fails before emission. Sink
-failure stops later emission and remains a collector diagnostic. Collector
-operational health remains separate.
+helper first rejects a nil or typed-nil sink, then rejects zero receiver time, then
+validates the complete lane batch before emission. Lane validation requires native
+authority, valid SourceID/runtime, nonzero source incarnation, and valid actor and
+actor incarnation. Only a valid sink and nonzero time paired with zero lanes returns
+nil. It deduplicates
+identical complete lane triples, sorts by Source ID, runtime, source incarnation,
+authority, actor, and actor incarnation, and emits one ordered schema-1
+`EventHeartbeatObserved` `SourceObservation` per lane. The event retains the full
+SourceRef and actor identities; receiver time is both `ReceivedAt` and
+`Observation.At`; sequence, SourceTime, trace, target, and target incarnation are
+absent; data is `HeartbeatObserved{}`.
+
+The stable observation-key and observation-digest encoders contain, in order,
+string `Domain` using `aitop.graph.native-health-lane.v1` or
+`aitop.graph.native-health-digest.v1`, string
+`Source.Mode=mutable-observation` (the literal `string(SourceObservation)`), string
+`Source.Ref.ID`, string `Runtime`, uint64
+big-endian `Authority`, string `Actor`, and string `ActorIncarnation`. They omit
+source incarnation. The event-ID encoder uses domain
+`aitop.graph.native-health-event.v1` followed by the same fields with uint64
+big-endian `Incarnation` inserted after runtime, then 12-byte
+seconds/nanoseconds `ReceivedAt`. Observation key is `native-heartbeat:` plus the
+lowercase normalized 32-byte hash; observation digest is the normalized SHA-256;
+Event ID is the normalized first 16 bytes. Separate pure normalization helpers set
+the final byte to 1 only when the complete key hash, `RevisionDigest`, or `EventID`
+is all zero, and tests call each helper directly.
+
+Equal native evidence across a collector restart therefore retains observation
+Key, Digest, DedupKey, and Fingerprint while the full emitted SourceRef and EventID
+change with source incarnation. Zero lanes emits nothing only after sink and time
+validation. Any validation failure emits nothing. A sink error uses the zero-based
+sorted lane index and exact text
+`graph native heartbeat sink rule violated: lane-index=%d`, unwraps the cause,
+emits no later lane, and never includes cause text. Collector operational health
+remains separate.
+
+`Shadow` owns one Store and one Registry built with the same injected clock. Its
+private constructor rejects nil or typed-nil clock and nil incarnation generator
+before config validation, defaulting, callbacks, or descriptor capture. It then
+calls `NewReconciler`, `newStore` (which samples the initial nonzero graph time
+exactly once), and `newRegistry` in that order; an earlier failure does not call
+later dependencies, descriptors, or the incarnation generator. The same manual
+clock therefore supplies an independently scripted construction sample for initial
+Snapshot At and later terminal samples for terminal Gap At; Shadow never substitutes
+a separate Registry clock. The initial graph has nonnil empty Nodes, Edges, and
+Gaps and four zero revisions.
+Shadow is single-use. Nil context returns
+`graph shadow context rule violated: context=nil` without consuming use;
+concurrent or repeated Run returns private stable `errShadowAlreadyRun` with text
+`graph shadow lifecycle rule violated: already-run`. It starts Store and Registry
+on one child context and always waits for both. Normal Registry
+completion does not stop Store; zero-collector Shadow remains live until caller
+cancellation. A non-cancellation Store or Registry infrastructure error cancels
+the sibling, and multiple failures join Store before Registry while preserving
+error identities. Ordinary caller cancellation with normal child shutdown returns
+nil. `Shadow.Snapshot` returns the Store's snapshot pointer directly.
+
+Task 9 adds only graph-pointer integration to snapshot Engine: a nil-able
+`GraphSnapshot func() *graph.Snapshot` provider and `Snapshot.Graph`. Each
+successful proc tick calls a nonnil provider exactly once and assigns that pointer
+directly without cloning or graph work; a nil provider yields nil. Earlier frames
+remain stable and occupancy Rows remain byte-for-byte unchanged. The Engine
+`Start(ctx)` and deterministic-shutdown change remains Task 10 scope; no new
+uncancellable ticker or goroutine is introduced by Task 9.
 
 ### Reconciler
 

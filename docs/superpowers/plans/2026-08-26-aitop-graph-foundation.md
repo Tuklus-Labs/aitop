@@ -687,6 +687,8 @@ const (
 	CollectorStopped CollectorState = "stopped"
 )
 
+func validCollectorState(CollectorState) bool
+
 type CollectorHealth struct {
 	ID           SourceID
 	Runtime      types.Runtime
@@ -729,6 +731,14 @@ type registryRuntime struct {
 }
 
 func newRegistry(EventSink, registryRuntime, ...Collector) (*Registry, error)
+func randomSourceIncarnation(io.Reader) (SourceIncarnationID, error)
+
+type shadowRuntime struct {
+	Clock                storeClock
+	NewSourceIncarnation func() (SourceIncarnationID, error)
+}
+
+func newShadow(ReconcileConfig, StoreConfig, shadowRuntime, ...Collector) (*Shadow, error)
 
 func NewRegistry(EventSink, ...Collector) (*Registry, error)
 func (r *Registry) Run(context.Context) error
@@ -738,66 +748,190 @@ func (s *Shadow) Run(context.Context) error
 func (s *Shadow) Snapshot() *Snapshot
 ```
 
-Input schema name is valid UTF-8, control-free, nonempty, and at most 128 bytes;
-version is positive. Descriptor schemas are nonempty, valid, sorted, and
-duplicate-free. Capabilities may be empty; when present they are closed, sorted,
-and duplicate-free. Empty capability is valid and terminal return emits one
-nil-capability gap. Health sorts by ID then runtime and deep-copies
-capabilities. Diagnostic is valid UTF-8, control-free, at most 256 bytes, and
-never contains rejected raw bytes. Pending/running diagnostic is empty. Stopped
-may be empty after normal cancellation or sanitized nonempty after failure.
+`InputSchema` is a captured declaration, not a Registry compatibility policy.
+Name is valid UTF-8, control-free, and 1 through 128 bytes; `Version` is 1 through
+`math.MaxUint16`. Descriptor ID is a valid frozen `SourceID`, runtime is closed,
+schemas are nonempty and sorted by raw name bytes then numeric version, and exact
+schema duplicates are rejected. A capability set may be empty; an empty string
+element is invalid. Present capabilities are closed, lexically sorted, and unique.
+Collector `SourceID` is globally unique regardless of runtime, so the same ID with
+distinct runtimes also rejects; this preserves Reconciler's SourceID-scoped gap
+keys. Registry calls every nonnil collector's `Descriptor` exactly once,
+deep-clones both slices, validates the entire captured descriptor batch, and only
+then requests source incarnations. It never infers observed-version support or an
+operational partial-health state. A still-running concrete collector owns
+capability-scoped transient `GapObserved` open/resolved events.
 
-`PublishNativePollHeartbeats` validates the non-nil sink, nonzero receiver time,
-and every lane before emitting anything. Every source has native authority and
-every actor and actor incarnation satisfies the frozen event identity rules. It
-deduplicates identical complete lane triples and sorts unique lanes by Source ID,
-runtime, source incarnation, authority, actor, and actor incarnation.
+`newRegistry` rejects nil and typed-nil sink, collector, `Clock`, or incarnation
+generator without panic. Constructor and validation errors contain field, limit,
+length, and safe class but never rejected bytes. Collectors are canonically sorted
+by ID then runtime; runtime remains a total-order tie breaker although valid IDs
+cannot tie. In that order, construction calls the generator exactly once
+per collector and requires every result to be nonzero and distinct; zero,
+duplicate, or generator error rejects without retry. `randomSourceIncarnation`
+calls `Reader.Read` exactly once with an 8-byte buffer. It rejects `n != 8`
+regardless of error, rejects `n == 8` with nonnil error, never retries, decodes
+big-endian uint64, and rejects zero. `NewRegistry` supplies `crypto/rand.Reader`, a
+real wall clock, and that helper.
 
-For each lane it publishes exactly one schema-1 `EventHeartbeatObserved` with
-`SourceObservation`, the full `SourceRef`, actor and actor incarnation, and
-`ReceivedAt == Observation.At ==` the injected receiver time.
-`Sequence`, `SourceTime`, `Trace`, target, and target incarnation are absent, and
-`Data` is `HeartbeatObserved{}`. Canonical length-prefixed SHA-256 domains are
-exact:
+Registry is single-use. Nil context returns exact safe error
+`graph registry context rule violated: context=nil` before consuming the use.
+Concurrent or repeated calls return private stable
+`errRegistryAlreadyRun = errors.New("graph registry lifecycle rule violated: already-run")`
+and never call collectors again. An already-canceled
+nonnil context still calls every collector exactly once with that canceled
+context, waits for all calls, emits no terminal gaps, and returns nil. Zero
+collectors is valid: `Health` returns a nonnil empty slice and `Run` returns nil
+immediately. Otherwise Registry sets up collectors in canonical order, invokes all
+of them concurrently exactly once, and waits for all returns.
 
-- `aitop.graph.native-health-lane.v1` plus the stable native-health lane produces
-  `Observation.Key` as `native-heartbeat:` plus lowercase hex digest;
-- `aitop.graph.native-health-digest.v1` plus the stable native-health lane produces
-  `Observation.Digest`;
-- `aitop.graph.native-health-event.v1` plus the complete lane and canonical
-  receiver time produces the first 16 bytes of `EventID`.
+Every collector receives an internal sink wrapper which serializes all calls to
+the caller sink with one mutex; the caller sink need not be concurrency-safe.
+Nil-error dispositions, including duplicate, coalesced, and dropped outcomes, are
+opaque sink-owned results. With nil error the exact pass-through table is
+`PublishDisposition(0)`, `PublishRejected`, `PublishAcceptedCritical`,
+`PublishAcceptedNormal`, `PublishCoalesced`, `PublishDuplicate`,
+`PublishDroppedNormal`, `PublishDroppedCritical`, and undeclared
+`PublishDisposition(255)`. Registry never validates or classifies them. Only a
+nonnil sink error fails that publication. The
+collector-facing serialized wrapper uses the zero-based canonical collector index,
+has exact text
+`graph registry collector sink rule violated: collector-index=%d`, implements
+`Unwrap`, and never includes cause text. If `Collector.Run` returns this wrapper it
+is only an operational collector error and by itself never becomes Registry Run
+infrastructure. A terminal collector never cancels siblings. Collector errors
+appear in health but are not returned by Registry. After waiting for every
+collector, `Run` returns only terminal-gap clock or terminal-sink infrastructure
+errors, combined with `errors.Join` in canonical collector order.
 
-The stable native-health lane encoding contains the fixed health mode/domain,
-Source ID, runtime, authority, actor, and actor incarnation. It explicitly omits
-collector `Source.Incarnation`. The emitted Event retains the complete SourceRef,
-including collector incarnation, for Task 6 health-lane freshness. EventID may
-include the complete lane because observation-mode replay excludes EventID.
+Private `validCollectorState` returns true exactly for `CollectorPending`,
+`CollectorRunning`, and `CollectorStopped`, and false for every other value. Every
+health transition validates through it; the compile stub returns false. Health
+state is pending at construction, running immediately before calling
+`Collector.Run`, and stopped at the one post-return context-sample linearization.
+`Health` is safe during concurrent
+collector transitions, sorts by ID then runtime, and returns a nonnil independently
+deep-cloned capability slice on every call. Pending and running diagnostics are
+empty. A stop caused by Registry context cancellation has an empty diagnostic.
+For terminal classification, nil return seeds exact
+`collector stopped: class=return`; collector error, including early
+`context.Canceled`, seeds `collector stopped: class=error`. Only a later zero clock
+or terminal sink error may replace that diagnostic with
+`collector stopped: class=clock` or `collector stopped: class=sink`. Diagnostics
+are valid UTF-8, control-free, at most 256 bytes, and never contain raw collector or
+sink bytes.
 
-For either fixed-size binary result, an all-zero result sets its final byte to 1.
-Zero lanes publishes nothing and returns nil. A sink error is wrapped with the
-lane index, stops later emission, and remains a collector diagnostic. The helper
-uses no random or unspecified ID generator. Collector operational health is
-separate.
+Immediately after each `Collector.Run` return, its goroutine samples `ctx.Err()`
+exactly once. Nonnil permanently classifies normal Registry cancellation: mark
+Health stopped immediately, emit no gap, sample no terminal clock, and leave the
+diagnostic empty. Nil permanently classifies terminal even if context cancels
+later: mark Health stopped immediately, seed return/error diagnostic, and process
+that collector's clock and sorted gaps in the same goroutine while siblings may
+still run. Registry samples its clock exactly once for a terminal-classified
+collector, then emits one event per sorted capability or one scalar-empty event.
+A zero sample emits none, does not affect siblings, replaces Health with clock
+class, and contributes exact safe error
+`graph registry clock rule violated: now=zero`; that error has no required stable
+identity. Every terminal collector produces at most one episode; Registry never
+restarts or auto-resolves it.
 
-`NewRegistry` supplies wall clock and cryptographic random nonzero source
-incarnations to `newRegistry`. Construction assigns exactly one distinct
-incarnation per collector; duplicate or failed generation rejects construction.
-On terminal Run return while context remains active, one injected nonzero time is
-used for every sorted capability event for that collector, or one event with
-scalar empty `GapObserved.Capability` when none are declared. The reducer turns
-that event into a nil-capability public gap. Each event is schema 1,
-GapObserved open count 1,
-with descriptor ID/runtime, assigned incarnation, native authority, protocol
-mode, nil sequence, no actor/target/trace/observation/source time, and ReceivedAt
-equal to injected time. EventID is nonzero first-16 SHA-256 over
-`aitop.graph.registry-terminal-gap.v1`, full SourceRef, capability presence/value,
-and canonical time; an all-zero truncation sets its final byte to 1.
+Each terminal event is exact schema 1 `EventGapObserved`, `SourceProtocol`, with
+descriptor ID/runtime, assigned incarnation, native authority, nil sequence,
+`ReceivedAt` equal to the sampled time, and absent observation, SourceTime, trace,
+actor, actor incarnation, target, and target incarnation. Data is
+`GapObserved{Capability: capabilityOrEmpty, Kind: GapCollector, Status: GapOpen,
+Count: 1}`. Scalar empty capability reduces to nil in the public gap. A terminal
+sink error stops later gap emission for only that collector, records sink-class
+health, and contributes an infrastructure wrapper with exact text
+`graph registry terminal sink rule violated: collector-index=%d gap-index=%d`.
+Both indices are zero-based in canonical collector and sorted-capability order; the
+wrapper unwraps the cause without copying its text.
 
-Context cancellation emits no terminal gap. Registry lifetime emits at most one
-terminal episode per collector; a new Registry gets new protocol identity. Sink
-failure sanitizes CollectorHealth diagnostic, stops later terminal-gap emission
-for that collector, and never stops siblings. Terminal gaps remain unresolved;
-only a still-running collector may publish transient recovery.
+Terminal Event ID uses `canonicalFieldEncoder` in this exact order and type:
+`fieldString("Domain", "aitop.graph.registry-terminal-gap.v1")`,
+`fieldString("Source.Mode", string(SourceProtocol))`,
+`fieldString("Source.Ref.ID", string(id))`,
+`fieldString("Runtime", string(runtime))`,
+`fieldUint64("Incarnation", uint64(incarnation))`,
+`fieldUint64("Authority", uint64(AuthorityNative))`,
+`fieldPresence("Capability", present)`, optional
+`fieldString("Capability.Value", string(capability))`, and
+`fieldTime("ReceivedAt", receivedAt)`. `fieldPresence` produces the exact
+one-byte `Capability.Present` field. Event ID is normalized first-16 SHA-256.
+
+`PublishNativePollHeartbeats` validates in exact order before any sink call: first
+reject nil or typed-nil sink, then reject zero receiver time, then validate the
+complete lane batch for native authority, valid SourceID/runtime, nonzero source
+incarnation, and valid actor and actor incarnation. Only valid sink plus nonzero
+time plus zero lanes returns nil. It deduplicates identical complete
+`(SourceRef, Actor, ActorIncarnation)` lanes and sorts by Source ID, runtime, source
+incarnation, authority, actor, and actor incarnation.
+
+For every unique lane it emits one schema-1 `EventHeartbeatObserved` in
+`SourceObservation` mode with full SourceRef, actor identities, and
+`ReceivedAt == Observation.At ==` receiver time. Sequence, SourceTime, trace,
+target, and target incarnation are absent; Data is `HeartbeatObserved{}`. The
+stable key encoder uses, in exact order,
+`fieldString("Domain", "aitop.graph.native-health-lane.v1")`,
+`fieldString("Source.Mode", string(SourceObservation))`,
+`fieldString("Source.Ref.ID", string(id))`,
+`fieldString("Runtime", string(runtime))`,
+`fieldUint64("Authority", uint64(AuthorityNative))`,
+`fieldString("Actor", string(actor))`, and
+`fieldString("ActorIncarnation", string(actorIncarnation))`. The stable digest
+encoder is identical except for domain
+`aitop.graph.native-health-digest.v1`. Both omit source incarnation.
+
+The event-ID encoder uses domain `aitop.graph.native-health-event.v1`, then the
+same fields with `fieldUint64("Incarnation", uint64(sourceIncarnation))` after
+runtime, followed by `fieldTime("ReceivedAt", receivedAt)`. Observation Key is
+`native-heartbeat:` plus lowercase hex of normalized key SHA-256; Observation
+Digest is normalized SHA-256; Event ID is normalized first-16 SHA-256. Pure
+private `normalizeKeyHash([32]byte) [32]byte`,
+`normalizeRevisionDigest(RevisionDigest) RevisionDigest`, and
+`normalizeEventID(EventID) EventID` helpers each set the final byte to 1 only for
+an all-zero input, and tests call all three directly.
+
+A heartbeat sink error uses zero-based sorted lane index and exact text
+`graph native heartbeat sink rule violated: lane-index=%d`, preserves `errors.Is`
+through `Unwrap`, includes no raw cause text, and stops later lanes. Equal lanes at
+equal time differing only in source incarnation retain Key, Digest, DedupKey, and
+Fingerprint but have distinct emitted SourceRef incarnation and Event ID. The
+stable encoder's `fieldString("Source.Mode", string(SourceObservation))` therefore
+encodes the literal `mutable-observation`, never `observation`.
+
+`newShadow` uses one `shadowRuntime`: the same `storeClock` is passed to
+`newStore` and `newRegistry`, and the generator is passed to `newRegistry`. It
+rejects nil or typed-nil Clock and nil generator before config validation,
+defaulting, callbacks, or descriptor capture. Construction order is
+`NewReconciler`, `newStore`, then `newRegistry`. An earlier invalid reconcile or
+Store config does not call later clocks, descriptors, or the generator. Successful
+Store construction samples the clock exactly once; that nonzero time is initial
+graph Snapshot At. Later terminal Registry processing consumes later samples from
+that exact clock, so an independently scripted terminal sample is terminal Gap At.
+Zero construction time rejects without a Shadow. The initial graph has nonnil empty
+Nodes, Edges, and Gaps and four zero revisions. `NewShadow` supplies nonnil
+`realStoreClock` and `randomSourceIncarnation` over `crypto/rand.Reader`.
+
+Shadow is single-use. Nil context returns exact safe error
+`graph shadow context rule violated: context=nil` before consuming use; concurrent
+or repeated Run returns private stable
+`errShadowAlreadyRun = errors.New("graph shadow lifecycle rule violated: already-run")`.
+Run starts
+Store and Registry on one child context and always waits for both. Normal Registry
+completion does not stop Store, and a zero-collector Shadow remains live until
+caller cancellation. A non-cancellation Store or Registry infrastructure error
+cancels its sibling. Caller cancellation followed by normal child stops returns
+nil. Multiple non-cancellation failures are `errors.Join`ed in Store-then-Registry
+order with identities preserved. `Shadow.Snapshot` returns the Store pointer
+directly.
+
+Task 9 adds `GraphSnapshot func() *graph.Snapshot` to `snapshot.Engine` and
+`Graph *graph.Snapshot` to `snapshot.Snapshot`. On each successful `tickProc`, a
+nonnil provider is called exactly once and its pointer is assigned directly; a
+nil provider produces nil. Engine performs no graph work or clone, prior frame
+pointers remain stable, and the legacy Rows encoding is byte-for-byte unchanged.
+`Engine.Start(ctx)` and deterministic shutdown are explicitly deferred to Task 10.
 
 ## Landed baseline: Tasks 0 through 3
 
@@ -3869,28 +4003,40 @@ git commit -m "feat: publish bounded graph snapshots"
 
 ## Task 9: Collector registry and shadow graph
 
-**Files:**
+**Phase A files (exactly three):**
+- Modify: `docs/superpowers/specs/2026-08-26-aitop-agent-telemetry-graph-design.md`
+- Modify: `docs/superpowers/plans/2026-08-26-aitop-graph-foundation.md`
+- Modify: `tests/RISK_MODEL.md`
+
+**Phase B through D files (exactly eight):**
 - Create: `internal/graph/collector.go`
 - Create: `internal/graph/collector_test.go`
 - Create: `internal/graph/shadow.go`
 - Create: `internal/graph/shadow_test.go`
 - Modify: `internal/snapshot/engine.go`
 - Modify: `internal/snapshot/engine_test.go`
-- Modify: `tests/RISK_MODEL.md`
 - Modify: `tests/SABOTAGE_LOG.md`
+- Modify: `tests/LOUDNESS_AUDIT.md`
 
 - [ ] **Step 1: Amend the risk model and freeze coverage names**
 
-Before test code, add and map registry/shadow risk rows. The exact test set uses
-real fake collectors, not mocks of registry internals, and covers invalid or
-duplicate descriptors, one failing collector with a healthy sibling, context
-cancellation, unresolved capability-scoped Registry terminal gaps, transient
-open/resolved gaps published by a collector that is still running, successful
-native-poll heartbeats, invalid Store config propagation from `NewShadow`, graph
-updates beside byte-for-byte equal occupancy rows, and nil/empty graph arrays.
+Before any test or production edit, amend the design, this plan, and the live
+eight-axis risk model. Populate `GF-T9-SCHEMA`, `GF-T9-DESCRIPTOR`,
+`GF-T9-REGISTRY`, `GF-T9-HEALTH`, `GF-T9-TERMINAL`, `GF-T9-HEARTBEAT`,
+`GF-T9-SHADOW`, `GF-T9-ENGINE`, and `GF-T9-ERROR`; explicitly sweep all nine
+bug-shape prefixes. Persistence is an explicit N/A because Task 9 writes no
+durable store; restart identity is an in-memory replay contract and remains under
+the heartbeat and terminal groups. The exact tests use real fake collectors, not
+mocks of Registry internals, and use channel barriers, manual clocks, and recording
+sinks without sleeps.
 
 Freeze these exact names and map every one to a risk row and per-test sabotage
-pair before implementation:
+pair before implementation. Package ownership is exact: the first 25 names live in
+`internal/graph/collector_test.go`; the four Shadow construction/publication names
+other than occupancy integration live in `internal/graph/shadow_test.go`; and
+`TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` lives in
+`internal/snapshot/engine_test.go`. There are exactly 29 graph-package names and
+one snapshot-package name.
 
 ```text
 TestRegistryRejectsInvalidDescriptor
@@ -3925,94 +4071,756 @@ TestShadowPublishesRequiredEmptyGraphSlices
 TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions
 ```
 
-The invalid-lane test places an invalid lane after a valid lane and requires zero
-sink calls, proving full-batch validation. The zero-time test also requires zero
-sink calls. The deterministic-identity test asserts every frozen domain, event
-field, stable order, and all-zero normalization rule. The collector-restart test
-uses equal injected time and lanes differing only in Source.Incarnation. It
-requires equal observation keys, digests, DedupKeys, and Fingerprints while the
-emitted Event Source incarnations remain distinct. The nil-sink test requires a
-returned error, no panic, and no attempted emission.
+These exactly 37 unique nested subrows are mandatory and do not add top-level
+names:
+
+| Exact owner/subrow | Required independent oracle |
+|---|---|
+| `TestRegistryRejectsInvalidDescriptor/nil-dependencies` | Nil sink, collector, clock, and generator each fail before callbacks, generation, or panic. |
+| `TestRegistryRejectsInvalidDescriptor/typed-nil-dependencies` | Typed-nil sink, collector, and clock each fail before method dispatch. |
+| `TestRegistryRejectsInvalidDescriptor/full-batch-before-incarnation` | A later invalid descriptor leaves the generator call count zero and safe error text excludes rejected bytes. |
+| `TestRegistryRejectsDuplicateDescriptor/same-id-different-runtime` | A repeated SourceID rejects even when runtime differs; generator calls remain zero. |
+| `TestInputSchemaShapeAndValidation/name-and-version-bounds` | Independent 1/128/129-byte, invalid-UTF-8, control, version 0, version 1, and `math.MaxUint16` cases. |
+| `TestCollectorDescriptorSchemasAndCapabilitiesCanonical/descriptor-once-owned-clone` | Descriptor is called once; caller mutation after construction changes neither Health nor terminal events. |
+| `TestCollectorDescriptorSchemasAndCapabilitiesCanonical/canonical-order-and-empty-set` | Schemas use name-byte then numeric-version order; capabilities use lexical order; empty set is valid while an empty element is invalid. |
+| `TestRegistrySourceIncarnationAssignmentValidated/canonical-order` | Generator results attach in sorted ID/runtime order, not argument order. |
+| `TestRegistrySourceIncarnationAssignmentValidated/random-reader` | One `Reader.Read` only; every `n != 8` rejects regardless of error, full `n == 8` with error rejects, full nil-error decodes big-endian, and zero rejects without retry. |
+| `TestRegistryStopsOnContextCancellation/zero-collectors` | Health is nonnil empty and Run returns immediately with no clock/sink/generator work after construction. |
+| `TestRegistryStopsOnContextCancellation/already-canceled-still-runs-once` | Every collector receives the canceled context once, Registry waits, emits no gap, and returns nil. |
+| `TestRegistryDoesNotRestartReturnedCollector/nil-context-does-not-consume` | Nil context returns a safe error; the following valid Run remains the one permitted run. |
+| `TestRegistryDoesNotRestartReturnedCollector/concurrent-and-repeated-run` | One caller owns Run; every overlapping or later call gets `errRegistryAlreadyRun`; collector call count remains one. |
+| `TestRegistryCollectorFailureDoesNotStopSiblings/concurrent-start-and-wait` | All collectors enter Run before any is released; Registry cannot return until all finish. |
+| `TestRegistryCollectorFailureDoesNotStopSiblings/serialized-sink` | Two collectors blocked at Publish prove maximum caller-sink concurrency is one. |
+| `TestRegistryCollectorFailureDoesNotStopSiblings/nil-error-dispositions` | The exact table is `PublishDisposition(0)`, all seven declared values from `PublishRejected` through `PublishDroppedCritical`, and undeclared `PublishDisposition(255)`; nil error passes each unchanged as sink-owned success with no Health or Registry infrastructure effect. |
+| `TestRegistryCollectorFailureDoesNotStopSiblings/infrastructure-error-join` | Clock/sink failures from multiple collectors join in canonical collector order and preserve only permitted identities. |
+| `TestRegistryCollectorFailureDoesNotStopSiblings/collector-sink-error-boundary` | Collector wrapper text has zero-based canonical collector index, excludes cause text, preserves `errors.Is`, and a returned wrapper remains Health error class rather than Registry infrastructure. |
+| `TestCollectorHealthShapeSortCloneAndSanitization/concurrent-states` | Barrier snapshots observe pending, running, and stopped safely; every returned capability slice is nonnil and independently owned. |
+| `TestCollectorHealthShapeSortCloneAndSanitization/exact-diagnostic-classes` | Return, collector error, early `context.Canceled`, Registry cancellation, clock zero, and sink failure match the exact safe diagnostic strings. |
+| `TestRegistryContextCancellationDoesNotInventFailureGap/post-return-context-sample` | Barriers prove exactly one immediate post-return `ctx.Err` sample permanently selects cancellation or terminal processing, Health stops at that sample, and later cancellation cannot suppress a terminal result. |
+| `TestRegistryCollectorHealthSeparateFromActorHeartbeats/transient-open-resolved` | A still-running collector publishes capability-scoped open then resolved gaps; Registry Health remains running and never infers partial. |
+| `TestRegistryTerminalGapUsesManualClock/zero-clock` | One zero sample emits no event, siblings continue, health is clock-class, and Run returns the exact safe clock error. |
+| `TestRegistryTerminalGapEnvelope/all-zero-event-id-normalization` | The pure EventID helper maps zero to final-byte one and leaves nonzero input unchanged. |
+| `TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity/all-zero-normalizers` | Key-hash, RevisionDigest, and EventID helpers each exercise zero and nonzero inputs directly. |
+| `TestPublishNativePollHeartbeatsRejectsInvalidLane/typed-nil-and-full-batch` | A valid lane before a bad lane and typed-nil sink both produce zero calls. |
+| `TestPublishNativePollHeartbeatsStopsOnSinkError/safe-wrapper` | Wrapper names only lane index, excludes cause text, preserves `errors.Is`, and stops later lanes. |
+| `TestShadowRejectsInvalidReconcileConfig/construction-order` | Reconcile failure calls no clock, descriptor, or generator. |
+| `TestShadowRejectsInvalidReconcileConfig/runtime-dependencies` | Nil and typed-nil Clock plus nil generator reject before configs, defaults, callbacks, descriptors, or generator calls; public wrapper supplies both. |
+| `TestShadowRejectsInvalidStoreConfig/construction-order` | Store failure calls no descriptor or generator; valid construction consumes one initial clock sample before descriptor/generator work. |
+| `TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions/clock-once-and-zero` | Exact injected At and one call; zero rejects with nil Shadow; arrays are nonnil and all four revisions are zero. |
+| `TestShadowGraphPublicationLeavesOccupancyRowsUnchanged/tick-pointer-only` | Successful tick calls provider once, stores exact pointer, preserves earlier frame, and leaves independently encoded Rows unchanged; nil provider yields nil. |
+| `TestShadowPublishesRequiredEmptyGraphSlices/collector-publication` | A Registry collector publication flows through Store into Shadow Snapshot without direct reducer calls. |
+| `TestShadowPublishesRequiredEmptyGraphSlices/zero-collector-run` | Normal Registry completion does not stop Store; Shadow stays blocked until caller cancellation and returns nil. |
+| `TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait` | Store or Registry infrastructure failure cancels sibling, both are awaited, and multiple errors join Store then Registry with identities preserved. |
+| `TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run` | Nil context does not consume use; one Run wins; concurrent and repeated calls return `errShadowAlreadyRun`. |
+| `TestShadowPublishesRequiredEmptyGraphSlices/shared-clock-terminal-time` | One manual storeClock scripts distinct construction and terminal samples; call order, initial Snapshot At, and terminal Gap At prove Store and Registry share it. |
+
+The zero-lane, nil-sink, and zero-time tests form an explicit validation-order
+cross-product: nil or typed-nil sink wins even with zero time and zero lanes; with a
+valid sink, zero time wins even with zero lanes or an invalid lane; only valid sink
+plus nonzero time plus zero lanes returns nil. Every rejecting cell requires zero
+sink calls. The invalid-lane top-level test places an invalid lane after a valid
+lane and requires zero sink calls. The deterministic-identity test constructs byte vectors
+independently from the frozen ordered field sequence and asserts every domain,
+event field, sort key, and normalization result. The Registry restart test uses the
+exact same descriptor, capabilities, and injected terminal time in both instances;
+only assigned source incarnation differs, and terminal SourceRef incarnation plus
+EventID must both differ. The heartbeat restart test uses equal time and lanes
+differing only in Source.Incarnation and requires equal Key, Digest, DedupKey, and
+Fingerprint with distinct full source incarnation and EventID.
+
+Stage and commit exactly the Phase A documents before creating any Task 9 Go file:
+
+```bash
+git add docs/superpowers/specs/2026-08-26-aitop-agent-telemetry-graph-design.md docs/superpowers/plans/2026-08-26-aitop-graph-foundation.md tests/RISK_MODEL.md
+git diff --cached --check
+diff -u \
+  <(git diff --cached --name-only | sort) \
+  <(printf '%s\n' docs/superpowers/specs/2026-08-26-aitop-agent-telemetry-graph-design.md docs/superpowers/plans/2026-08-26-aitop-graph-foundation.md tests/RISK_MODEL.md | sort)
+test -z "$(git diff --name-only)"
+test -z "$(git ls-files --others --exclude-standard)"
+git commit -m "docs: freeze collector registry contract"
+```
 
 - [ ] **Step 2: Write the exact failing registry and Shadow tests**
 
-Implement every frozen test above without production changes.
+Implement every frozen top-level test and nested subrow above. Test fixtures use
+only manual clocks, channel barriers, recording sinks, and real fake collectors.
+No `time.Sleep`, polling deadline, or mock of Registry internals is permitted.
+
+Because behavioral RED must execute rather than fail compilation, create the
+three production files as compile-only stubs after the tests are written. The
+stubs contain the exact frozen declarations and private sentinels, return a shared
+private `errTask9CompileStub` from behavior, and do no goroutine, clock, random, or
+sink work. Every exact top-level path must reach a rule-naming assertion against
+that stub. A compile error, panic, timeout, or zero-match result is not RED.
 
 - [ ] **Step 3: Verify RED**
 
-Run: `go test ./internal/graph ./internal/snapshot -run '^Test(Registry(RejectsInvalidDescriptor|RejectsDuplicateDescriptor|CollectorFailureDoesNotStopSiblings|StopsOnContextCancellation|ReturnOpensUnresolvedCapabilityGaps|DoesNotRestartReturnedCollector|ContextCancellationDoesNotInventFailureGap|CollectorHealthSeparateFromActorHeartbeats)|PublishNativePollHeartbeats(EmitsOnePerUniqueActorLane|ZeroLanesPublishesNothing|RejectsInvalidLane|RejectsZeroTimeBeforeEmission|RejectsNilSinkBeforeEmission|StopsOnSinkError|UsesDeterministicObservationIdentity|CollectorRestartPreservesReplayIdentity)|Shadow(RejectsInvalidReconcileConfig|RejectsInvalidStoreConfig|GraphPublicationLeavesOccupancyRowsUnchanged|PublishesRequiredEmptyGraphSlices|InitialGraphHasNonzeroTimeAndZeroRevisions))$' -count=1`
-Run: `go test ./internal/graph -run '^Test(InputSchemaShapeAndValidation|CollectorStateVocabulary|CollectorHealthShapeSortCloneAndSanitization|CollectorDescriptorSchemasAndCapabilitiesCanonical)$' -count=1`
-Run: `go test ./internal/graph -run '^TestRegistry(TerminalGapEnvelope|TerminalGapUsesManualClock|RestartChangesProtocolIdentity|TerminalGapSinkFailureStopsCollectorEmission|SourceIncarnationAssignmentValidated)$' -count=1`
+Source-parse the three test files with a temporary Go AST checker before compiling
+the stubs. It verifies package declarations, receiverless top-level functions,
+exact file ownership, no missing/duplicate/extra Task 9 names, 29 graph names, one
+snapshot name, and 30 total. The checker contains the literal list above; it emits
+`<package>\t<name>` in sorted order for the RED path and final fence.
 
-The anchored alternatives enumerate every frozen Task 9 test name above.
+```bash
+task9_manifest_dir=$(mktemp -d)
+trap 'rm -rf "$task9_manifest_dir"' EXIT
+cat > "$task9_manifest_dir/main.go" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+)
+
+var want = map[string]struct {
+	pkg   string
+	names string
+}{
+	"collector_test.go": {"graph", `TestRegistryRejectsInvalidDescriptor
+TestRegistryRejectsDuplicateDescriptor
+TestInputSchemaShapeAndValidation
+TestCollectorStateVocabulary
+TestCollectorHealthShapeSortCloneAndSanitization
+TestCollectorDescriptorSchemasAndCapabilitiesCanonical
+TestRegistryCollectorFailureDoesNotStopSiblings
+TestRegistryStopsOnContextCancellation
+TestRegistryReturnOpensUnresolvedCapabilityGaps
+TestRegistryDoesNotRestartReturnedCollector
+TestRegistryContextCancellationDoesNotInventFailureGap
+TestRegistryCollectorHealthSeparateFromActorHeartbeats
+TestRegistryTerminalGapEnvelope
+TestRegistryTerminalGapUsesManualClock
+TestRegistryRestartChangesProtocolIdentity
+TestRegistryTerminalGapSinkFailureStopsCollectorEmission
+TestRegistrySourceIncarnationAssignmentValidated
+TestPublishNativePollHeartbeatsEmitsOnePerUniqueActorLane
+TestPublishNativePollHeartbeatsZeroLanesPublishesNothing
+TestPublishNativePollHeartbeatsRejectsInvalidLane
+TestPublishNativePollHeartbeatsRejectsZeroTimeBeforeEmission
+TestPublishNativePollHeartbeatsRejectsNilSinkBeforeEmission
+TestPublishNativePollHeartbeatsStopsOnSinkError
+TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity
+TestPublishNativePollHeartbeatsCollectorRestartPreservesReplayIdentity`},
+	"shadow_test.go": {"graph", `TestShadowRejectsInvalidReconcileConfig
+TestShadowRejectsInvalidStoreConfig
+TestShadowPublishesRequiredEmptyGraphSlices
+TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions`},
+	"engine_test.go": {"snapshot", `TestShadowGraphPublicationLeavesOccupancyRowsUnchanged`},
+}
+
+func task9Name(name string) bool {
+	return strings.HasPrefix(name, "TestRegistry") ||
+		strings.HasPrefix(name, "TestInputSchema") ||
+		strings.HasPrefix(name, "TestCollector") ||
+		strings.HasPrefix(name, "TestPublishNativePollHeartbeats") ||
+		strings.HasPrefix(name, "TestShadow")
+}
+
+func main() {
+	if len(os.Args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: check-task9-manifest collector_test.go shadow_test.go engine_test.go")
+		os.Exit(2)
+	}
+	total := 0
+	for _, path := range os.Args[1:] {
+		spec, ok := want[filepath.Base(path)]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Task9 manifest unexpected file: path=%q\n", path)
+			os.Exit(1)
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ParseComments)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if file.Name.Name != spec.pkg {
+			fmt.Fprintf(os.Stderr, "Task9 manifest package rule violated: file=%s got=%s want=%s\n", path, file.Name.Name, spec.pkg)
+			os.Exit(1)
+		}
+		got := []string{}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Recv == nil && fn.Name != nil && task9Name(fn.Name.Name) {
+				got = append(got, fn.Name.Name)
+			}
+		}
+		wantNames := strings.Fields(spec.names)
+		sort.Strings(got)
+		sort.Strings(wantNames)
+		if !reflect.DeepEqual(got, wantNames) {
+			fmt.Fprintf(os.Stderr, "Task9 manifest ownership rule violated: file=%s got=%v want=%v\n", path, got, wantNames)
+			os.Exit(1)
+		}
+		for _, name := range got {
+			fmt.Printf("%s\t%s\n", spec.pkg, name)
+		}
+		total += len(got)
+	}
+	if total != 30 {
+		fmt.Fprintf(os.Stderr, "Task9 manifest total rule violated: got=%d want=30\n", total)
+		os.Exit(1)
+	}
+}
+EOF
+go build -o "$task9_manifest_dir/check-task9-manifest" "$task9_manifest_dir/main.go"
+"$task9_manifest_dir/check-task9-manifest" internal/graph/collector_test.go internal/graph/shadow_test.go internal/snapshot/engine_test.go > "$task9_manifest_dir/expected"
+test "$(wc -l < "$task9_manifest_dir/expected")" -eq 30
+test "$(cut -f1 "$task9_manifest_dir/expected" | rg -c '^graph$')" -eq 29
+test "$(cut -f1 "$task9_manifest_dir/expected" | rg -c '^snapshot$')" -eq 1
+```
+
+Then run one bounded JSON RED command. Require nonzero status other than timeout,
+reject compile/panic/zero-match signatures, and require an Action=run plus
+Action=fail record for every literal manifest name. This proves all 30 paths ran
+and failed behaviorally against the compile stub.
+
+```bash
+task9_exact_regex='^Test(Registry(RejectsInvalidDescriptor|RejectsDuplicateDescriptor|CollectorFailureDoesNotStopSiblings|StopsOnContextCancellation|ReturnOpensUnresolvedCapabilityGaps|DoesNotRestartReturnedCollector|ContextCancellationDoesNotInventFailureGap|CollectorHealthSeparateFromActorHeartbeats|TerminalGapEnvelope|TerminalGapUsesManualClock|RestartChangesProtocolIdentity|TerminalGapSinkFailureStopsCollectorEmission|SourceIncarnationAssignmentValidated)|InputSchemaShapeAndValidation|Collector(StateVocabulary|HealthShapeSortCloneAndSanitization|DescriptorSchemasAndCapabilitiesCanonical)|PublishNativePollHeartbeats(EmitsOnePerUniqueActorLane|ZeroLanesPublishesNothing|RejectsInvalidLane|RejectsZeroTimeBeforeEmission|RejectsNilSinkBeforeEmission|StopsOnSinkError|UsesDeterministicObservationIdentity|CollectorRestartPreservesReplayIdentity)|Shadow(RejectsInvalidReconcileConfig|RejectsInvalidStoreConfig|GraphPublicationLeavesOccupancyRowsUnchanged|PublishesRequiredEmptyGraphSlices|InitialGraphHasNonzeroTimeAndZeroRevisions))$'
+set +e
+timeout 90s go test -json ./internal/graph ./internal/snapshot -run "$task9_exact_regex" -count=1 > "$task9_manifest_dir/red.json" 2>&1
+task9_red_status=$?
+set -e
+test "$task9_red_status" -ne 0
+test "$task9_red_status" -ne 124
+! rg -ni 'build failed|undefined:|cannot use|panic:|fatal error:|no tests to run' "$task9_manifest_dir/red.json"
+while IFS=$'\t' read -r _ name; do
+  rg -q '"Action":"run".*"Test":"'"$name"'"' "$task9_manifest_dir/red.json"
+  rg -q '"Action":"fail".*"Test":"'"$name"'"' "$task9_manifest_dir/red.json"
+done < "$task9_manifest_dir/expected"
+```
 
 - [ ] **Step 4: Implement registry and shadow**
 
-Registry calls each `Collector.Run` exactly once and waits for every call to
-return. A nil or error return while the registry context remains active is a
-terminal collector stop. It opens one unresolved collector gap per declared
-descriptor capability, or one nil-capability gap when none are declared. Registry
-does not retry, restart, or auto-resolve it. Return caused by registry context
-cancellation is normal and opens no failure gap. A still-running collector may
-publish its own transient open/resolved events. One terminal collector does not
-cancel siblings. Collector operational health never refreshes actor state.
+Replace the compile stubs in small RED/GREEN increments while retaining the exact
+API block. Implement descriptor capture and validation before generation; canonical
+incarnation assignment and production random wrapper; single-use concurrent
+Registry and serialized sink; race-safe Health; terminal clock, gap, diagnostics,
+safe errors, and deterministic joining; heartbeat full-batch validation and exact
+encoders; then Shadow construction and Run orchestration. Last, add only the
+Task 9 Engine graph-provider pointer integration. Do not implement Engine lifecycle
+or deterministic shutdown from Task 10.
 
-Implement the frozen `registryRuntime`, per-collector protocol incarnation, and
-terminal-gap envelope above. `NewRegistry` is only the production dependency
-wrapper. Registry sink diagnostics obey CollectorHealth sanitization and terminal
-gaps never auto-resolve.
-
-Registry never invents a poll actor set. After a successful native poll, each
-native collector passes its observed `NativeHealthLane` values and injected
-receiver time to `PublishNativePollHeartbeats`. The helper validates the complete
-batch, deduplicates and sorts lanes, and emits the deterministic observation
-events frozen in the API block. A zero-lane result publishes nothing. Only a
-collector that is still running may publish the matching transient resolved gap;
-a terminal Registry gap never auto-resolves. `Shadow` owns Registry and
-Store, calls the error-returning `NewReconciler` and `NewStore`, and propagates
-configuration errors. `snapshot.Snapshot` gains
-`Graph *graph.Snapshot`; `tickProc` copies only the latest pointer and never runs
-graph work. Shadow's initial graph uses the injected nonzero receiver time,
-nonnull empty sorted arrays, and four zero revisions.
+Every behavioral increment reruns its exact top-level path and nested subrow.
+Before moving to the next increment, the new path must be GREEN without weakening
+an assertion and the package race detector must remain free of data races. All
+collector and Shadow scheduling tests use positive channel fences rather than
+timeouts as success oracles.
 
 - [ ] **Step 5: Verify GREEN**
 
 ```bash
-go test ./internal/graph ./internal/snapshot -run '^Test(Registry(RejectsInvalidDescriptor|RejectsDuplicateDescriptor|CollectorFailureDoesNotStopSiblings|StopsOnContextCancellation|ReturnOpensUnresolvedCapabilityGaps|DoesNotRestartReturnedCollector|ContextCancellationDoesNotInventFailureGap|CollectorHealthSeparateFromActorHeartbeats)|PublishNativePollHeartbeats(EmitsOnePerUniqueActorLane|ZeroLanesPublishesNothing|RejectsInvalidLane|RejectsZeroTimeBeforeEmission|RejectsNilSinkBeforeEmission|StopsOnSinkError|UsesDeterministicObservationIdentity|CollectorRestartPreservesReplayIdentity)|Shadow(RejectsInvalidReconcileConfig|RejectsInvalidStoreConfig|GraphPublicationLeavesOccupancyRowsUnchanged|PublishesRequiredEmptyGraphSlices|InitialGraphHasNonzeroTimeAndZeroRevisions))$' -count=1
-go test ./internal/graph -run '^Test(InputSchemaShapeAndValidation|CollectorStateVocabulary|CollectorHealthShapeSortCloneAndSanitization|CollectorDescriptorSchemasAndCapabilitiesCanonical)$' -count=1
-go test ./internal/graph -run '^TestRegistry(TerminalGapEnvelope|TerminalGapUsesManualClock|RestartChangesProtocolIdentity|TerminalGapSinkFailureStopsCollectorEmission|SourceIncarnationAssignmentValidated)$' -count=1
-go test -race ./internal/graph ./internal/snapshot -run '^Test(Registry|Shadow)' -count=10
+"$task9_manifest_dir/check-task9-manifest" internal/graph/collector_test.go internal/graph/shadow_test.go internal/snapshot/engine_test.go > "$task9_manifest_dir/green-ast"
+cmp -s "$task9_manifest_dir/expected" "$task9_manifest_dir/green-ast"
+go test ./internal/graph ./internal/snapshot -run "$task9_exact_regex" -count=1
 ```
+
+This is a pre-sabotage GREEN, not the final gate. The exact race run happens once,
+after all physical and tool mutations are restored.
 
 - [ ] **Step 6: Sabotage and commit**
 
-Give every new test one production and one weakened-assertion plant. Include one
-collector stopping siblings, auto-resolving a terminal-return gap, restarting a
-returned collector, treating context cancellation as failure, missing native
-heartbeat, swallowed `NewReconciler` or `NewStore` error, and graph publication
-mutating occupancy.
-For schema/health tests, accept zero schema version, add an unknown state, retain
-an unsorted/shared capability slice, echo a raw diagnostic, or admit unsorted or
-duplicate descriptor arrays, or reject a valid empty capability set. Assertion plants remove only the matching shape,
-bound, sort, clone, or sanitized-byte assertion.
-For terminal-gap tests, alter one envelope field, read wall time directly, reuse
-protocol incarnation across Registry instances, continue after sink failure, or
-accept zero/duplicate incarnation assignment. Assertion plants remove only the
-exact event, clock, replay-key, later-emission, or construction-error assertion.
-Also replace per-actor heartbeat emission with one source-wide heartbeat and emit
-one heartbeat for a zero-result poll, omit duplicate-lane suppression, continue
-after a sink error, use random event IDs, accept zero time, and accept non-native
-source authority. For collector restart, include Source.Incarnation in the stable
-key or digest; the assertion plant removes only DedupKey/Fingerprint equality
-while retaining the distinct emitted source-incarnation check. For nil sink,
-plant `if sink == nil { return nil }`; the call remains panic-free and the
-assertion plant removes only the required-error assertion, never conflating it
-with a nonnil sink error.
-These must make their exact helper tests RED. Restore and record every exact named
-test's pair, then commit:
+Task 9 is core concurrency and identity infrastructure. The 30 primary rows and 39
+nested physical rows below total exactly 69 pairs. The mandatory nested coverage
+matrix has 37 unique paths; X38 intentionally reuses X32's path for a distinct wait
+oracle, and X39 intentionally reuses X33's path for a distinct concurrent-owner
+oracle. No other nested path repeats. Every row gets a physical production plant
+and a separate decisive assertion weakening. Work one
+row at a time from a frozen pristine baseline. Add unique markers
+`TASK9_PRODUCTION_PLANT:<ID>` and `TASK9_ASSERTION_PLANT:<ID>` with `apply_patch`.
+Run the exact table command under `timeout 90s`, `-count=1`, and `-json`; production
+RED must be behavioral, named, nonzero, and free of compile failure, panic,
+timeout, and zero-match. Capture source/test/evidence SHA-256 and literal
+`git status --porcelain=v1` before the row. After false GREEN, inverse only the
+assertion and require the identical command to return the original named RED while
+the production plant remains active. Then inverse production, prove exact pristine
+hashes/status and zero `TASK9_*_PLANT` markers, and require identical restored
+GREEN. Append prediction, command, named RED message, false-GREEN run marker,
+assertion-inverse RED, restoration hashes/status/markers, restored GREEN, and
+conclusion to `tests/SABOTAGE_LOG.md`. A wrong-reason failure, survivor, missing
+inverse RED, or dirty boundary is a non-verdict and blocks the next row.
+
+Use this exact baseline fence before every physical row and every mutation-tool
+source. The source hash covers all six Task 9 Go files; the evidence hash includes
+the already-committed risk model plus both evidence files. Run `task9_restore_check`
+after inverse patches or tool restoration and before the intentional evidence
+append, then capture a new baseline for the next row.
 
 ```bash
-git add internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go tests/RISK_MODEL.md tests/SABOTAGE_LOG.md
+task9_pristine_dir=$(mktemp -d)
+trap 'rm -rf "$task9_manifest_dir" "$task9_pristine_dir" "${task9_mutation_dir:-}"' EXIT
+task9_source_targets=(internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go)
+task9_evidence_targets=(tests/RISK_MODEL.md tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md)
+task9_capture_pristine() {
+  sha256sum "${task9_source_targets[@]}" > "$task9_pristine_dir/source.sha256"
+  sha256sum "${task9_evidence_targets[@]}" > "$task9_pristine_dir/evidence.sha256"
+  git status --porcelain=v1 > "$task9_pristine_dir/pristine.status"
+}
+task9_restore_check() {
+  sha256sum -c "$task9_pristine_dir/source.sha256" || { echo 'Task9 source hash mismatch' >&2; exit 1; }
+  sha256sum -c "$task9_pristine_dir/evidence.sha256" || { echo 'Task9 evidence changed before intentional append' >&2; exit 1; }
+  cmp -s "$task9_pristine_dir/pristine.status" <(git status --porcelain=v1) || { echo 'Task9 pristine status mismatch' >&2; exit 1; }
+  if rg -n 'TASK9_(PRODUCTION|ASSERTION|MUTATION)_PLANT' "${task9_source_targets[@]}"; then
+    echo 'Task9 plant marker residue' >&2
+    exit 1
+  fi
+}
+```
+
+The 30 primary physical pairs are literal:
+
+| ID / exact top-level path | Production plant | Decisive assertion weakening | Exact focused command |
+|---|---|---|---|
+| T9-01 `TestRegistryRejectsInvalidDescriptor` | Accept one invalid descriptor ID. | Remove only the matching invalid-ID rejection/callback-zero oracle. | `go test -json ./internal/graph -run '^TestRegistryRejectsInvalidDescriptor$' -count=1` |
+| T9-02 `TestRegistryRejectsDuplicateDescriptor` | Admit an exact duplicate SourceID plus runtime while still rejecting the same ID under a different runtime. | Remove only the exact-same descriptor duplicate rejection/generator-zero assertion; retain the different-runtime case. | `go test -json ./internal/graph -run '^TestRegistryRejectsDuplicateDescriptor$' -count=1` |
+| T9-03 `TestInputSchemaShapeAndValidation` | Accept schema version zero. | Remove only the version-zero rule assertion. | `go test -json ./internal/graph -run '^TestInputSchemaShapeAndValidation$' -count=1` |
+| T9-04 `TestCollectorStateVocabulary` | Make private `validCollectorState` accept one unknown value. | Remove only the validator true/false table assertion while retaining exact public constants. | `go test -json ./internal/graph -run '^TestCollectorStateVocabulary$' -count=1` |
+| T9-05 `TestCollectorHealthShapeSortCloneAndSanitization` | Return Registry's internal capability slice directly. | Remove only the caller-mutation clone-isolation assertion. | `go test -json ./internal/graph -run '^TestCollectorHealthShapeSortCloneAndSanitization$' -count=1` |
+| T9-06 `TestCollectorDescriptorSchemasAndCapabilitiesCanonical` | Admit schemas whose first two entries are reversed. | Remove only the schema-order rejection assertion. | `go test -json ./internal/graph -run '^TestCollectorDescriptorSchemasAndCapabilitiesCanonical$' -count=1` |
+| T9-07 `TestRegistryCollectorFailureDoesNotStopSiblings` | Cancel the shared context when one collector fails. | Remove only the healthy-sibling progress/wait oracle. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings$' -count=1` |
+| T9-08 `TestRegistryStopsOnContextCancellation` | Return from Registry immediately on cancellation without waiting for collectors. | Remove only the all-collectors-finished-before-Run-return oracle. | `go test -json ./internal/graph -run '^TestRegistryStopsOnContextCancellation$' -count=1` |
+| T9-09 `TestRegistryReturnOpensUnresolvedCapabilityGaps` | Emit no terminal gaps for active return. | Remove only the exact sorted unresolved-gap set assertion. | `go test -json ./internal/graph -run '^TestRegistryReturnOpensUnresolvedCapabilityGaps$' -count=1` |
+| T9-10 `TestRegistryDoesNotRestartReturnedCollector` | Invoke a returned collector a second time. | Remove only the exact call-count/second-run sentinel assertion. | `go test -json ./internal/graph -run '^TestRegistryDoesNotRestartReturnedCollector$' -count=1` |
+| T9-11 `TestRegistryContextCancellationDoesNotInventFailureGap` | Emit a collector gap after Registry cancellation. | Remove only the zero-terminal-gap/empty-diagnostic assertion. | `go test -json ./internal/graph -run '^TestRegistryContextCancellationDoesNotInventFailureGap$' -count=1` |
+| T9-12 `TestRegistryCollectorHealthSeparateFromActorHeartbeats` | Let heartbeat publication mutate operational Health. | Remove only the health-state/diagnostic isolation assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorHealthSeparateFromActorHeartbeats$' -count=1` |
+| T9-13 `TestRegistryTerminalGapEnvelope` | Change terminal `GapObserved.Kind` from `GapCollector`. | Remove only the exact envelope-kind assertion. | `go test -json ./internal/graph -run '^TestRegistryTerminalGapEnvelope$' -count=1` |
+| T9-14 `TestRegistryTerminalGapUsesManualClock` | Use wall time instead of the one injected sample. | Remove only the exact clock-call/time assertion. | `go test -json ./internal/graph -run '^TestRegistryTerminalGapUsesManualClock$' -count=1` |
+| T9-15 `TestRegistryRestartChangesProtocolIdentity` | Reuse one source incarnation across otherwise identical Registry instances. | Remove only the distinct terminal SourceRef-incarnation/EventID assertion while retaining equal descriptor/capabilities/time fences. | `go test -json ./internal/graph -run '^TestRegistryRestartChangesProtocolIdentity$' -count=1` |
+| T9-16 `TestRegistryTerminalGapSinkFailureStopsCollectorEmission` | Continue later terminal gaps after sink error. | Remove only the later-emission stop plus exact zero-based terminal-wrapper assertion. | `go test -json ./internal/graph -run '^TestRegistryTerminalGapSinkFailureStopsCollectorEmission$' -count=1` |
+| T9-17 `TestRegistrySourceIncarnationAssignmentValidated` | Accept a zero generated incarnation. | Remove only the zero-incarnation construction rejection/call-count assertion. | `go test -json ./internal/graph -run '^TestRegistrySourceIncarnationAssignmentValidated$' -count=1` |
+| T9-18 `TestPublishNativePollHeartbeatsEmitsOnePerUniqueActorLane` | Collapse all actors to one source-wide heartbeat. | Remove only the unique-lane count/order assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsEmitsOnePerUniqueActorLane$' -count=1` |
+| T9-19 `TestPublishNativePollHeartbeatsZeroLanesPublishesNothing` | Return nil for zero lanes before validating sink and receiver time. | Remove only the zero-lane cross-product precedence assertion while retaining the valid-sink/nonzero-time zero-call case. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsZeroLanesPublishesNothing$' -count=1` |
+| T9-20 `TestPublishNativePollHeartbeatsRejectsInvalidLane` | Emit earlier valid lanes before validating a later invalid lane. | Remove only the full-batch zero-call assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsRejectsInvalidLane$' -count=1` |
+| T9-21 `TestPublishNativePollHeartbeatsRejectsZeroTimeBeforeEmission` | Validate lanes before rejecting zero receiver time. | Remove only zero-time-before-lane-validation/zero-call cross-product assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsRejectsZeroTimeBeforeEmission$' -count=1` |
+| T9-22 `TestPublishNativePollHeartbeatsRejectsNilSinkBeforeEmission` | Validate time or lanes before rejecting nil sink. | Remove only nil-sink-first cross-product assertion while retaining no-panic behavior. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsRejectsNilSinkBeforeEmission$' -count=1` |
+| T9-23 `TestPublishNativePollHeartbeatsStopsOnSinkError` | Continue after the first sink error. | Remove only later-call stop plus exact zero-based helper-wrapper assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsStopsOnSinkError$' -count=1` |
+| T9-24 `TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity` | Omit ActorIncarnation from the stable encoder. | Remove only the independent exact key/digest/EventID vector assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity$' -count=1` |
+| T9-25 `TestPublishNativePollHeartbeatsCollectorRestartPreservesReplayIdentity` | Include Source.Incarnation in stable key/digest. | Remove only Key/Digest/DedupKey/Fingerprint equality while retaining distinct emitted source/EventID. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsCollectorRestartPreservesReplayIdentity$' -count=1` |
+| T9-26 `TestShadowRejectsInvalidReconcileConfig` | Swallow `NewReconciler` error and continue construction. | Remove only exact error/nil-Shadow/later-dependency-zero assertion. | `go test -json ./internal/graph -run '^TestShadowRejectsInvalidReconcileConfig$' -count=1` |
+| T9-27 `TestShadowRejectsInvalidStoreConfig` | Swallow `newStore` error and continue to Registry. | Remove only exact error/nil-Shadow/descriptor-generator-zero assertion. | `go test -json ./internal/graph -run '^TestShadowRejectsInvalidStoreConfig$' -count=1` |
+| T9-28 `TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` | Replace the joined occupancy Rows with nil when assigning Graph. | Remove only the byte-for-byte Rows-equality assertion. | `go test -json ./internal/snapshot -run '^TestShadowGraphPublicationLeavesOccupancyRowsUnchanged$' -count=1` |
+| T9-29 `TestShadowPublishesRequiredEmptyGraphSlices` | Publish all three required Nodes, Edges, and Gaps slices as nil. | Remove only the combined nonnil-empty required-slices assertion. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices$' -count=1` |
+| T9-30 `TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions` | Replace the injected initial Snapshot At with zero. | Remove only the exact nonzero At assertion while retaining four-zero-revision checks. | `go test -json ./internal/graph -run '^TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions$' -count=1` |
+
+The following 39 nested audit-extra rows are distinct physical plants. They cannot
+be rolled into or counted as a primary row. X32/X38 and X33/X39 are the only shared
+runtime paths and own different production plants and decisive assertions:
+
+| ID / exact subrow | Distinct production plant | Decisive assertion weakening | Exact focused command |
+|---|---|---|---|
+| T9-X01 `TestRegistryRejectsInvalidDescriptor/nil-dependencies` | Skip nil clock/generator validation until method call. | Remove only callback-zero/no-panic/error assertion. | `go test -json ./internal/graph -run '^TestRegistryRejectsInvalidDescriptor/nil-dependencies$' -count=1` |
+| T9-X02 `TestRegistryRejectsInvalidDescriptor/typed-nil-dependencies` | Check interface nil only. | Remove only typed-nil safe rejection assertion. | `go test -json ./internal/graph -run '^TestRegistryRejectsInvalidDescriptor/typed-nil-dependencies$' -count=1` |
+| T9-X03 `TestRegistryRejectsInvalidDescriptor/full-batch-before-incarnation` | Generate while walking descriptors before later validation. | Remove only generator-zero/full-batch/error-safety assertion. | `go test -json ./internal/graph -run '^TestRegistryRejectsInvalidDescriptor/full-batch-before-incarnation$' -count=1` |
+| T9-X04 `TestRegistryRejectsDuplicateDescriptor/same-id-different-runtime` | Incorrectly include runtime in the uniqueness key and admit the repeated SourceID. | Remove only repeated-ID/different-runtime rejection and generator-zero assertion. | `go test -json ./internal/graph -run '^TestRegistryRejectsDuplicateDescriptor/same-id-different-runtime$' -count=1` |
+| T9-X05 `TestInputSchemaShapeAndValidation/name-and-version-bounds` | Measure runes instead of bytes at 128/129 boundary. | Remove only independent byte-boundary assertion. | `go test -json ./internal/graph -run '^TestInputSchemaShapeAndValidation/name-and-version-bounds$' -count=1` |
+| T9-X06 `TestCollectorDescriptorSchemasAndCapabilitiesCanonical/descriptor-once-owned-clone` | Retain the Descriptor capability slice instead of cloning it at construction. | Remove only the post-construction caller-mutation ownership assertion. | `go test -json ./internal/graph -run '^TestCollectorDescriptorSchemasAndCapabilitiesCanonical/descriptor-once-owned-clone$' -count=1` |
+| T9-X07 `TestCollectorDescriptorSchemasAndCapabilitiesCanonical/canonical-order-and-empty-set` | Sort schemas by version before raw name bytes. | Remove only the independent name-then-version order assertion. | `go test -json ./internal/graph -run '^TestCollectorDescriptorSchemasAndCapabilitiesCanonical/canonical-order-and-empty-set$' -count=1` |
+| T9-X08 `TestRegistrySourceIncarnationAssignmentValidated/canonical-order` | Attach generator values in argument order. | Remove only sorted ID/runtime assignment assertion. | `go test -json ./internal/graph -run '^TestRegistrySourceIncarnationAssignmentValidated/canonical-order$' -count=1` |
+| T9-X09 `TestRegistrySourceIncarnationAssignmentValidated/random-reader` | Replace the one `Reader.Read` with retrying `io.ReadFull`, allowing a short first read to complete. | Remove only the short-read rejection/exact-one-call assertion while retaining big-endian, full-read-error, and zero checks. | `go test -json ./internal/graph -run '^TestRegistrySourceIncarnationAssignmentValidated/random-reader$' -count=1` |
+| T9-X10 `TestRegistryStopsOnContextCancellation/zero-collectors` | Return a nil Health slice for zero collectors. | Remove only the nonnil-empty Health assertion. | `go test -json ./internal/graph -run '^TestRegistryStopsOnContextCancellation/zero-collectors$' -count=1` |
+| T9-X11 `TestRegistryStopsOnContextCancellation/already-canceled-still-runs-once` | Skip collector calls when context is already canceled. | Remove only exact call/wait/canceled-context assertion. | `go test -json ./internal/graph -run '^TestRegistryStopsOnContextCancellation/already-canceled-still-runs-once$' -count=1` |
+| T9-X12 `TestRegistryDoesNotRestartReturnedCollector/nil-context-does-not-consume` | Mark Registry used before nil-context validation. | Remove only successful following-Run assertion. | `go test -json ./internal/graph -run '^TestRegistryDoesNotRestartReturnedCollector/nil-context-does-not-consume$' -count=1` |
+| T9-X13 `TestRegistryDoesNotRestartReturnedCollector/concurrent-and-repeated-run` | Check used state without atomic/mutex serialization. | Remove only one-winner/stable-sentinel/call-count assertion. | `go test -json ./internal/graph -run '^TestRegistryDoesNotRestartReturnedCollector/concurrent-and-repeated-run$' -count=1` |
+| T9-X14 `TestRegistryCollectorFailureDoesNotStopSiblings/concurrent-start-and-wait` | Return Registry Run after the first collector finishes while another remains barrier-blocked. | Remove only the all-collectors-finished-before-return assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings/concurrent-start-and-wait$' -count=1` |
+| T9-X15 `TestRegistryCollectorFailureDoesNotStopSiblings/serialized-sink` | Pass the raw sink to collectors. | Remove only maximum-concurrency-one assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings/serialized-sink$' -count=1` |
+| T9-X16 `TestRegistryCollectorFailureDoesNotStopSiblings/nil-error-dispositions` | Reject disposition zero with nil error as an invalid sink outcome. | Remove only the complete zero/declared/undeclared nil-error pass-through table assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings/nil-error-dispositions$' -count=1` |
+| T9-X17 `TestRegistryCollectorFailureDoesNotStopSiblings/infrastructure-error-join` | Return the first completion-order infrastructure error. | Remove only canonical join order and identity assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings/infrastructure-error-join$' -count=1` |
+| T9-X18 `TestCollectorHealthShapeSortCloneAndSanitization/concurrent-states` | Skip the running transition immediately before `Collector.Run`. | Remove only the barrier-observed pending/running/stopped transition assertion. | `go test -json ./internal/graph -run '^TestCollectorHealthShapeSortCloneAndSanitization/concurrent-states$' -count=1` |
+| T9-X19 `TestCollectorHealthShapeSortCloneAndSanitization/exact-diagnostic-classes` | Copy collector `Error()` text into Health diagnostic. | Remove only exact safe error-class/raw-byte exclusion assertion. | `go test -json ./internal/graph -run '^TestCollectorHealthShapeSortCloneAndSanitization/exact-diagnostic-classes$' -count=1` |
+| T9-X20 `TestRegistryCollectorHealthSeparateFromActorHeartbeats/transient-open-resolved` | Auto-resolve the collector's transient open gap when Registry observes its next heartbeat. | Remove only the collector-owned resolved-event ordering assertion. | `go test -json ./internal/graph -run '^TestRegistryCollectorHealthSeparateFromActorHeartbeats/transient-open-resolved$' -count=1` |
+| T9-X21 `TestRegistryTerminalGapUsesManualClock/zero-clock` | Emit terminal gaps with zero ReceivedAt after the clock returns zero. | Remove only the zero-emission assertion while retaining sibling-progress and exact-error checks. | `go test -json ./internal/graph -run '^TestRegistryTerminalGapUsesManualClock/zero-clock$' -count=1` |
+| T9-X22 `TestRegistryTerminalGapEnvelope/all-zero-event-id-normalization` | Leave all-zero EventID unchanged. | Remove only pure zero/nonzero helper assertion. | `go test -json ./internal/graph -run '^TestRegistryTerminalGapEnvelope/all-zero-event-id-normalization$' -count=1` |
+| T9-X23 `TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity/all-zero-normalizers` | Leave the all-zero key hash unchanged. | Remove only the key-hash helper's zero/nonzero assertion. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsUsesDeterministicObservationIdentity/all-zero-normalizers$' -count=1` |
+| T9-X24 `TestPublishNativePollHeartbeatsRejectsInvalidLane/typed-nil-and-full-batch` | Treat a typed-nil sink as nonnil and call its method. | Remove only the typed-nil safe rejection/no-call assertion while retaining the later-invalid-lane full-batch case. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsRejectsInvalidLane/typed-nil-and-full-batch$' -count=1` |
+| T9-X25 `TestPublishNativePollHeartbeatsStopsOnSinkError/safe-wrapper` | Format the wrapper with `%w`, leaking the cause text while retaining identity. | Remove only safe-text exclusion assertion while retaining `errors.Is` and lane-index checks. | `go test -json ./internal/graph -run '^TestPublishNativePollHeartbeatsStopsOnSinkError/safe-wrapper$' -count=1` |
+| T9-X26 `TestShadowRejectsInvalidReconcileConfig/construction-order` | Sample clock before `NewReconciler`. | Remove only zero-later-dependency assertion. | `go test -json ./internal/graph -run '^TestShadowRejectsInvalidReconcileConfig/construction-order$' -count=1` |
+| T9-X27 `TestShadowRejectsInvalidStoreConfig/construction-order` | Capture descriptors before Store succeeds. | Remove only descriptor/generator-zero ordering assertion. | `go test -json ./internal/graph -run '^TestShadowRejectsInvalidStoreConfig/construction-order$' -count=1` |
+| T9-X28 `TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions/clock-once-and-zero` | Sample Store construction clock twice and use the second value for Snapshot At. | Remove only one-call/exact-At assertion while retaining zero-rejection. | `go test -json ./internal/graph -run '^TestShadowInitialGraphHasNonzeroTimeAndZeroRevisions/clock-once-and-zero$' -count=1` |
+| T9-X29 `TestShadowGraphPublicationLeavesOccupancyRowsUnchanged/tick-pointer-only` | Call `GraphSnapshot` twice and assign the second pointer. | Remove only the one-read/direct-first-pointer assertion while retaining prior-frame/Rows checks. | `go test -json ./internal/snapshot -run '^TestShadowGraphPublicationLeavesOccupancyRowsUnchanged/tick-pointer-only$' -count=1` |
+| T9-X30 `TestShadowPublishesRequiredEmptyGraphSlices/collector-publication` | Bypass Store and mutate Reconciler directly. | Remove only collector-to-Store publication fence/oracle. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/collector-publication$' -count=1` |
+| T9-X31 `TestShadowPublishesRequiredEmptyGraphSlices/zero-collector-run` | Stop Shadow when zero-collector Registry returns. | Remove only still-running-until-cancel assertion. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/zero-collector-run$' -count=1` |
+| T9-X32 `TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait` | Join simultaneous failures in Registry-then-Store order. | Remove only the Store-first joined-order assertion while retaining both identities and wait fences. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait$' -count=1` |
+| T9-X33 `TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run` | Mark Shadow used before validating a nil context. | Remove only the valid following-Run assertion while retaining concurrent/repeated rejection. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run$' -count=1` |
+| T9-X34 `TestRegistryContextCancellationDoesNotInventFailureGap/post-return-context-sample` | Re-read `ctx.Err()` after the one post-return sample and let later cancellation suppress terminal processing. | Remove only the one-sample/terminal-permanence/Health-stopped-at-sample assertion. | `go test -json ./internal/graph -run '^TestRegistryContextCancellationDoesNotInventFailureGap/post-return-context-sample$' -count=1` |
+| T9-X35 `TestRegistryCollectorFailureDoesNotStopSiblings/collector-sink-error-boundary` | Append a returned collector-facing sink wrapper to Registry infrastructure errors. | Remove only the Run-nil infrastructure-boundary assertion while retaining wrapper text/index/`errors.Is` and Health error-class checks. | `go test -json ./internal/graph -run '^TestRegistryCollectorFailureDoesNotStopSiblings/collector-sink-error-boundary$' -count=1` |
+| T9-X36 `TestShadowRejectsInvalidReconcileConfig/runtime-dependencies` | Validate Shadow runtime dependencies only after `NewReconciler` config work. | Remove only the dependency-before-config/callback-zero assertion. | `go test -json ./internal/graph -run '^TestShadowRejectsInvalidReconcileConfig/runtime-dependencies$' -count=1` |
+| T9-X37 `TestShadowPublishesRequiredEmptyGraphSlices/shared-clock-terminal-time` | Pass Registry a distinct clock whose first sample differs from the shared Store clock's scripted terminal sample. | Remove only exact shared-clock call-sequence/terminal-Gap-At assertion while retaining initial Snapshot At. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/shared-clock-terminal-time$' -count=1` |
+| T9-X38 `TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait` | Return the Store error before the Registry child crosses its stopped barrier. | Remove only the both-children-awaited-before-return assertion while retaining Store-first join order and both identities. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/run-error-join-and-wait$' -count=1` |
+| T9-X39 `TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run` | Admit two concurrent Shadow Run owners. | Remove only the one-winner/`errShadowAlreadyRun` assertion while retaining nil-context and later-repeat checks. | `go test -json ./internal/graph -run '^TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run$' -count=1` |
+
+After every physical pair is restored, run the pinned mutator separately against
+`collector.go`, `shadow.go`, and `engine.go`. Record active Go version, exact binary
+module metadata, command, status, bounded output, restoration proof, and
+conclusion. Status zero is accepted only with parsed `total > 0`, `passed > 0`,
+`failed == 0`, `skipped == 0`, and `total == passed + failed + skipped`;
+duplicated mutants are recorded and excluded from total. The only accepted
+nonzero result is status 2 with no timeout/kill signature, literal
+`go/types.(*StdSizes).Sizeof`, active Go exactly
+`go version go1.27.0-X:nodwarf5 linux/amd64`, and binary module line
+`mod github.com/zimmski/go-mutesting v0.0.0-20210610104036-6d9217011a00 h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=`. Any other status, missing pin,
+survivor, skipped mutant, timeout, or residue blocks GREEN.
+
+```bash
+task9_mutation_dir=$(mktemp -d)
+GOBIN="$task9_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+task9_mutation_tool="$task9_mutation_dir/go-mutesting"
+test -x "$task9_mutation_tool"
+go version > "$task9_manifest_dir/go-version"
+go version -m "$task9_mutation_tool" > "$task9_manifest_dir/tool-version"
+task9_mod_ok=$(awk '$1 == "mod" && $2 == "github.com/zimmski/go-mutesting" && $3 == "v0.0.0-20210610104036-6d9217011a00" && $4 == "h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=" {print "yes"}' "$task9_manifest_dir/tool-version" | tail -1)
+for task9_source in internal/graph/collector.go internal/graph/shadow.go internal/snapshot/engine.go; do
+  task9_label=$(basename "$task9_source" .go)
+  task9_capture_pristine
+  set +e
+  timeout 120s "$task9_mutation_tool" --exec-timeout=15 "$task9_source" > "$task9_manifest_dir/$task9_label-mutating.log" 2>&1
+  task9_status=$?
+  set -e
+  task9_accept=0
+  if [ "$task9_status" -eq 0 ]; then
+    task9_summary=$(sed -nE 's/^The mutation score is [0-9.]+ \(([0-9]+) passed, ([0-9]+) failed, ([0-9]+) duplicated, ([0-9]+) skipped, total is ([0-9]+)\)$/\1 \2 \3 \4 \5/p' "$task9_manifest_dir/$task9_label-mutating.log" | tail -1)
+    set -- $task9_summary
+    if [ "$#" -eq 5 ] && [ "$1" -gt 0 ] && [ "$2" -eq 0 ] && [ "$4" -eq 0 ] && [ "$5" -eq $(( $1 + $2 + $4 )) ]; then
+      task9_accept=1
+    fi
+  elif [ "$task9_status" -eq 2 ] && ! rg -ni 'timeout|timed out|signal: killed' "$task9_manifest_dir/$task9_label-mutating.log" && rg -q 'go/types\.\(\*StdSizes\)\.Sizeof' "$task9_manifest_dir/$task9_label-mutating.log" && cmp -s "$task9_manifest_dir/go-version" <(printf '%s\n' 'go version go1.27.0-X:nodwarf5 linux/amd64') && [ "$task9_mod_ok" = yes ]; then
+    task9_accept=1
+  fi
+  task9_restore_check
+  {
+    printf 'Task9 mutator source: %s\n' "$task9_source"
+    printf 'Task9 mutator prediction: no survivor, skip, timeout, or unapproved tool error.\n'
+    printf 'Task9 mutator command: timeout 120s go-mutesting --exec-timeout=15 %s\n' "$task9_source"
+    printf 'Task9 mutator status: %s\n' "$task9_status"
+    printf 'Task9 mutator restoration: source/evidence SHA-256, literal status, and zero-marker checks passed.\n'
+    printf 'Task9 mutator conclusion: accepted=%s\n' "$task9_accept"
+    cat "$task9_manifest_dir/go-version"
+    cat "$task9_manifest_dir/tool-version"
+    tail -c 65536 "$task9_manifest_dir/$task9_label-mutating.log"
+  } >> tests/SABOTAGE_LOG.md
+  test "$task9_accept" -eq 1
+done
+rm -rf "$task9_mutation_dir"
+```
+
+Run Phase D only after physical and tool restoration. Enumerate every direct
+failure/panic site and every assertion helper definition/call lexically owned by
+the exact Task 9 functions in `collector_test.go`, `shadow_test.go`, and
+`engine_test.go`. Append one literal file:line row to `tests/LOUDNESS_AUDIT.md` for
+each site. Every row must satisfy all four boxes: present-tense named rule, enough
+offending state to diagnose without rerun, unique greppable phrase, and
+present-tense wording. Shared helpers are included if newly added for Task 9 or
+called only by Task 9; unrelated preexisting Engine assertions are excluded.
+Repair every failed site or record a line-specific exemption naming its stronger
+covering assertion. Record literal source hashes, exact/unique row counts, helper
+definitions and callsites, PASS/repair/open totals, and require open zero.
+
+Task 9 failure-capable helpers in `collector_test.go` and `shadow_test.go` are
+uniquely named receiverless top-level functions in those Task-9-only files and
+are called directly, including when instantiated with type arguments. Task 9
+tests may not call a failure-capable helper declared in another test file; the
+checker scans every package test file and rejects that dependency rather than
+silently relying on an earlier loudness audit. The Engine test keeps
+all Task 9 helper logic inside
+`TestShadowGraphPublicationLeavesOccupancyRowsUnchanged`; no new Task 9
+failure-capable top-level Engine helper is permitted. Build this disposable AST
+inventory before the literal sweep:
+
+```bash
+cat > "$task9_manifest_dir/check-task9-loudness.go" <<'EOF'
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+var failureMethods = map[string]bool{
+	"Fatalf": true, "Errorf": true, "Fatal": true, "Error": true,
+	"FailNow": true, "Fail": true,
+}
+
+type callSite struct {
+	callee    string
+	line      int
+	selector  bool
+	primitive bool
+}
+
+type function struct {
+	dir    string
+	file   string
+	name   string
+	line   int
+	test   bool
+	task9  bool
+	method bool
+	calls  []callSite
+	direct bool
+}
+
+func calleeName(expr ast.Expr) string {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return value.Name
+	case *ast.SelectorExpr:
+		return value.Sel.Name
+	case *ast.IndexExpr:
+		return calleeName(value.X)
+	case *ast.IndexListExpr:
+		return calleeName(value.X)
+	case *ast.ParenExpr:
+		return calleeName(value.X)
+	default:
+		return ""
+	}
+}
+
+func assertionLibrary(expr ast.Expr) bool {
+	switch value := expr.(type) {
+	case *ast.SelectorExpr:
+		owner, ok := value.X.(*ast.Ident)
+		return ok && (owner.Name == "assert" || owner.Name == "require")
+	case *ast.IndexExpr:
+		return assertionLibrary(value.X)
+	case *ast.IndexListExpr:
+		return assertionLibrary(value.X)
+	case *ast.ParenExpr:
+		return assertionLibrary(value.X)
+	default:
+		return false
+	}
+}
+
+func isSelectorCall(expr ast.Expr) bool {
+	switch value := expr.(type) {
+	case *ast.SelectorExpr:
+		return true
+	case *ast.IndexExpr:
+		return isSelectorCall(value.X)
+	case *ast.IndexListExpr:
+		return isSelectorCall(value.X)
+	case *ast.ParenExpr:
+		return isSelectorCall(value.X)
+	default:
+		return false
+	}
+}
+
+func symbol(dir, name string) string { return dir + "\x00" + name }
+
+func main() {
+	if len(os.Args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: check-task9-loudness collector_test.go shadow_test.go engine_test.go")
+		os.Exit(2)
+	}
+	fset := token.NewFileSet()
+	task9Files := make(map[string]bool)
+	directories := make(map[string]bool)
+	for _, path := range os.Args[1:] {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		task9Files[absolute] = true
+		directories[filepath.Dir(absolute)] = true
+	}
+	paths := make([]string, 0)
+	for directory := range directories {
+		matches, err := filepath.Glob(filepath.Join(directory, "*_test.go"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		paths = append(paths, matches...)
+	}
+	sort.Strings(paths)
+	functions := make([]*function, 0)
+	definitions := make(map[string][]*function)
+	methods := make(map[string][]*function)
+	for _, path := range paths {
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		absolute, _ := filepath.Abs(path)
+		base, directory := filepath.Base(path), filepath.Dir(absolute)
+		allTask9 := task9Files[absolute] && (base == "collector_test.go" || base == "shadow_test.go")
+		for _, declaration := range file.Decls {
+			fn, ok := declaration.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			entry := &function{
+				dir: directory, file: base, name: fn.Name.Name,
+				line: fset.Position(fn.Pos()).Line,
+				test: strings.HasPrefix(fn.Name.Name, "Test"),
+				task9: allTask9 || (task9Files[absolute] && base == "engine_test.go" && fn.Name.Name == "TestShadowGraphPublicationLeavesOccupancyRowsUnchanged"),
+				method: fn.Recv != nil,
+			}
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				name := calleeName(call.Fun)
+				primitive := failureMethods[name] || name == "panic" || assertionLibrary(call.Fun)
+				entry.calls = append(entry.calls, callSite{
+					callee: name,
+					line: fset.Position(call.Pos()).Line,
+					selector: isSelectorCall(call.Fun),
+					primitive: primitive,
+				})
+				entry.direct = entry.direct || primitive
+				return true
+			})
+			functions = append(functions, entry)
+			if !entry.method {
+				key := symbol(directory, entry.name)
+				definitions[key] = append(definitions[key], entry)
+			} else {
+				key := symbol(directory, entry.name)
+				methods[key] = append(methods[key], entry)
+			}
+		}
+	}
+
+	failureCapable := make(map[*function]bool)
+	for _, fn := range functions {
+		if fn.direct {
+			failureCapable[fn] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, fn := range functions {
+			if failureCapable[fn] {
+				continue
+			}
+			for _, call := range fn.calls {
+				targets := definitions[symbol(fn.dir, call.callee)]
+				if call.selector {
+					targets = methods[symbol(fn.dir, call.callee)]
+				}
+				for _, target := range targets {
+					if failureCapable[target] {
+						failureCapable[fn] = true
+						changed = true
+						break
+					}
+				}
+				if failureCapable[fn] {
+					break
+				}
+			}
+		}
+	}
+
+	records := make(map[string]struct{})
+	for _, fn := range functions {
+		if !fn.task9 {
+			continue
+		}
+		if failureCapable[fn] && fn.method {
+			fmt.Fprintf(os.Stderr, "Task9 failure-capable receiver helper forbidden: %s:%d:%s\n", fn.file, fn.line, fn.name)
+			os.Exit(1)
+		}
+		if failureCapable[fn] && !fn.test {
+			key := fmt.Sprintf("task9:helper-definition:%s:%d:%s", fn.file, fn.line, fn.name)
+			records[key] = struct{}{}
+		}
+		for _, call := range fn.calls {
+			kind := ""
+			switch {
+			case call.primitive:
+				kind = "primitive"
+			default:
+				capable := make([]*function, 0)
+				targets := definitions[symbol(fn.dir, call.callee)]
+				if call.selector {
+					targets = methods[symbol(fn.dir, call.callee)]
+				}
+				for _, target := range targets {
+					if failureCapable[target] {
+						capable = append(capable, target)
+					}
+				}
+				if len(capable) == 0 {
+					continue
+				}
+				if len(capable) != 1 || !capable[0].task9 {
+					fmt.Fprintf(os.Stderr, "Task9 external or ambiguous failure helper: caller=%s:%d:%s callee=%s candidates=%d\n", fn.file, call.line, fn.name, call.callee, len(capable))
+					os.Exit(1)
+				}
+				kind = "helper-call"
+			}
+			key := fmt.Sprintf("task9:%s:%s:%d:%s:%s", kind, fn.file, call.line, fn.name, call.callee)
+			records[key] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(records))
+	for key := range records {
+		ordered = append(ordered, key)
+	}
+	sort.Strings(ordered)
+	for _, key := range ordered {
+		fmt.Println(key)
+	}
+}
+EOF
+go build -o "$task9_manifest_dir/check-task9-loudness" "$task9_manifest_dir/check-task9-loudness.go"
+"$task9_manifest_dir/check-task9-loudness" internal/graph/collector_test.go internal/graph/shadow_test.go internal/snapshot/engine_test.go > "$task9_manifest_dir/loudness-ast"
+test "$(wc -l < "$task9_manifest_dir/loudness-ast")" -eq "$(sort -u "$task9_manifest_dir/loudness-ast" | wc -l)"
+# Every Task 9 table row starts with the exact AST key in its first code cell.
+sed -nE 's/^\| `(task9:[^`]+)` \|.*$/\1/p' tests/LOUDNESS_AUDIT.md | sort > "$task9_manifest_dir/loudness-table"
+cmp -s "$task9_manifest_dir/loudness-ast" "$task9_manifest_dir/loudness-table"
+# Human-readable omission backstop; the AST comparison above is authoritative.
+rg -n '\.(Fatalf|Errorf|Fatal|Error|FailNow|Fail)\s*\(|\bpanic\s*\(|\b(require|assert)\.' internal/graph/collector_test.go internal/graph/shadow_test.go internal/snapshot/engine_test.go
+git diff --check
+! rg -n 'time\.Sleep' internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go
+! rg -n 'TASK9_(PRODUCTION|ASSERTION|MUTATION)_PLANT' internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
+```
+
+Only after all evidence is closed, run the exact AST ownership fence, exact 30
+suite once, the same exact 30 under race once at count 10, package/full-repo gates,
+both Linux/386 package compile gates, vet, formatting, diff, marker, no-sleep, and
+exact-stage checks:
+
+```bash
+"$task9_manifest_dir/check-task9-manifest" internal/graph/collector_test.go internal/graph/shadow_test.go internal/snapshot/engine_test.go > "$task9_manifest_dir/final-ast"
+cmp -s "$task9_manifest_dir/expected" "$task9_manifest_dir/final-ast"
+go test ./internal/graph ./internal/snapshot -run "$task9_exact_regex" -count=1
+go test -race ./internal/graph ./internal/snapshot -run "$task9_exact_regex" -count=10
+go test ./internal/graph ./internal/snapshot -count=1
+go test ./... -count=1
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1
+GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/snapshot -run '^$' -count=1
+go vet ./internal/graph ./internal/snapshot
+test -z "$(gofmt -d internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go)"
+git diff --check
+! rg -n 'time\.Sleep' internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go
+! rg -n 'TASK9_(PRODUCTION|ASSERTION|MUTATION)_PLANT' internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
+git add internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md
+git diff --cached --check
+diff -u \
+  <(git diff --cached --name-only | sort) \
+  <(printf '%s\n' internal/graph/collector.go internal/graph/collector_test.go internal/graph/shadow.go internal/graph/shadow_test.go internal/snapshot/engine.go internal/snapshot/engine_test.go tests/SABOTAGE_LOG.md tests/LOUDNESS_AUDIT.md | sort)
+test -z "$(git diff --name-only)"
+test -z "$(git ls-files --others --exclude-standard)"
 git commit -m "feat: add isolated graph collector shadow"
 ```
 
