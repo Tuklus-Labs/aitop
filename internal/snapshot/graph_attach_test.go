@@ -202,8 +202,12 @@ func TestAttachGraphRegistersNativeCollectors(t *testing.T) {
 // separates "no home was passed" from "no fixture existed".
 func TestAttachGraphEmptyHomesIsOccupancyOnly(t *testing.T) {
 	now := time.Now()
-	attachClaudeHome(t, now, false) // written, never handed over
-	eng := &Engine{ProcRoot: t.TempDir()}
+	// The engine knows where the claude home is, and the wrapper still must not
+	// pass it. That is the plausible refactor this test exists to catch: the
+	// engine already carries the homes, so delegating with them looks like
+	// tidying up and silently gives every existing AttachOccupancyGraph caller
+	// three collectors it never asked for.
+	eng := &Engine{ProcRoot: t.TempDir(), ClaudeHome: attachClaudeHome(t, now, false)}
 	shadow, occ, err := AttachOccupancyGraph(eng)
 	if err != nil {
 		t.Fatalf("attach-occupancy-graph-constructs rule violated: err=%v", err)
