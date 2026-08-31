@@ -560,9 +560,12 @@ W_NB_ONCE_TICK1 = (NATT,
 W_NB_STALE = (NATT,
               "\tif n := sink.count(); n == 0 {\n\t\tt.Fatalf(\"stale-unbound-sighting-publishes-immediately",
               "\tif false {\n\t\tt.Fatalf(\"stale-unbound-sighting-publishes-immediately")
+# Short-circuits rather than merely disabling: the assertions after this one
+# index events[0], so a weakening that only silences the guard panics on an
+# empty slice and reports a crash instead of a green.
 W_NB_BOUND = (NATT,
               "\tif len(events) == 0 {\n\t\tt.Fatalf(\"bound-sighting-publishes-immediately",
-              "\tif false {\n\t\tt.Fatalf(\"bound-sighting-publishes-immediately")
+              "\tif len(events) == 0 {\n\t\treturn\n\t}\n\tif false {\n\t\tt.Fatalf(\"bound-sighting-publishes-immediately")
 # Four tabs, and anchored on the graph pane's own message. The table subtest's
 # identical check sits one level shallower, so the shallower text is a SUBSTRING
 # of this one and a three-tab patch would match both.
