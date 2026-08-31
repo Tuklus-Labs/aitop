@@ -117,6 +117,12 @@ P_NO_SYNTHESIS = (COD,
                   "\t\tif !published[parentID] {\n\t\t\tpublished[parentID] = true",
                   "\t\tif false {\n\t\t\tpublished[parentID] = true")
 
+# B8: invert the "no parent named" guard, so a thread that names a parent is the
+# one skipped and no edge is built at all.
+P_PARENT_GUARD_INVERTED = (COD,
+                           "\t\tif parent == \"\" {\n\t\t\tcontinue\n\t\t}",
+                           "\t\tif parent != \"\" {\n\t\t\tcontinue\n\t\t}")
+
 # C1: build edges from every rollout READ rather than every thread PUBLISHED, so
 # a child whose own id was unusable still leaves a synthesized parent behind.
 P_SPAWNS_FROM_ALL = (COD,
@@ -223,6 +229,9 @@ W_USER_IDENTITY = (CODT,
 W_NOT_DUPLICATED = (CODT,
                     "\tif seen := countNodeID(nodes, user); seen != 1 {",
                     "\tif seen := countNodeID(nodes, user); false && seen != 1 {")
+W_ROOT_SYNTHESIZED = (CODT,
+                      "\trootNode, ok := nodeByID(nodes, root)\n\tif !ok {",
+                      "\trootNode, ok := nodeByID(nodes, root)\n\tif false && !ok {")
 W_SPAWN_NODECOUNT = (CODT,
                      "\tif len(nodes) != 4 {",
                      "\tif false && len(nodes) != 4 {")
@@ -302,8 +311,10 @@ CYCLES = [
     ("S-X6c-weak", [P_PARENT_INHERITS_PROJECT, W_MINIMAL_PARENT], T_SPAWN, "GREEN", None),
     ("S-X6d-prod", [P_PARENT_ANCHOR_DIR], T_SPAWN, "RED", "codex-synthesized-parent-anchored-on-child-file rule violated"),
     ("S-X6d-weak", [P_PARENT_ANCHOR_DIR, W_PARENT_ANCHOR], T_SPAWN, "GREEN", None),
-    ("S-X6e-prod", [P_NO_SYNTHESIS], T_CLAIM, "RED", "codex-collector-publishes-spawn-edge rule violated"),
-    ("S-X6e-weak", [P_NO_SYNTHESIS, W_COLLECTOR_EDGES, W_COLLECTOR_ORDER], T_CLAIM, "GREEN", None),
+    ("S-X6e-prod", [P_NO_SYNTHESIS], T_SPAWN, "RED", "codex-unscanned-parent-synthesized rule violated"),
+    ("S-X6e-weak", [P_NO_SYNTHESIS, W_ROOT_SYNTHESIZED, W_MINIMAL_PARENT, W_PARENT_ANCHOR, W_SPAWN_NODECOUNT], T_SPAWN, "GREEN", None),
+    ("S-X6g-prod", [P_PARENT_GUARD_INVERTED], T_CLAIM, "RED", "codex-collector-publishes-spawn-edge rule violated"),
+    ("S-X6g-weak", [P_PARENT_GUARD_INVERTED, W_COLLECTOR_EDGES, W_COLLECTOR_ORDER], T_CLAIM, "GREEN", None),
     ("S-X6f-shadow-prod", [P_NO_SYNTHESIS], T_SHADOW, "RED", "codex-shadow-spawn-edge rule violated"),
 
     # --- reasons to read nothing, and the rule that binds them --------------
