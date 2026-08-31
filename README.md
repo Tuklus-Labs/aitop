@@ -97,10 +97,34 @@ Sort lives under `s` then a letter.
 | `b` | budget. Claude: `--effort` `low\|medium\|high\|max`. Grok: `--max-turns N`. Codex: `-c model_reasoning_effort`. Hermes templates: clone first |
 | `v` | mark a row for split view |
 | `d` | show finished subagents in the tree |
+| `1` `2` `⇥` | view preset: `1` table, `2` graph, `⇥` toggles |
 | `q` | quit |
 
 Sorting by CPU uses a ~2s smoothed value so rows do not trade places at 100ms;
 the numbers shown are live.
+
+**Graph pane.** `2` swaps the table for the spawn forest the shadow graph has
+observed: who launched whom, across runtimes, from native evidence rather than
+from process ancestry. Roots are the nodes no spawn or launch edge reaches;
+children hang off `└─` rails under their parent, ordered by runtime family
+(claude, grok, codex, local, then the rest) and then by name. A node is drawn
+once no matter how many parents reach it, and a second reach renders as
+`↩ <name>`, so a cycle the reconciler somehow admitted still draws in finite
+time instead of hanging the paint. Message and service edges hang under their
+source as `· msg→` / `· svc→` lines, three per node.
+
+A row carries its family glyph, the name the runtime proved (or the tail of the
+node id when nothing named it), model, project, and state. `✝` and a dimmed row
+mean a ghost: the node has exited and is being held for its eviction window.
+A trailing `?` means Partial, so some source contributing to that node was
+refused and the row is missing something. A dimmed state word means the claim
+behind it is stale. The border tab counts what was drawn: `N nodes · E edges ·
+G gaps · topo rN`. An empty graph paints the `aitop-canary` line rather than an
+empty box, because a graph with nothing in it and a pane that never ran look
+identical otherwise.
+
+The pane is read-only: a selection carries no actions in v1, so `f m c r k p b`
+do nothing there. Move with the usual keys, `1` or `⇥` to go back.
 
 **Local fanout.** `c` clones one llama-server / vLLM instance. `f` does the same
 once (fanout-1). Each clone picks a new port in 8180-8399 and a new
