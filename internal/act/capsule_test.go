@@ -262,8 +262,7 @@ func TestActorForkWritesCapsuleBeforeAdapter(t *testing.T) {
 	}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
 	a.CapsuleDir = dir
-	a.Start()
-	t.Cleanup(a.Stop)
+	runActor(t, a)
 
 	err := a.Enqueue(Intent{
 		Op: OpFork,
@@ -301,8 +300,7 @@ func TestActorForkDoesNotSpawnIfCapsuleWriteFails(t *testing.T) {
 	ad := &fakeAdapter{name: types.RuntimeGrok}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
 	a.CapsuleDir = blocked
-	a.Start()
-	t.Cleanup(a.Stop)
+	runActor(t, a)
 
 	if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "pid:1:1"}}); err != nil {
 		t.Fatalf("enqueue-fork violated: %v", err)

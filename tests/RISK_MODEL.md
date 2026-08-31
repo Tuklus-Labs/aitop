@@ -1246,6 +1246,126 @@ exactly 69 physical production/assertion sabotage pairs.
 | `graph.TestShadowPublishesRequiredEmptyGraphSlices/nil-concurrent-repeated-run` | `GF-T9-SHADOW`, `GF-T9-ERROR` |
 | `graph.TestShadowPublishesRequiredEmptyGraphSlices/shared-clock-terminal-time` | `GF-T9-SHADOW`, `GF-T9-REGISTRY`, `GF-T9-TERMINAL` |
 
+#### Task 10 cancelable supervisor and runtime lifecycle: eight-axis risk model
+
+Task 10 owns one cancelable Supervisor, Engine/Poller/Actor retrofit, and
+interactive-only command wiring. Tests use completion channels and contexts;
+`time.Sleep` is never a correctness oracle. Historical Graph Foundation names
+such as `TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep` and
+`TestActorStopsOnContextCancellation` remain as planned rows; the frozen Task 10
+names below are the executable coverage for this slice. Task 11 owns `runDeps`,
+schema-2 JSON, screenshot, and injected interactive shutdown-branch tests.
+
+**Invariants**
+
+- `GF-T10-NAME`: Failure names are valid UTF-8, control-free, unique, and 1
+  through 128 bytes. `Err` is nonnil. Returned slices sort by Name and clone.
+  Errors stay typed internal values, never schema or machine output.
+- `GF-T10-SIBLING`: One named task failure does not cancel siblings or the
+  Supervisor-owned context. Managed tasks never call `Shutdown`.
+- `GF-T10-OWNED-CANCEL`: A task error is suppressed only when it matches the
+  Supervisor-owned canceled context. An arbitrary `context.Canceled` while the
+  Supervisor remains open is a recorded failure.
+- `GF-T10-ONE-RUN`: Actor exposes blocking `Run(ctx) error` with one loop and a
+  separate worker WaitGroup. Only one Run succeeds. `Enqueue` accepts only
+  running state.
+- `GF-T10-CTX`: Engine overlay/proc tickers select `ctx.Done()`. Poller in-flight
+  HTTP uses `http.NewRequestWithContext` plus `Client.Do`. Every adapter receives
+  the Run context, never `context.Background()`.
+
+**State transitions**
+
+- `GF-T10-STATE`: Supervisor state is open, stopping, or stopped under one mutex.
+  `Go` validates and reserves a unique name before goroutine launch. `Go` after
+  parent cancellation or stopping rejects.
+- `GF-T10-SHUTDOWN`: `Shutdown` transitions once, cancels, waits, then publishes
+  one sorted immutable result. Concurrent callers wait on one shared done channel
+  and receive equal cloned results.
+- `GF-T10-ACTOR-STOP`: Cancellation atomically enters stopping, prevents later
+  Enqueue, drains queued actions, waits for every in-flight worker and confirmed
+  kill, then returns.
+
+**Boundaries**
+
+- `GF-T10-NAME-BOUND`: Empty, 1-byte, 128-byte, 129-byte, control, invalid UTF-8,
+  and duplicate names are explicit. Inclusive 128 is legal; 129 is not.
+- `GF-T10-CYCLE`: Twenty start/shutdown cycles reclaim Engine, Poller, Actor, and
+  Supervisor goroutines. No leftover named-task, ticker, or HTTP goroutine.
+
+**Malformed inputs**
+
+- `GF-T10-MALFORMED`: Invalid task names, nil run functions, nil registrar or
+  actor, and duplicate `Go` fail without launch. `registerActor` never calls
+  `Run` directly and returns the `Go` error unchanged.
+
+**Concurrency**
+
+- `GF-T10-CONC`: Sibling independence, pre-launch name reservation, concurrent
+  Shutdown clones, Go-while-stopping rejection, Actor drain-vs-wait, and
+  in-flight HTTP cancel are race-safe. Tests wait on completion channels.
+
+**Persistence and replay**
+
+- N/A for durable persistence: Task 10 writes no disk format. Restart behavior is
+  process-memory lifecycle only, covered by twenty-cycle reclamation.
+
+**Integration contracts**
+
+- `GF-T10-WIRE`: `registerActor` calls exactly `reg.Go("actor", actor.Run)`.
+  `cmd/aitop` constructs one Supervisor only on the interactive path, starts
+  Engine on `sup.Context()`, registers the Actor, then `Shutdown` plus `Wait`.
+  JSON/`--once`/`--screenshot` return before Supervisor construction.
+- `GF-T10-SEAM`: Frozen production seams are `Engine.Start(ctx)`, `Engine.Wait`,
+  `Engine.CaptureOnce(ctx)`, `Poller.Start(ctx)`, `Poller.Wait`, `Poller.Poll(ctx)`,
+  `Actor.Run(ctx)`, `Actor.Enqueue`, `taskRegistrar`, `taskRegistrarFunc`, and
+  `registerActor`. The function adapter's dynamic type exposes only `Go`.
+
+**Regression traps, all nine-prefix sweep**
+
+- boundary: populated by name 0/1/128/129, control, invalid UTF-8, duplicate,
+  and nil-error exclusion.
+- concurrency: populated by sibling non-cancel, concurrent Shutdown shared
+  clones, Go-while-stopping, name reservation before launch, Actor worker/kill
+  wait, and twenty-cycle reclamation.
+- contract: populated by exact Supervisor API, exact retrofit signatures,
+  `registerActor` name/function/error, and interactive-only Supervisor.
+- encoding: populated by UTF-8/control-free names and cloned Failure slices.
+- framework: populated by `context.Canceled` provenance vs Supervisor-owned
+  cancel, method-value registration, and `taskRegistrarFunc` exposing only `Go`.
+- io: populated by in-flight HTTP cancellation through request context, not
+  `Client.Get`.
+- persistence: N/A - no durable store.
+- resource: populated by ticker `ctx.Done()` selects, Poller/Engine `Wait`,
+  Actor drain, confirmed-kill wait, and no goroutine after twenty cycles.
+- state: populated by open/stopping/stopped, Actor one-Run, Enqueue-only-while-
+  running, and owned-cancel suppression.
+
+### Task 10 exact 17-name Coverage Matrix (Phase A fence)
+
+Every exact top-level name is package-qualified. Sabotage pairs are declared
+here before test code: one production plant and one weakened-assertion plant
+per frozen name.
+
+| Exact test | Task 10 risk groups | Production plant | Assertion plant |
+|---|---|---|---|
+| `supervisor.TestSupervisorNamedTaskFailureDoesNotCancelSiblings` | `GF-T10-SIBLING`, `GF-T10-CONC` | Cancel the Supervisor context when one named task fails. | Remove only the healthy-sibling still-running / context-open check. |
+| `supervisor.TestSupervisorShutdownCancelsOnceAndWaits` | `GF-T10-SHUTDOWN`, `GF-T10-CONC` | Return from Shutdown before the held task finishes, or skip `ctx.Done()` in a ticker-shaped wait. | Remove only the still-blocked-before-release wait assertion. |
+| `supervisor.TestSupervisorRejectsDuplicateTaskName` | `GF-T10-NAME`, `GF-T10-MALFORMED` | Admit a second `Go` with the same reserved name. | Remove only the duplicate-rejection error check. |
+| `supervisor.TestSupervisorConcurrentShutdownSharesResult` | `GF-T10-SHUTDOWN`, `GF-T10-CONC` | Give concurrent Shutdown callers distinct mutable results. | Remove only the shared-result / clone-equality check. |
+| `supervisor.TestSupervisorGoRejectedAfterStopping` | `GF-T10-STATE` | Accept `Go` while stopping or after Shutdown. | Remove only the stopping-rejection check. |
+| `supervisor.TestSupervisorFailuresSortedAndImmutable` | `GF-T10-NAME`, `GF-T10-SHUTDOWN` | Return unsorted aliases of the live failure slice. | Remove only the sorted immutable result check. |
+| `supervisor.TestSupervisorSuppressesOnlyOwnedCancellation` | `GF-T10-OWNED-CANCEL` | Suppress an unowned `context.Canceled` while Supervisor remains open. | Remove only the owned-cancel distinction check. |
+| `supervisor.TestSupervisorReservesNameBeforeLaunch` | `GF-T10-STATE`, `GF-T10-CONC` | Reserve the name after goroutine launch / after `run` starts. | Remove only the pre-launch duplicate-reservation check. |
+| `supervisor.TestFailureShapeBoundsSortAndClone` | `GF-T10-NAME`, `GF-T10-NAME-BOUND`, `GF-T10-MALFORMED` | Accept empty/control/oversize/duplicate names or nil errors; return unsorted aliases. | Remove only the matching shape, bound, sort, or clone assertion. |
+| `snapshot.TestEngineStopsOnContextCancellation` | `GF-T10-CTX`, `GF-T10-SEAM` | Overlay/proc loops omit `ctx.Done()` select. | Remove only the Wait-completion-after-cancel check. |
+| `inference.TestInferencePollerCancelsInFlightRequest` | `GF-T10-CTX`, `GF-T10-SEAM` | Use `Client.Get` so in-flight HTTP ignores request context. | Remove only the in-flight cancel completion check. |
+| `act.TestActorRunRejectsSecondRun` | `GF-T10-ONE-RUN` | Allow a second `Run`. | Remove only the second-Run rejection check. |
+| `act.TestActorCancellationStopsEnqueueAndDrainsQueued` | `GF-T10-ACTOR-STOP`, `GF-T10-ONE-RUN` | Accept Enqueue while stopping, or dispatch drained queued work. | Remove only the Enqueue-stop or queued-drain check. |
+| `act.TestActorCancellationWaitsForInFlightAndConfirmedKill` | `GF-T10-ACTOR-STOP` | Return from `Run` before in-flight workers and confirmed kill finish. | Remove only the wait-before-release check. |
+| `act.TestActorAdapterReceivesRunContext` | `GF-T10-CTX` | Pass `context.Background()` into adapters. | Remove only the Run-context identity check. |
+| `main.TestRegisterActorWithSupervisor` | `GF-T10-WIRE`, `GF-T10-MALFORMED` | Register the wrong name, call `Run` directly, or ignore the `Go` error. | Remove only the Go spy or exact error check. |
+| `main.TestRuntimeTasksNoLeakAfterTwentyCycles` | `GF-T10-CYCLE`, `GF-T10-WIRE`, `GF-T10-CONC` | Leave Engine/Poller/Actor goroutines running across cycles (missing `ctx.Done()` or skipped Wait). | Remove only the leftover-goroutine stack check. |
+
 ### Coverage Matrix
 
 The names below are the explicit tests planned by Tasks 1 through 11.
@@ -1279,12 +1399,12 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-EVENT-1` | `graph.TestEventKindPayloadCartesianClosed`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud`, `graph.TestCloneEventRejectsInvalidPayloadShapes` |
 | `GF-JSON-1` | `snapshot.TestSchema2RequiresNonNullArrays`, `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`, `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument` |
 | `GF-CONC-1` | `graph.TestStoreOverflowPublicationLinearizes`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
-| `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep` |
+| `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`, `supervisor.TestSupervisorShutdownCancelsOnceAndWaits`, `supervisor.TestSupervisorConcurrentShutdownSharesResult` |
 | `GF-REPLAY-1` | `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventReplayAndCollisionComposition`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
 | `GF-REPLAY-2` | `graph.TestObservationDedupTimestampFirst`, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
 | `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
 | `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` |
-| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
+| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `main.TestRuntimeTasksNoLeakAfterTwentyCycles`, `main.TestRegisterActorWithSupervisor`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `inference.TestInferencePollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `act.TestActorCancellationStopsEnqueueAndDrainsQueued`, `act.TestActorCancellationWaitsForInFlightAndConfirmedKill`, `act.TestActorRunRejectsSecondRun`, `act.TestActorAdapterReceivesRunContext`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
 | `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor` |
 
 ### Task 7 Coverage Matrix (Phase A fence)

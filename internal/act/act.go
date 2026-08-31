@@ -17,7 +17,10 @@ import (
 
 const maxInFlight = 4
 
-var errActorBusy = errors.New("actor busy")
+var (
+	errActorBusy       = errors.New("actor busy")
+	errActorAlreadyRun = errors.New("actor already running")
+)
 
 type Op string
 
@@ -74,13 +77,13 @@ type Actor struct {
 	mu       sync.Mutex
 	started  bool
 	stopped  bool
+	stopping bool
 	reserved int
 	keyMus   map[string]*sync.Mutex
 	sem      chan struct{}
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx      context.Context
+	workerWG sync.WaitGroup
 }
 
 func New(ads map[types.Runtime]Adapter) *Actor {
@@ -95,36 +98,57 @@ func New(ads map[types.Runtime]Adapter) *Actor {
 	}
 }
 
-func (a *Actor) Start() {
+func (a *Actor) Run(ctx context.Context) error {
+	if ctx == nil {
+		return errActorBusy
+	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.started {
-		return
+		a.mu.Unlock()
+		return errActorAlreadyRun
 	}
 	if a.bound <= 0 {
 		a.bound = 16
 	}
 	a.ch = make(chan Intent, a.bound)
 	a.sem = make(chan struct{}, maxInFlight)
-	ctx, cancel := context.WithCancel(context.Background())
 	a.ctx = ctx
-	a.cancel = cancel
 	a.started = true
-	a.wg.Add(1)
-	go a.loop()
-}
-
-func (a *Actor) Stop() {
-	a.mu.Lock()
-	if !a.started || a.stopped {
-		a.mu.Unlock()
-		return
-	}
-	a.stopped = true
-	cancel := a.cancel
 	a.mu.Unlock()
-	cancel()
-	a.wg.Wait()
+
+	defer func() {
+		a.workerWG.Wait()
+		a.mu.Lock()
+		a.stopping = true
+		a.stopped = true
+		a.mu.Unlock()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			a.mu.Lock()
+			a.stopping = true
+			a.mu.Unlock()
+			a.dropQueued()
+			return ctx.Err()
+		case in := <-a.ch:
+			a.mu.Lock()
+			if a.stopping {
+				a.mu.Unlock()
+				a.releaseTicket()
+				a.dropQueued()
+				return ctx.Err()
+			}
+			a.workerWG.Add(1)
+			a.mu.Unlock()
+			go func(in Intent) {
+				defer a.workerWG.Done()
+				defer a.releaseTicket()
+				a.run(in)
+			}(in)
+		}
+	}
 }
 
 func (a *Actor) LastResult() *Result {
@@ -136,7 +160,7 @@ func (a *Actor) Enqueue(in Intent) error {
 		return a.enqueueConfirmedKill(in)
 	}
 	a.mu.Lock()
-	if !a.started || a.stopped || a.ch == nil {
+	if !a.started || a.stopping || a.stopped || a.ch == nil {
 		a.mu.Unlock()
 		return errActorBusy
 	}
@@ -160,7 +184,7 @@ func (a *Actor) Enqueue(in Intent) error {
 
 func (a *Actor) enqueueConfirmedKill(in Intent) error {
 	a.mu.Lock()
-	if !a.started || a.stopped {
+	if !a.started || a.stopping || a.stopped {
 		a.mu.Unlock()
 		return errActorBusy
 	}
@@ -168,39 +192,13 @@ func (a *Actor) enqueueConfirmedKill(in Intent) error {
 	// board (queue full, adapters blocked) can still SIGINT. The one-shot
 	// goroutine still takes the per-key lock so two intents for the same
 	// row cannot overlap.
-	a.wg.Add(1)
+	a.workerWG.Add(1)
 	a.mu.Unlock()
 	go func() {
-		defer a.wg.Done()
+		defer a.workerWG.Done()
 		a.run(in)
 	}()
 	return nil
-}
-
-func (a *Actor) loop() {
-	defer a.wg.Done()
-	for {
-		select {
-		case <-a.ctx.Done():
-			a.dropQueued()
-			return
-		case in := <-a.ch:
-			a.mu.Lock()
-			if a.stopped {
-				a.mu.Unlock()
-				a.releaseTicket()
-				a.dropQueued()
-				return
-			}
-			a.wg.Add(1)
-			a.mu.Unlock()
-			go func(in Intent) {
-				defer a.wg.Done()
-				defer a.releaseTicket()
-				a.run(in)
-			}(in)
-		}
-	}
 }
 
 func (a *Actor) dropQueued() {
@@ -242,10 +240,20 @@ func (a *Actor) run(in Intent) {
 	defer km.Unlock()
 
 	select {
+	case <-a.ctx.Done():
+		a.storeResult(in, a.ctx.Err())
+		return
+	default:
+	}
+	select {
 	case a.sem <- struct{}{}:
 		defer func() { <-a.sem }()
 	case <-a.ctx.Done():
 		a.storeResult(in, a.ctx.Err())
+		return
+	}
+	if err := a.ctx.Err(); err != nil {
+		a.storeResult(in, err)
 		return
 	}
 	a.dispatch(in)
@@ -258,9 +266,6 @@ func (a *Actor) dispatch(in Intent) {
 		return
 	}
 	ctx := a.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	var err error
 	switch in.Op {
 	case OpFork:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,11 +24,13 @@ type fakeAdapter struct {
 	forkHook     func()
 	killHook     func()
 	spawnSession string
+	lastCtx      atomic.Value
 }
 
 func (f *fakeAdapter) Name() types.Runtime { return f.name }
 
-func (f *fakeAdapter) Fork(context.Context, Target, Capsule, string) (Spawned, error) {
+func (f *fakeAdapter) Fork(ctx context.Context, _ Target, _ Capsule, _ string) (Spawned, error) {
+	f.lastCtx.Store(ctx)
 	f.forks.Add(1)
 	if f.forkHook != nil {
 		f.forkHook()
@@ -59,12 +62,14 @@ func (f *fakeAdapter) Transcript(context.Context, Target) (string, error) {
 func (f *fakeAdapter) Fanout(context.Context, Target, int) error { return ErrUnsupported }
 
 type blockingAdapter struct {
-	name    types.Runtime
-	started chan struct{}
-	block   chan struct{}
-	forks   atomic.Int32
-	kills   atomic.Int32
-	once    sync.Once
+	name        types.Runtime
+	started     chan struct{}
+	killStarted chan struct{}
+	block       chan struct{}
+	forks       atomic.Int32
+	kills       atomic.Int32
+	once        sync.Once
+	killOnce    sync.Once
 }
 
 func (b *blockingAdapter) Name() types.Runtime { return b.name }
@@ -98,6 +103,11 @@ func (b *blockingAdapter) Message(context.Context, Target, string) error { retur
 func (b *blockingAdapter) Restart(context.Context, Target) error         { return ErrUnsupported }
 func (b *blockingAdapter) Kill(context.Context, Target) error {
 	b.kills.Add(1)
+	b.killOnce.Do(func() {
+		if b.killStarted != nil {
+			close(b.killStarted)
+		}
+	})
 	b.wait()
 	return nil
 }
@@ -118,8 +128,7 @@ func TestActorForkWritesSidecar(t *testing.T) {
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
 	a.CapsuleDir = caps
 	a.ForksDir = forksDir
-	a.Start()
-	t.Cleanup(a.Stop)
+	runActor(t, a)
 
 	if err := a.Enqueue(Intent{
 		Op: OpFork,
@@ -175,14 +184,13 @@ func TestActorRunsOffCaller(t *testing.T) {
 		},
 	}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
-	a.Start()
+	runActor(t, a)
 	t.Cleanup(func() {
 		select {
 		case <-release:
 		default:
 			close(release)
 		}
-		a.Stop()
 	})
 
 	done := make(chan error, 1)
@@ -213,14 +221,13 @@ func TestQueueFullDoesNotDropConfirmedKill(t *testing.T) {
 	ad := &blockingAdapter{name: types.RuntimeGrok, started: started, block: block}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
 	a.bound = 1
-	a.Start()
+	runActor(t, a)
 	t.Cleanup(func() {
 		select {
 		case <-block:
 		default:
 			close(block)
 		}
-		a.Stop()
 	})
 
 	if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "a"}}); err != nil {
@@ -245,8 +252,7 @@ func TestQueueFullDoesNotDropConfirmedKill(t *testing.T) {
 func TestMessageUnsupportedIsLoudInResult(t *testing.T) {
 	ad := &fakeAdapter{name: types.RuntimeGrok}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
-	a.Start()
-	t.Cleanup(a.Stop)
+	runActor(t, a)
 
 	if err := a.Enqueue(Intent{Op: OpMessage, Target: Target{Runtime: types.RuntimeGrok, Key: "pid:1:1"}, Args: "hi"}); err != nil {
 		t.Fatalf("enqueue-message violated: %v", err)
@@ -282,14 +288,13 @@ func TestSameKeySerializes(t *testing.T) {
 		},
 	}
 	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
-	a.Start()
+	runActor(t, a)
 	t.Cleanup(func() {
 		select {
 		case <-hold:
 		default:
 			close(hold)
 		}
-		a.Stop()
 	})
 
 	tgt := Target{Runtime: types.RuntimeGrok, Key: "pid:9:9"}
@@ -316,5 +321,229 @@ func TestSameKeySerializes(t *testing.T) {
 	case <-entered:
 	case <-time.After(2 * time.Second):
 		t.Fatalf("same-key-serializes violated: second fork never ran")
+	}
+}
+
+func waitActorRunning(t *testing.T, a *Actor) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		a.mu.Lock()
+		running := a.started && !a.stopped
+		a.mu.Unlock()
+		if running {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("actor-running-state rule violated: started=%t stopped=%t", a.started, a.stopped)
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
+func startActorRun(t *testing.T, a *Actor, ctx context.Context) <-chan error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	waitActorRunning(t, a)
+	return done
+}
+
+func runActor(t *testing.T, a *Actor) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startActorRun(t, a, ctx)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("actor-run-cleanup rule violated: Run did not return")
+		}
+	})
+}
+
+func TestActorRunRejectsSecondRun(t *testing.T) {
+	ad := &fakeAdapter{name: types.RuntimeGrok}
+	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+	ctx, cancel := context.WithCancel(context.Background())
+	first := startActorRun(t, a, ctx)
+	second := a.Run(context.Background())
+	if second == nil {
+		t.Fatalf("actor-run-rejects-second-run rule violated: second Run err=%v want non-nil first-running=true", second)
+	}
+	cancel()
+	select {
+	case err := <-first:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("actor-run-rejects-second-run rule violated: first Run err=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-run-rejects-second-run rule violated: first Run did not return after cancel")
+	}
+	third := a.Run(context.Background())
+	if third == nil {
+		t.Fatalf("actor-run-rejects-second-run rule violated: third Run after stop err=%v want non-nil", third)
+	}
+}
+
+func TestActorCancellationStopsEnqueueAndDrainsQueued(t *testing.T) {
+	block := make(chan struct{})
+	var entered atomic.Int32
+	allEntered := make(chan struct{})
+	ad := &fakeAdapter{
+		name: types.RuntimeGrok,
+		forkHook: func() {
+			if entered.Add(1) == 4 {
+				close(allEntered)
+			}
+			<-block
+		},
+	}
+	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+	a.bound = 6
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startActorRun(t, a, ctx)
+	for i := 0; i < 4; i++ {
+		in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "in-flight:" + string(rune('a'+i))}}
+		if err := a.Enqueue(in); err != nil {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight enqueue i=%d err=%v", i, err)
+		}
+	}
+	select {
+	case <-allEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight adapters never entered forks=%d", ad.forks.Load())
+	}
+	for i := 0; i < 2; i++ {
+		in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "queued:" + string(rune('a'+i))}}
+		if err := a.Enqueue(in); err != nil {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued enqueue i=%d err=%v", i, err)
+		}
+	}
+	cancel()
+	stopDeadline := time.After(5 * time.Second)
+	for {
+		a.mu.Lock()
+		stopping := a.stopping
+		a.mu.Unlock()
+		if stopping {
+			break
+		}
+		select {
+		case <-stopDeadline:
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: stopping never set after cancel forks=%d", ad.forks.Load())
+		default:
+			runtime.Gosched()
+		}
+	}
+	late := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "late"}})
+	if late == nil {
+		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Enqueue succeeded after cancel forks=%d", ad.forks.Load())
+	}
+	close(block)
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run err=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run did not return after drain")
+	}
+	if got := ad.forks.Load(); got != 4 {
+		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=4", got)
+	}
+}
+
+func TestActorCancellationWaitsForInFlightAndConfirmedKill(t *testing.T) {
+	block := make(chan struct{})
+	ad := &blockingAdapter{
+		name:        types.RuntimeGrok,
+		started:     make(chan struct{}),
+		killStarted: make(chan struct{}),
+		block:       block,
+	}
+	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startActorRun(t, a, ctx)
+	if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "fork"}}); err != nil {
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: fork enqueue err=%v", err)
+	}
+	select {
+	case <-ad.started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: fork never entered")
+	}
+	if err := a.Enqueue(Intent{Op: OpKill, Target: Target{Runtime: types.RuntimeGrok, Key: "kill"}, Confirmed: true}); err != nil {
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: confirmed kill enqueue err=%v", err)
+	}
+	select {
+	case <-ad.killStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: confirmed kill never entered")
+	}
+	cancel()
+	stopDeadline := time.After(5 * time.Second)
+	for {
+		if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "post-cancel"}}); err != nil {
+			break
+		}
+		select {
+		case <-stopDeadline:
+			t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Enqueue still accepted after cancel forks=%d kills=%d", ad.forks.Load(), ad.kills.Load())
+		default:
+			runtime.Gosched()
+		}
+	}
+	for i := 0; i < 10000; i++ {
+		select {
+		case err := <-done:
+			t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run returned before workers finished err=%v forks=%d kills=%d sched=%d", err, ad.forks.Load(), ad.kills.Load(), i)
+		default:
+			runtime.Gosched()
+		}
+	}
+	close(block)
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run err=%v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run did not return after workers released")
+	}
+}
+
+func TestActorAdapterReceivesRunContext(t *testing.T) {
+	entered := make(chan struct{})
+	ad := &fakeAdapter{
+		name: types.RuntimeGrok,
+		forkHook: func() {
+			close(entered)
+		},
+	}
+	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := startActorRun(t, a, ctx)
+	if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "ctx"}}); err != nil {
+		t.Fatalf("actor-adapter-receives-run-context rule violated: enqueue err=%v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-adapter-receives-run-context rule violated: adapter never entered")
+	}
+	gotCtx, _ := ad.lastCtx.Load().(context.Context)
+	if gotCtx == nil || gotCtx != ctx {
+		t.Fatalf("actor-adapter-receives-run-context rule violated: got=%p want=%p background=%p", gotCtx, ctx, context.Background())
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("actor-adapter-receives-run-context rule violated: Run did not return")
 	}
 }

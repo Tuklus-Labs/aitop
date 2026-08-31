@@ -14,6 +14,7 @@ package inference
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -152,6 +153,7 @@ type Poller struct {
 	mu     sync.Mutex
 	static map[int32]staticInfo // per pid: things that do not change while it lives
 	decode map[slotKey]decodeSample
+	wg     sync.WaitGroup
 }
 
 type staticInfo struct {
@@ -189,20 +191,44 @@ func (p *Poller) Latest() []types.Overlay {
 	return nil
 }
 
-// Start runs Poll on its own goroutine forever.
-func (p *Poller) Start() {
+// Start runs Poll on its own goroutine until ctx is canceled.
+func (p *Poller) Start(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	iv := p.Interval
+	if iv <= 0 {
+		iv = time.Second
+	}
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
+		t := time.NewTicker(iv)
+		defer t.Stop()
 		for {
-			p.Poll()
-			time.Sleep(p.Interval)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			p.Poll(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
 		}
 	}()
+}
+
+func (p *Poller) Wait() {
+	p.wg.Wait()
 }
 
 // Poll probes every server once and publishes. Servers that do not answer
 // keep whatever they last said for this poll only; a server gone from
 // /proc is dropped.
-func (p *Poller) Poll() {
+func (p *Poller) Poll(ctx context.Context) {
 	servers := p.Discover(p.ProcRoot)
 	prevByPID := map[int32][]types.Overlay{}
 	for _, o := range p.Latest() {
@@ -232,7 +258,7 @@ func (p *Poller) Poll() {
 		wg.Add(1)
 		go func(s Server) {
 			defer wg.Done()
-			ov, ok := p.probe(s, now)
+			ov, ok := p.probe(ctx, s, now)
 			if !ok {
 				if old := prevByPID[s.PID]; len(old) > 0 {
 					ov, ok = old, true
@@ -250,14 +276,14 @@ func (p *Poller) Poll() {
 	p.latest.Store(&out)
 }
 
-func (p *Poller) probe(s Server, now time.Time) ([]types.Overlay, bool) {
+func (p *Poller) probe(ctx context.Context, s Server, now time.Time) ([]types.Overlay, bool) {
 	base := "http://" + s.Host + ":" + strconv.Itoa(s.Port)
 	ov := types.Overlay{PID: s.PID, StartTime: s.StartTime, Runtime: types.RuntimeLocal}
 	switch s.Kind {
 	case "llama":
-		return p.probeLlama(base, s, ov, now)
+		return p.probeLlama(ctx, base, s, ov, now)
 	case "vllm":
-		o, ok := p.probeVLLM(base, s, ov)
+		o, ok := p.probeVLLM(ctx, base, s, ov)
 		if !ok {
 			return nil, false
 		}
@@ -266,8 +292,15 @@ func (p *Poller) probe(s Server, now time.Time) ([]types.Overlay, bool) {
 	return nil, false
 }
 
-func (p *Poller) getJSON(url string, v any) bool {
-	resp, err := p.Client.Get(url)
+func (p *Poller) getJSON(ctx context.Context, url string, v any) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := p.Client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -306,11 +339,11 @@ type llamaProps struct {
 	} `json:"default_generation_settings"`
 }
 
-func (p *Poller) probeLlama(base string, s Server, ov types.Overlay, now time.Time) ([]types.Overlay, bool) {
+func (p *Poller) probeLlama(ctx context.Context, base string, s Server, ov types.Overlay, now time.Time) ([]types.Overlay, bool) {
 	st := p.staticFor(s)
 	if st.model == "" || st.checked.IsZero() {
 		var pr llamaProps
-		if p.getJSON(base+"/props", &pr) {
+		if p.getJSON(ctx, base+"/props", &pr) {
 			st.model = pr.ModelAlias
 			if st.model == "" {
 				st.model = modelBase(pr.ModelPath)
@@ -329,7 +362,7 @@ func (p *Poller) probeLlama(base string, s Server, ov types.Overlay, now time.Ti
 		}
 	}
 	var slots []llamaSlot
-	if !p.getJSON(base+"/slots", &slots) {
+	if !p.getJSON(ctx, base+"/slots", &slots) {
 		return nil, false
 	}
 	var used, window int64
@@ -392,7 +425,7 @@ func (p *Poller) probeLlama(base string, s Server, ov types.Overlay, now time.Ti
 		ov.Status = "idle"
 	}
 	if st.metricsOK {
-		if m, ok := p.metrics(base + "/metrics"); ok {
+		if m, ok := p.metrics(ctx, base+"/metrics"); ok {
 			ov.Usage = types.Usage{
 				Input:  int64(m["llamacpp:prompt_tokens_total"]),
 				Output: int64(m["llamacpp:tokens_predicted_total"]),
@@ -449,18 +482,18 @@ type vllmModels struct {
 	} `json:"data"`
 }
 
-func (p *Poller) probeVLLM(base string, s Server, ov types.Overlay) (types.Overlay, bool) {
+func (p *Poller) probeVLLM(ctx context.Context, base string, s Server, ov types.Overlay) (types.Overlay, bool) {
 	st := p.staticFor(s)
 	if st.checked.IsZero() {
 		var vm vllmModels
-		if p.getJSON(base+"/v1/models", &vm) && len(vm.Data) > 0 {
+		if p.getJSON(ctx, base+"/v1/models", &vm) && len(vm.Data) > 0 {
 			st.model = vm.Data[0].ID
 			st.window = vm.Data[0].MaxModelLen
 			st.checked = time.Now()
 			p.setStatic(s, st)
 		}
 	}
-	m, ok := p.metrics(base + "/metrics")
+	m, ok := p.metrics(ctx, base+"/metrics")
 	if !ok {
 		return ov, false
 	}
@@ -493,8 +526,15 @@ func (p *Poller) probeVLLM(base string, s Server, ov types.Overlay) (types.Overl
 
 // metrics parses a Prometheus exposition into name -> value, summing series
 // that share a name (labels dropped). Counters with no samples are absent.
-func (p *Poller) metrics(url string) (map[string]float64, bool) {
-	resp, err := p.Client.Get(url)
+func (p *Poller) metrics(ctx context.Context, url string) (map[string]float64, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := p.Client.Do(req)
 	if err != nil {
 		return nil, false
 	}

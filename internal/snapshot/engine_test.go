@@ -1,12 +1,14 @@
 package snapshot
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"aitop/internal/graph"
 	"aitop/internal/types"
@@ -208,4 +210,27 @@ func TestShadowGraphPublicationLeavesOccupancyRowsUnchanged(t *testing.T) {
 			t.Fatalf("failed-proc-walk-preserves-frame rule violated: prior-frame=%p current-frame=%p", frame4, currentFrame)
 		}
 	})
+}
+
+func TestEngineStopsOnContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	e := &Engine{
+		ProcRoot: t.TempDir(),
+		Interval: time.Hour,
+		Overlay: func() ([]types.Overlay, error) {
+			return nil, nil
+		},
+	}
+	e.Start(ctx)
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		e.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("engine-stops-on-context-cancellation rule violated: Wait did not return after cancel interval=%s", e.Interval)
+	}
 }

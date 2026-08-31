@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -18,6 +20,7 @@ import (
 	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
 	"aitop/internal/snapshot"
+	"aitop/internal/supervisor"
 	"aitop/internal/theme"
 	"aitop/internal/types"
 	"aitop/internal/ui"
@@ -58,7 +61,7 @@ func main() {
 		Inference:  inference.NewPoller(procRoot),
 	}
 	if *jsonOnce || *once {
-		eng.Inference.Poll() // one synchronous probe so locals carry tokens
+		eng.Inference.Poll(context.Background()) // one synchronous probe so locals carry tokens
 		eng.RefreshOverlay()
 		time.Sleep(200 * time.Millisecond) // second sample so CPU% is known
 		eng.RefreshOverlay()
@@ -76,14 +79,15 @@ func main() {
 			os.Exit(2)
 		}
 		lipgloss.SetColorProfile(termenv.TrueColor) // piped output keeps its ink
-		eng.Inference.Poll()
+		eng.Inference.Poll(context.Background())
 		eng.RefreshOverlay()
 		time.Sleep(300 * time.Millisecond)
 		eng.RefreshOverlay()
 		fmt.Print(ui.Render(eng.Snapshot(), th, w, h, time.Now()))
 		return
 	}
-	src := eng.Start()
+	sup := supervisor.New(context.Background())
+	src := eng.Start(sup.Context())
 	actor := act.New(map[types.Runtime]act.Adapter{
 		types.RuntimeLocal:  actlocal.New(),
 		types.RuntimeGrok:   actgrok.New(),
@@ -92,11 +96,38 @@ func main() {
 	})
 	actor.CapsuleDir = act.CapsuleRoot()
 	actor.ForksDir = act.ForksRoot()
-	actor.Start()
-	defer actor.Stop()
+	if err := registerActor(sup, actor); err != nil {
+		fmt.Fprintf(os.Stderr, "aitop: %v\n", err)
+		sup.Shutdown()
+		eng.Wait()
+		os.Exit(1)
+	}
 	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "aitop: %v\n", err)
+		sup.Shutdown()
+		eng.Wait()
 		os.Exit(1)
 	}
+	sup.Shutdown()
+	eng.Wait()
+}
+
+type taskRegistrar interface {
+	Go(string, func(context.Context) error) error
+}
+
+type taskRegistrarFunc func(string, func(context.Context) error) error
+
+func (f taskRegistrarFunc) Go(name string, run func(context.Context) error) error {
+	return f(name, run)
+}
+
+var errNilActorRegistrar = errors.New("register-actor nil registrar or actor rule violated")
+
+func registerActor(reg taskRegistrar, actor *act.Actor) error {
+	if reg == nil || actor == nil {
+		return errNilActorRegistrar
+	}
+	return reg.Go("actor", actor.Run)
 }

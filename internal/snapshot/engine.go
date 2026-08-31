@@ -1,6 +1,8 @@
 package snapshot
 
 import (
+	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +57,7 @@ type Engine struct {
 	overlayAt atomic.Value // time.Time
 	overlayEr atomic.Value // string
 	seq       uint64
+	wg        sync.WaitGroup
 }
 
 func (e *Engine) Rows() []types.Row {
@@ -172,29 +175,66 @@ func (e *Engine) RefreshOverlay() {
 }
 
 // Start runs the two clocks and returns the pointer the TUI paints from.
-// Overlay IO never runs inside the proc tick.
-func (e *Engine) Start() *atomic.Pointer[Snapshot] {
+// Overlay IO never runs inside the proc tick. Both loops exit on ctx.Done.
+func (e *Engine) Start(ctx context.Context) *atomic.Pointer[Snapshot] {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	iv := e.Interval
 	if iv <= 0 {
 		iv = 100 * time.Millisecond
 	}
 	if e.Inference != nil {
-		e.Inference.Start()
+		e.Inference.Start(ctx)
 	}
 	e.RefreshOverlay()
+	e.wg.Add(2)
 	go func() {
+		defer e.wg.Done()
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
-		for range t.C {
-			e.refreshOverlayOnly()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				e.refreshOverlayOnly()
+			}
 		}
 	}()
 	go func() {
+		defer e.wg.Done()
 		t := time.NewTicker(iv)
 		defer t.Stop()
-		for range t.C {
-			e.tickProc()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				e.tickProc()
+			}
 		}
 	}()
 	return &e.snap
+}
+
+func (e *Engine) Wait() {
+	e.wg.Wait()
+	if e.Inference != nil {
+		e.Inference.Wait()
+	}
+}
+
+func (e *Engine) CaptureOnce(ctx context.Context) (*Snapshot, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if e.Inference != nil {
+		e.Inference.Poll(ctx)
+	}
+	e.RefreshOverlay()
+	return e.Snapshot(), nil
 }

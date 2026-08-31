@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func TestLlamaSlotsGiveContextOccupancyAndStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "llama", 1298775))
-	p.Poll()
+	p.Poll(context.Background())
 	ovs := p.Latest()
 	o, slots := splitServerSlots(ovs)
 	if o.PID != 1298775 {
@@ -133,7 +134,7 @@ func TestLlamaSlotTokPerSecIsDecodeDelta(t *testing.T) {
 	p := pollerWith(serverOf(t, srv, "llama", 10))
 	t0 := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	p.now = func() time.Time { return t0 }
-	p.Poll()
+	p.Poll(context.Background())
 	_, slots := splitServerSlots(p.Latest())
 	if len(slots) != 2 {
 		t.Fatalf("slot-count-before-tok-per-sec violated: %d", len(slots))
@@ -144,7 +145,7 @@ func TestLlamaSlotTokPerSecIsDecodeDelta(t *testing.T) {
 	}
 	decoded.Store(140)
 	p.now = func() time.Time { return t0.Add(time.Second) }
-	p.Poll()
+	p.Poll(context.Background())
 	_, slots = splitServerSlots(p.Latest())
 	busy = slotByIndex(slots, 0)
 	if busy.TokPerSec == nil || *busy.TokPerSec <= 0 {
@@ -178,7 +179,7 @@ func TestLlamaMetricsGiveLifetimeWhenEnabled(t *testing.T) {
 	}))
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "llama", 10))
-	p.Poll()
+	p.Poll(context.Background())
 	o, _ := splitServerSlots(p.Latest())
 	if !o.Usage.Known || o.Usage.Input != 123456 || o.Usage.Output != 7890 {
 		t.Fatalf("llama-metrics-lifetime violated: %+v", o.Usage)
@@ -201,7 +202,7 @@ func TestVLLMMetricsAndModels(t *testing.T) {
 	}))
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "vllm", 20))
-	p.Poll()
+	p.Poll(context.Background())
 	o, _ := splitServerSlots(p.Latest())
 	if o.Model != "Qwen/Qwen3-32B" || o.ContextWindow == nil || *o.ContextWindow != 40960 {
 		t.Fatalf("vllm-model-and-window-from-v1-models violated: %q %v", o.Model, o.ContextWindow)
@@ -237,14 +238,14 @@ func TestSlowServerKeepsLastAnswerAndDoesNotBlockLatest(t *testing.T) {
 	defer srv.Close()
 	p := pollerWith(serverOf(t, srv, "llama", 30))
 	p.Client.Timeout = 100 * time.Millisecond
-	p.Poll()
+	p.Poll(context.Background())
 	first, firstSlots := splitServerSlots(p.Latest())
 	if first.PID != 30 || first.TokensUsed == nil || len(firstSlots) != 2 {
 		t.Fatalf("setup: first poll failed: server=%+v slots=%d", first, len(firstSlots))
 	}
 	slow.Store(true)
 	t0 := time.Now()
-	p.Poll()
+	p.Poll(context.Background())
 	if d := time.Since(t0); d > 300*time.Millisecond {
 		t.Fatalf("inference-poll-bounded-by-client-timeout violated: %v", d)
 	}
@@ -259,7 +260,7 @@ func TestSlowServerKeepsLastAnswerAndDoesNotBlockLatest(t *testing.T) {
 	}
 	// A server gone from /proc is dropped, not kept forever.
 	p.Discover = func(string) []Server { return nil }
-	p.Poll()
+	p.Poll(context.Background())
 	if len(p.Latest()) != 0 {
 		t.Fatal("inference-dead-server-dropped violated")
 	}
@@ -288,5 +289,37 @@ func TestKindAndHostPortFromArgv(t *testing.T) {
 	}
 	if KindOf([]string{"claude"}) != "" {
 		t.Fatal("kind-not-a-server violated")
+	}
+}
+
+func TestInferencePollerCancelsInFlightRequest(t *testing.T) {
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+	p := pollerWith(serverOf(t, srv, "llama", 40))
+	p.Client.Timeout = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	pollDone := make(chan struct{})
+	go func() {
+		p.Poll(ctx)
+		close(pollDone)
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("inference-poller-cancels-in-flight-request rule violated: handler never saw request")
+	}
+	cancel()
+	select {
+	case <-pollDone:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("inference-poller-cancels-in-flight-request rule violated: Poll did not return after cancel timeout=5s clientTimeout=%s", p.Client.Timeout)
 	}
 }
