@@ -2571,3 +2571,92 @@ matches no test at all. A heredoc append had silently failed and the focused run
 read exactly like a passing test; only the preflight noticed, because a
 weakening's target string was missing. `-v` shows `[no tests to run]`; the bare
 form does not.
+
+## Native provenance Task 6
+
+The graph pane: `flattenGraph`, `Styles.renderGraph`, the `1`/`2`/`tab` presets
+and the pane's read-only keymap. Driver
+`tests/sabotage-native-task6/sabotage_driver.py`, log
+`tests/sabotage-native-task6/sabotage_runs_native_task6.log`. Epoch head
+`55742c8f434decbcfd3a6c1db77a06cfadbad505`. 84 cycles, 84 as predicted, 44
+production REDs and 40 predicted GREENs, all in one package, all in a single
+run at one head. The earlier spliced run that carried three corrected
+predictions is kept beside it as
+`sabotage_runs_native_task6_corrections.log`; the numbers above come from the
+clean re-run.
+
+**The cycle that matters most is S-T6-30, and it is a GREEN.** It applies the
+ghost-dimming plant AND removes the colour pin from `TestMain`. With the pin,
+that plant is a RED (S-T6-08). Without it, lipgloss detects no terminal under
+`go test`, falls back to Ascii, and renders every style as the bare word, so
+`Dim.Render(x)` and `Hi.Render(x)` are the same bytes. Every dim assertion in
+this package then passes on any input, and `graph-pane-dims-a-ghost-row`
+certifies nothing at all. That was the state of the whole `internal/ui` suite
+before this task: it had never rendered a single colour, and no test had ever
+noticed, because nothing had asserted one until the pane's ghost and stale
+rules needed to. The pin is production-invisible; it changes only what the
+tests can see. Corollary for whoever writes the next colour rule here: a
+styling assertion in a headless suite is vacuous by default, and the default is
+silent.
+
+**S-T6-19 is a RED with no rule phrase.** It removes the visited check, which
+is the entire cycle-safety rule, and the result is not a failed assertion but a
+failure to terminate: Go's own stack limit catches it and the driver matches on
+`stack overflow`. A cycle-safety plant cannot be verified by an assertion,
+because the assertion never runs.
+
+**Three predictions were wrong, and all three were wrong the same way.** Each
+named a real defect and the wrong witness, because a plant reddens the FIRST
+assertion it reaches, not the one it was aimed at.
+
+- **S-T6-12** predicted `marks-only-what-is-marked` and measured
+  `dims-a-ghost-row`. Marking every node partial renames the ghost to
+  `01a022e3?`, and the dim witness looks for the exact styled run over the
+  UNSUFFIXED name, which a suffixed name no longer contains. The witness is
+  right about the row and wrong about the reason.
+- **S-T6-36** predicted `two-shows-the-graph` and measured
+  `offers-a-way-back-at-any-width`. Ignoring the preset at paint time makes the
+  80-cell `RenderGraph` fall back to the table, whose key row at that width
+  carries no `1 table`, and that witness sits earlier in the test.
+- **S-T6-34** needed four relaxations, not two: `1` staying inert inside the
+  pane leaves the view in the graph, so the `tab` that follows runs
+  graph-to-table instead of table-to-graph and BOTH tab witnesses move. Two of
+  the four are named for a different rule on purpose.
+
+In every case the fix was to record the cycle where it actually fires and add a
+`-mid` step that relaxes that witness, so the assertion the plant was aimed at
+is shown to discriminate one layer down. Re-aiming the plant instead would have
+hidden the coupling.
+
+**The preflight was worth more than any single cycle.** It caught six plants
+that did not compile before a single epoch ran: an orphaned `strings` import, a
+`mid` binding left unused by two different empty-pane plants, a duplicate switch
+case, and two weakenings whose old-strings also matched the table suite's own
+geometry test. Each would have cost a whole run to find. It also had to be
+fixed itself: it originally vetted each patch ALONE, which for a two-patch
+plant produces a tree no cycle ever runs against, and it reported a duplicate
+case that exists only there. It now vets what a cycle actually plants.
+
+**Two findings the epoch produced about the tests rather than the code.**
+
+`graph-pane-header-names-itself` and `graph-pane-header-counts-what-it-drew`
+originally read the whole frame, and the pane's own footer carries a `2 graph`
+key tab, so renaming the border tab to ` forest ` left both GREEN. They now read
+the top border line by index. Same shape as the first-light `PF-7` canary: an
+assertion that looks specific and matches somewhere else.
+
+`graph-pane-footer-offers-both-presets` was asserted on a 200-cell frame.
+Measured against `--screenshot`, `2 graph` first appears in the table's key row
+at 165 columns: that row is already over budget before this task and drops
+`v mark` at 140, so two more tabs at the end are invisible on any normal
+terminal. The assertion was certifying discoverability at a width nobody uses.
+The pane's own key row is short and always fits, so a second assertion pins the
+thing that actually protects an operator who pressed `2` on an 80-column
+terminal, and S-T6-31b is its plant. What leaves the table's row to make space
+for the presets is a layout decision left for the UX pass.
+
+**And one recorded GREEN with a reason.** S-T6-26 drops the name column's
+padding and every rendered line is still exactly terminal-width, because
+`boxLine` fits the whole line before it goes out. The geometry test therefore
+does not pin column alignment, and only a plant that moves a BORDER (S-T6-18b)
+can red the width rule at all.
