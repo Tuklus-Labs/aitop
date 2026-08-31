@@ -1848,3 +1848,15 @@ Commit-quality tree before planting. Plants were physical edits; restore used `c
 | T10-17 | `TestRuntimeTasksNoLeakAfterTwentyCycles` | `Engine.Wait` is a no-op and both ticker loops omit `ctx.Done()`. Prediction: leftover runtime stacks after 20 cycles. | RED: `runtime-tasks-no-leak-after-twenty-cycles rule violated: leftover after=20 count=42` | Remove only the leftover-goroutine stack check. false-GREEN 0. | Restored. Load-bearing. |
 
 17/17 production plants RED. 17/17 assertion plants false-GREEN on known-good production. Restore after every pair matched the pre-plant snapshot. Final packages green: `go test ./internal/supervisor ./internal/snapshot ./internal/overlay/inference ./internal/act ./cmd/aitop -count=1`.
+
+## Task 10 drain-before-dequeue follow-up (2026-08-30)
+
+Actor cancellation was not atomic: `Run` selected `ctx.Done()` vs `a.ch` without a `ctx.Err()` fence, and Enqueue ignored `a.ctx.Err()` under the mutex. Tightened nested subrow `TestActorCancellationStopsEnqueueAndDrainsQueued/queued-only-not-dispatched`. Restore used `command cp -f` from `/tmp/t10-drain-good2`. Focused command: `go test ./internal/act -run '^TestActorCancellationStopsEnqueueAndDrainsQueued$/queued-only-not-dispatched$' -count=1`.
+
+TDD RED before the production fix (20/20): `queued-only Enqueue succeeded after cancel forks=0 ctxErr=context canceled stopping=false`.
+
+| ID | Exact test | Production plant and prediction | Observed production RED | Assertion plant and observed false-GREEN | Restore and conclusion |
+| --- | --- | --- | --- | --- | --- |
+| T10-13b | `TestActorCancellationStopsEnqueueAndDrainsQueued/queued-only-not-dispatched` | Restore select-without-`ctx.Err()`-first and skip `run` cancel guards so queued work can dispatch after cancel. Prediction: adapter fork count is nonzero. | RED (10/10): `actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=1 want=0 keys=[queued:a]` (counts varied 1-3). | Remove only the queued-forks==0 check. false-GREEN 0 on known-good. Stacked still RED on the sibling successful-LastResult check, as specified (narrow plant). | Restored snapshot hashes. Load-bearing forks==0 oracle. |
+
+Supervisor `record` now suppresses when `s.ctx.Err() != nil && errors.Is(err, s.ctx.Err())` regardless of state. `TestSupervisorSuppressesOnlyOwnedCancellation` still passes.

@@ -125,6 +125,13 @@ func (a *Actor) Run(ctx context.Context) error {
 	}()
 
 	for {
+		if ctx.Err() != nil {
+			a.mu.Lock()
+			a.stopping = true
+			a.mu.Unlock()
+			a.dropQueued()
+			return ctx.Err()
+		}
 		select {
 		case <-ctx.Done():
 			a.mu.Lock()
@@ -133,6 +140,14 @@ func (a *Actor) Run(ctx context.Context) error {
 			a.dropQueued()
 			return ctx.Err()
 		case in := <-a.ch:
+			if ctx.Err() != nil {
+				a.releaseTicket()
+				a.mu.Lock()
+				a.stopping = true
+				a.mu.Unlock()
+				a.dropQueued()
+				return ctx.Err()
+			}
 			a.mu.Lock()
 			if a.stopping {
 				a.mu.Unlock()
@@ -160,7 +175,7 @@ func (a *Actor) Enqueue(in Intent) error {
 		return a.enqueueConfirmedKill(in)
 	}
 	a.mu.Lock()
-	if !a.started || a.stopping || a.stopped || a.ch == nil {
+	if !a.started || a.stopping || a.stopped || a.ch == nil || (a.ctx != nil && a.ctx.Err() != nil) {
 		a.mu.Unlock()
 		return errActorBusy
 	}
@@ -184,7 +199,7 @@ func (a *Actor) Enqueue(in Intent) error {
 
 func (a *Actor) enqueueConfirmedKill(in Intent) error {
 	a.mu.Lock()
-	if !a.started || a.stopping || a.stopped {
+	if !a.started || a.stopping || a.stopped || (a.ctx != nil && a.ctx.Err() != nil) {
 		a.mu.Unlock()
 		return errActorBusy
 	}

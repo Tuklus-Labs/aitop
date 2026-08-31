@@ -25,13 +25,26 @@ type fakeAdapter struct {
 	killHook     func()
 	spawnSession string
 	lastCtx      atomic.Value
+	mu           sync.Mutex
+	forkKeys     []string
 }
 
 func (f *fakeAdapter) Name() types.Runtime { return f.name }
 
-func (f *fakeAdapter) Fork(ctx context.Context, _ Target, _ Capsule, _ string) (Spawned, error) {
+func (f *fakeAdapter) snapshotForkKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.forkKeys))
+	copy(out, f.forkKeys)
+	return out
+}
+
+func (f *fakeAdapter) Fork(ctx context.Context, t Target, _ Capsule, _ string) (Spawned, error) {
 	f.lastCtx.Store(ctx)
 	f.forks.Add(1)
+	f.mu.Lock()
+	f.forkKeys = append(f.forkKeys, t.Key)
+	f.mu.Unlock()
 	if f.forkHook != nil {
 		f.forkHook()
 	}
@@ -390,71 +403,118 @@ func TestActorRunRejectsSecondRun(t *testing.T) {
 }
 
 func TestActorCancellationStopsEnqueueAndDrainsQueued(t *testing.T) {
-	block := make(chan struct{})
-	var entered atomic.Int32
-	allEntered := make(chan struct{})
-	ad := &fakeAdapter{
-		name: types.RuntimeGrok,
-		forkHook: func() {
-			if entered.Add(1) == 4 {
-				close(allEntered)
+	t.Run("in-flight-and-late-enqueue", func(t *testing.T) {
+		block := make(chan struct{})
+		var entered atomic.Int32
+		allEntered := make(chan struct{})
+		ad := &fakeAdapter{
+			name: types.RuntimeGrok,
+			forkHook: func() {
+				if entered.Add(1) == 4 {
+					close(allEntered)
+				}
+				<-block
+			},
+		}
+		a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+		a.bound = 6
+		ctx, cancel := context.WithCancel(context.Background())
+		done := startActorRun(t, a, ctx)
+		for i := 0; i < 4; i++ {
+			in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "in-flight:" + string(rune('a'+i))}}
+			if err := a.Enqueue(in); err != nil {
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight enqueue i=%d err=%v", i, err)
 			}
-			<-block
-		},
-	}
-	a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
-	a.bound = 6
-	ctx, cancel := context.WithCancel(context.Background())
-	done := startActorRun(t, a, ctx)
-	for i := 0; i < 4; i++ {
-		in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "in-flight:" + string(rune('a'+i))}}
-		if err := a.Enqueue(in); err != nil {
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight enqueue i=%d err=%v", i, err)
-		}
-	}
-	select {
-	case <-allEntered:
-	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight adapters never entered forks=%d", ad.forks.Load())
-	}
-	for i := 0; i < 2; i++ {
-		in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "queued:" + string(rune('a'+i))}}
-		if err := a.Enqueue(in); err != nil {
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued enqueue i=%d err=%v", i, err)
-		}
-	}
-	cancel()
-	stopDeadline := time.After(5 * time.Second)
-	for {
-		a.mu.Lock()
-		stopping := a.stopping
-		a.mu.Unlock()
-		if stopping {
-			break
 		}
 		select {
-		case <-stopDeadline:
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: stopping never set after cancel forks=%d", ad.forks.Load())
-		default:
-			runtime.Gosched()
+		case <-allEntered:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: in-flight adapters never entered forks=%d", ad.forks.Load())
 		}
-	}
-	late := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "late"}})
-	if late == nil {
-		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Enqueue succeeded after cancel forks=%d", ad.forks.Load())
-	}
-	close(block)
-	select {
-	case err := <-done:
-		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run err=%v", err)
+		for i := 0; i < 2; i++ {
+			in := Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "queued:" + string(rune('a'+i))}}
+			if err := a.Enqueue(in); err != nil {
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued enqueue i=%d err=%v", i, err)
+			}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run did not return after drain")
-	}
-	if got := ad.forks.Load(); got != 4 {
-		t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=4", got)
-	}
+		cancel()
+		stopDeadline := time.After(5 * time.Second)
+		for {
+			a.mu.Lock()
+			stopping := a.stopping
+			a.mu.Unlock()
+			if stopping {
+				break
+			}
+			select {
+			case <-stopDeadline:
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: stopping never set after cancel forks=%d", ad.forks.Load())
+			default:
+				runtime.Gosched()
+			}
+		}
+		late := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "late"}})
+		if late == nil {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Enqueue succeeded after cancel forks=%d", ad.forks.Load())
+		}
+		close(block)
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run err=%v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run did not return after drain")
+		}
+		if got := ad.forks.Load(); got != 4 {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=4", got)
+		}
+	})
+
+	t.Run("queued-only-not-dispatched", func(t *testing.T) {
+		prev := runtime.GOMAXPROCS(1)
+		t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+		ad := &fakeAdapter{name: types.RuntimeGrok}
+		a := New(map[types.Runtime]Adapter{types.RuntimeGrok: ad})
+		a.bound = 8
+		ctx, cancel := context.WithCancel(context.Background())
+		done := startActorRun(t, a, ctx)
+		keys := []string{"queued:a", "queued:b", "queued:c", "queued:d"}
+		for i, key := range keys {
+			if err := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: key}}); err != nil {
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only enqueue i=%d key=%s err=%v", i, key, err)
+			}
+		}
+		if got := ad.forks.Load(); got != 0 {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only adapters entered before cancel forks=%d keys=%v", got, ad.snapshotForkKeys())
+		}
+		cancel()
+		late := a.Enqueue(Intent{Op: OpFork, Target: Target{Runtime: types.RuntimeGrok, Key: "late"}})
+		if late == nil {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Enqueue succeeded after cancel forks=%d ctxErr=%v stopping=%t", ad.forks.Load(), a.ctx.Err(), a.stopping)
+		}
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Run err=%v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Run did not return after drain")
+		}
+		if got := ad.forks.Load(); got != 0 {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=0 keys=%v", got, ad.snapshotForkKeys())
+		}
+		if r := a.LastResult(); r != nil && r.Err == "" && r.Op == OpFork {
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued key got successful fork LastResult key=%s op=%s err=%q forks=%d", r.Key, r.Op, r.Err, ad.forks.Load())
+		}
+		for _, key := range keys {
+			for _, got := range ad.snapshotForkKeys() {
+				if got == key {
+					t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued key dispatched after cancel key=%s keys=%v", key, ad.snapshotForkKeys())
+				}
+			}
+		}
+	})
 }
 
 func TestActorCancellationWaitsForInFlightAndConfirmedKill(t *testing.T) {

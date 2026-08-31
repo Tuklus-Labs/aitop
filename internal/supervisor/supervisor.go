@@ -127,12 +127,10 @@ func (s *Supervisor) record(name string, err error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Suppress only the Supervisor-owned cancellation after stopping begins.
-	// An arbitrary context.Canceled while still open is a recorded failure.
-	if s.state != stateOpen {
-		if ctxErr := s.ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
-			return
-		}
+	// Suppress only the Supervisor-owned canceled context. An arbitrary
+	// context.Canceled while that context is still live is a recorded failure.
+	if ctxErr := s.ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return
 	}
 	s.failures = append(s.failures, Failure{Name: name, Err: err})
 }

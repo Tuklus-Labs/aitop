@@ -1361,6 +1361,7 @@ per frozen name.
 | `inference.TestInferencePollerCancelsInFlightRequest` | `GF-T10-CTX`, `GF-T10-SEAM` | Use `Client.Get` so in-flight HTTP ignores request context. | Remove only the in-flight cancel completion check. |
 | `act.TestActorRunRejectsSecondRun` | `GF-T10-ONE-RUN` | Allow a second `Run`. | Remove only the second-Run rejection check. |
 | `act.TestActorCancellationStopsEnqueueAndDrainsQueued` | `GF-T10-ACTOR-STOP`, `GF-T10-ONE-RUN` | Accept Enqueue while stopping, or dispatch drained queued work. | Remove only the Enqueue-stop or queued-drain check. |
+| `act.TestActorCancellationStopsEnqueueAndDrainsQueued/queued-only-not-dispatched` | `GF-T10-ACTOR-STOP` | Restore select-without-ctx.Err-first so queued work can dispatch after cancel. | Remove only the queued-forks==0 check. |
 | `act.TestActorCancellationWaitsForInFlightAndConfirmedKill` | `GF-T10-ACTOR-STOP` | Return from `Run` before in-flight workers and confirmed kill finish. | Remove only the wait-before-release check. |
 | `act.TestActorAdapterReceivesRunContext` | `GF-T10-CTX` | Pass `context.Background()` into adapters. | Remove only the Run-context identity check. |
 | `main.TestRegisterActorWithSupervisor` | `GF-T10-WIRE`, `GF-T10-MALFORMED` | Register the wrong name, call `Run` directly, or ignore the `Go` error. | Remove only the Go spy or exact error check. |
