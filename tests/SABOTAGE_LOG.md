@@ -2504,3 +2504,70 @@ reds on `schema-2-writes-an-unclaimed-state` instead. The two assertions
 therefore stand as documentation of the intent plus a guard against a future
 relaxation of that pair rule, and not as independently exercised gates. Said
 here rather than left for a reader to infer from a cycle list.
+
+### Native provenance Task 5, fix round 1
+
+The readiness wait, the portable ordering test, and their rules. Epoch head
+`7242eaf`, run as four bounded chunks of 25 (`--range`), combined log in
+`tests/sabotage-native-task5/sabotage_runs_native_task5.log`. 100 cycles, 100 as
+predicted, 47 production REDs and 53 predicted GREENs, across six packages.
+
+**S-T5-40 is the entry worth reading, because it is a test that did not
+discriminate the rule it was named for.** The plant gives each lane its own copy
+of the budget instead of one shared across the call, and it went GREEN. The
+plant was right and the fixture was wrong: three lanes that all hang cannot tell
+a shared budget from a per-lane one, because the wait gives up on the FIRST lane
+whose bound expires and returns, so both implementations return at one budget
+with nothing between them. The test was exercising the first timeout and calling
+it the sharing rule, and it had passed against a deliberately per-lane
+implementation.
+
+The fixture now has the lanes come in one after another -- 250 ms, 500 ms,
+never -- against a 400 ms budget, so the first lane spends most of the budget and
+the second cannot fit in what is left. The primary assertion is that the THIRD
+lane was never consulted, which is a fact rather than a measurement: reaching it
+at all means the budget was not shared, however the machine was scheduled. Every
+timing margin is one-directional, because load only ever makes a lane later,
+which can push the correct code toward reporting fewer lanes but never toward
+looking per-lane. Verified against the plant before committing: 3 of 3 red, at
+900 ms, which is 250 + 500 + a fresh 400 ms budget for the third lane.
+
+**Its weakened cycle then needed three relaxations, not one.** The per-lane
+plant trips the consulted-lane witness, the lane count, and the elapsed bound.
+The third is named for a different rule on purpose -- a budget per lane is also
+a wait not bounded by the number the caller supplied -- and it was found by
+running the weakened cycle, which reddened on it after the other two were
+relaxed. Three witnesses of one rule is a good property of the test and a thing
+the log should say out loud.
+
+**S-T5-45 is a recorded GREEN with a reason.** Removing the ordering test's
+overlay injection cannot red it on this box, because `/proc` here really does
+hold classified agent processes and the engine has rows either way. That is the
+finding restated rather than a gap in it, so the portability property is
+asserted where it CAN be reproduced -- against an empty spine, in
+`internal/join`: `TestDarkLocalUnitNeedsNoSpine`, planted at S-T5-45/46.
+
+**Two harness defects, both of which produced a plausible-looking run.**
+
+`P_EV_UNBOUNDED` removes the wait's bound, which is exactly the mutation a
+bounded wait needs tested, and it hangs by construction. It ran into the
+driver's own 600 s subprocess timeout, which raised, skipped the restore, and
+left the plant sitting in the working tree with the run reporting nothing about
+it. Every `go test` call now carries `-timeout 90s`, so Go kills the run and
+panics with a stack naming the blocked goroutine well inside the subprocess
+bound, and that bound is caught rather than propagated: a mismatch is a far
+better outcome than an abandoned restore.
+
+The patch preflight restores between patches with `git checkout --`, and it was
+run over an uncommitted test file, which it destroyed silently. A commit then
+went in claiming to add a test that was not in it, caught by grepping `HEAD` for
+the test name rather than trusting the message. The preflight is now folded into
+the committed driver behind the same dirty-tree guard the epoch already had. Same
+scar as the round-one entry, hit again after writing that one up: reading the
+rule did not prevent the repeat, putting the guard in the tool did.
+
+**And one about reading verdicts.** `go test -run X` prints `ok <pkg>` when it
+matches no test at all. A heredoc append had silently failed and the focused run
+read exactly like a passing test; only the preflight noticed, because a
+weakening's target string was missing. `-v` shows `[no tests to run]`; the bare
+form does not.

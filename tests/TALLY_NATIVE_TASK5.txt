@@ -1,20 +1,23 @@
-aitop native provenance Task 5 tally (post-sabotage-epoch)
-date: 2026-08-31T03:47:11-07:00
+aitop native provenance Task 5 tally (post-fix-round-1, post-sabotage-epoch)
+date: 2026-08-31T06:19:59-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-head: cac6e25f0ac25b12673a2ea5e89d4d36392870d2
+head: 7242eaf8e74435856a45c5d8d727996a58eb8da9
+epoch_head: 7242eafd0bd7ec5c53b5ad33e0dd2b39e94dda0c
 note: certifies production wiring of the four graph collectors, the horizon
-note: rule's live-process clause across all three scanners, and the fork
-note: runtime fix. Measured after the sabotage epoch, before the
-note: SABOTAGE_LOG/tally commit.
+note: rule's live-process clause, the fork runtime fix, and fix round 1
+note: (the one-shot's bounded readiness wait for native evidence, and the
+note: portable collector-ordering test). Measured after the sabotage epoch,
+note: before the SABOTAGE_LOG/tally commit. Supersedes the round-0 tally.
 
 commands (exact, from worktree root):
   gofmt -l internal/ cmd/
   go vet ./...
   go build ./...
   go test ./... -count=1
-  go test -race ./internal/native ./internal/snapshot ./cmd/aitop -count=1
+  go test -race ./internal/native ./internal/snapshot ./cmd/aitop \
+      ./internal/join ./internal/act ./internal/overlay/forks -count=1
 
 == gofmt -l internal/ cmd/ ==
 (empty above = formatted)
@@ -28,13 +31,16 @@ build_exit=0
 == go test ./... -count=1 ==
 packages_ok=25 non_ok_lines=0 all_exit=0
 
-== go test -race ./internal/native ./internal/snapshot ./cmd/aitop -count=1 ==
-ok  	aitop/internal/native	1.494s
-ok  	aitop/internal/snapshot	2.388s
-ok  	aitop/cmd/aitop	2.391s
+== go test -race (6 packages) -count=1 ==
+ok  	aitop/internal/native	1.980s
+ok  	aitop/internal/snapshot	3.128s
+ok  	aitop/cmd/aitop	5.884s
+ok  	aitop/internal/join	1.009s
+ok  	aitop/internal/act	1.087s
+ok  	aitop/internal/overlay/forks	1.009s
 race_exit=0
 
-== Task 5 tests added ==
+== Task 5 tests, round 0 ==
 internal/native/claude_test.go   TestClaudeScannerLiveSessionIsInsideHorizon
 internal/native/codex_test.go    TestCodexScannerLiveThreadIsInsideHorizon
 internal/native/grok_test.go     TestGrokScannerLiveSessionIsInsideHorizon
@@ -52,20 +58,43 @@ cmd/aitop/main_test.go           TestProductionRunInteractivePassesEngineHomes
 cmd/aitop/main_test.go           TestProductionCaptureOnceFillsRowsBeforeRunningCollectors
 count=15
 
-== sabotage epoch (final run, from a clean tree) ==
-total=72 as_predicted=72 mismatches=0
-production_RED=33 predicted_GREEN=39
-patch preflight: 71 distinct patches, each applied alone and vetted, all build
+== Task 5 tests, fix round 1 ==
+internal/native/native_test.go   TestCollectorSignalsItsFirstTickAfterItFinishes
+internal/native/native_test.go   TestCollectorSignalsItsFirstTickWhenTheScanFails
+internal/native/native_test.go   TestCollectorFirstTickStaysClosedAcrossTicks
+internal/native/native_test.go   TestCollectorFirstTickNodesAreWhatTheStoreTook
+internal/native/native_test.go   TestCollectorFirstTickNodesStopAtTheFirstTick
+internal/snapshot/               TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn
+internal/snapshot/               TestWaitNativeEvidenceIsBoundedByItsBudget
+internal/snapshot/               TestWaitNativeEvidenceSharesOneBudgetAcrossLanes
+internal/snapshot/               TestWaitNativeEvidenceWithNoLanesIsFree
+internal/snapshot/               TestAttachGraphReturnsOneLanePerHome
+internal/join/join_test.go       TestDarkLocalUnitNeedsNoSpine
+cmd/aitop/main_test.go           TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap
+cmd/aitop/main_test.go           TestProductionCaptureOnceReturnsAtTheCapForASlowerLane
+cmd/aitop/main_test.go           TestNativeFirstTickBudgetIsTwoSeconds
+count=14
+task_5_tests_total=29
+
+== sabotage epoch (final, from a clean tree, four bounded chunks of 25) ==
+total=100 as_predicted=100 mismatches=0
+production_RED=47 predicted_GREEN=53
+cycles by package: native=32 snapshot=22 cmd/aitop=21 join=12 act=7 forks=6
+patch preflight: 99 distinct patches, each applied alone and vetted, all build
+chunks: --range 0 25 / 25 50 / 50 75 / 75 100, each verified before the next
 log: tests/sabotage-native-task5/sabotage_runs_native_task5.log
 driver: tests/sabotage-native-task5/sabotage_driver.py
-epoch_head: cac6e25f0ac25b12673a2ea5e89d4d36392870d2
+note: S-T5-40 went GREEN on an earlier run. The plant was correct and the
+note: FIXTURE did not discriminate; see SABOTAGE_LOG. Re-aimed and re-run
+note: from a clean baseline, and its weakened cycle needed three
+note: relaxations because the plant trips three witnesses.
 
 == live probe on this box, real homes, three consecutive one-shots ==
 command: go run ./cmd/aitop --json --once
-nodes=32  edges=4  gaps=0  partial_nodes=0   (identical on all three runs)
-node id prefixes: claude:session=4  claude:agent=4  codex:thread=1
-                  grok:session=2   proc:*=21
-edges: 4 spawn, all provenance=native, all from this session's own root
-       claude session to its four subagents
-baseline for comparison, pre-task binary built from 70f2594 in a scratch dir:
-       nodes=26 edges=0 gaps=0   (occupancy only, no native ids, no edges)
+wall=196ms / 187ms / 184ms
+nodes=28  edges=1  gaps=0  partial_nodes=0   (identical on all three runs)
+node id prefixes: claude:session=4  claude:agent=1  grok:session=2  proc:*=21
+edges: 1 spawn, provenance=native
+note: counts differ from the round-0 probe (32 nodes, 4 edges) because sibling
+note: agents finished in between; the graph tracks live reality, which is the
+note: point. Baseline pre-task binary from 70f2594: 26 nodes, 0 edges.
