@@ -222,3 +222,42 @@ func pids(rows []types.Row) []int32 {
 	}
 	return o
 }
+
+// TestForkChildRowCarriesSubagentRole pins the role a forked child's row is
+// born with. graph.occupancyRole reads Process.Role and nothing else, so a row
+// with the zero role is dropped by the occupancy collector exactly as an
+// unknown-runtime row is -- the two conditions sit on one line, and fixing only
+// the runtime leaves the child as invisible as it was.
+//
+// The negative half is the load-bearing one. Roling every Overlay-only child
+// would satisfy the positive assertion while quietly enrolling inference slots
+// and any future orphan shape into the graph, so the rule is scoped to ForkOf,
+// whose only writer is act.writeForkSidecar.
+func TestForkChildRowCarriesSubagentRole(t *testing.T) {
+	spine := []types.Process{{PID: 5, StartTime: 1, AgentRoot: true, Role: types.RolePrimary, Runtime: types.RuntimeClaude}}
+	ov := []types.Overlay{
+		{PID: 5, StartTime: 1, SessionID: "P", Runtime: types.RuntimeClaude},
+		{SessionID: "C", ParentSession: "P", ForkOf: "P", Kind: "fork", Runtime: types.RuntimeClaude},
+		{SessionID: "S", ParentSession: "P", Kind: "slot", Runtime: types.RuntimeLocal},
+	}
+	rows := Join(spine, ov)
+	if len(rows) != 1 || len(rows[0].Children) != 2 {
+		t.Fatalf("fork-and-slot-both-nest violated: %+v", rows)
+	}
+	byID := map[string]types.Row{}
+	for _, child := range rows[0].Children {
+		byID[child.Overlay.SessionID] = child
+	}
+	if got := byID["C"].Process.Role; got != types.RoleSubagent {
+		t.Fatalf("fork-child-row-carries-subagent-role rule violated: role=%q want=%q", got, types.RoleSubagent)
+	}
+	if got := byID["S"].Process.Role; got != types.RoleDrop {
+		t.Fatalf("non-fork-orphan-keeps-its-empty-role rule violated: sessionID=S role=%q want empty", got)
+	}
+	// The role is written into an otherwise empty Process on purpose: a forked
+	// child has no process yet, and inventing one would put a pid of 0 into
+	// every consumer that reads the spine.
+	if byID["C"].Process.PID != 0 || byID["C"].Process.StartTime != 0 || !byID["C"].OverlayOnly {
+		t.Fatalf("fork-child-row-invents-no-process rule violated: %+v", byID["C"].Process)
+	}
+}

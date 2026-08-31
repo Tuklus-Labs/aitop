@@ -5,15 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"aitop/internal/types"
 )
 
 type forkSidecar struct {
-	Parent       string `json:"parent"`
-	ForkOf       string `json:"fork_of"`
-	Kind         string `json:"kind"`
-	CapsuleID    string `json:"capsule_id"`
-	Worktree     string `json:"worktree"`
-	ChildSession string `json:"child_session"`
+	Parent string `json:"parent"`
+	ForkOf string `json:"fork_of"`
+	Kind   string `json:"kind"`
+	// Runtime is the forked row's runtime. The child has no process until
+	// /proc sees it, so its row is Overlay-only and this field is the only
+	// thing that can say what runtime it is; without it the graph files the
+	// child as RuntimeUnknown and drops it before building a node.
+	Runtime      types.Runtime `json:"runtime"`
+	CapsuleID    string        `json:"capsule_id"`
+	Worktree     string        `json:"worktree"`
+	ChildSession string        `json:"child_session"`
 }
 
 // ForksRoot is $AITOP_FORKS_DIR, else $XDG_RUNTIME_DIR/aitop/forks.
@@ -51,6 +58,7 @@ func (a *Actor) writeForkSidecar(in Intent, cap Capsule, spawned Spawned) error 
 		Parent:       parent,
 		ForkOf:       parent,
 		Kind:         kind,
+		Runtime:      in.Target.Runtime,
 		CapsuleID:    firstNonEmpty(spawned.CapsuleID, cap.ID),
 		Worktree:     firstNonEmpty(spawned.Worktree, in.Target.Worktree, cap.Child.CWD),
 		ChildSession: id,

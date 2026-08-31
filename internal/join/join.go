@@ -113,6 +113,21 @@ func Join(spine []types.Process, overlays []types.Overlay) []types.Row {
 			if nestsUnder(c, r) {
 				consumed[i] = true
 				cr := types.Row{Overlay: sanitize(c), OverlayOK: true, OverlayOnly: true}
+				if c.ForkOf != "" {
+					// A forked child has no process until /proc sees it, so
+					// nothing has classified this row and Process.Role is the
+					// zero value. graph.occupancyRole reads that field and only
+					// that field, so an unroled row is dropped alongside an
+					// unknown-runtime one, on the same line, for a second reason.
+					// A fork sidecar is a standing claim that this session is
+					// somebody's child, which is what a subagent role says.
+					//
+					// This is the one place a Role is written from overlay
+					// evidence rather than from /proc. It is scoped to ForkOf,
+					// whose only writer is act.writeForkSidecar, so no row that
+					// a classifier could have roled is touched.
+					cr.Process.Role = types.RoleSubagent
+				}
 				r.Children = append(r.Children, cr)
 			}
 		}

@@ -9,12 +9,16 @@ import (
 )
 
 type file struct {
-	Parent       string `json:"parent"`
-	ForkOf       string `json:"fork_of"`
-	Kind         string `json:"kind"`
-	CapsuleID    string `json:"capsule_id"`
-	Worktree     string `json:"worktree"`
-	ChildSession string `json:"child_session"`
+	Parent string `json:"parent"`
+	ForkOf string `json:"fork_of"`
+	Kind   string `json:"kind"`
+	// Runtime is written by act.writeForkSidecar. A sidecar from an older
+	// aitop has no such field and decodes to RuntimeUnknown, which is the
+	// same value the reader produced before it existed.
+	Runtime      types.Runtime `json:"runtime"`
+	CapsuleID    string        `json:"capsule_id"`
+	Worktree     string        `json:"worktree"`
+	ChildSession string        `json:"child_session"`
 }
 
 // Collect reads $DIR/*.json fork sidecars into Overlay-only children.
@@ -42,6 +46,7 @@ func Collect(dir string) ([]types.Overlay, error) {
 		}
 		out = append(out, types.Overlay{
 			SessionID:     f.ChildSession,
+			Runtime:       f.Runtime,
 			ParentSession: f.Parent,
 			ForkOf:        f.ForkOf,
 			Kind:          f.Kind,
