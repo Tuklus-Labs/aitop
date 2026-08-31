@@ -1263,7 +1263,13 @@ func graphFrameDeps(snap *snapshot.Snapshot, captures *atomic.Int32) runDeps {
 	return deps
 }
 
-const graphFrameName = "gate-probe-79"
+const (
+	graphFrameName = "gate-probe-79"
+	// The requested size lives in one place, and the flag argument is built
+	// from it, so "I asked for WxH" and "I got WxH" cannot drift apart.
+	graphFrameW = 150
+	graphFrameH = 42
+)
 
 func graphFrameSnapshot(nodes ...graph.Node) *snapshot.Snapshot {
 	at := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
@@ -1315,15 +1321,28 @@ func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
 			var captures atomic.Int32
 			deps := graphFrameDeps(tc.snap, &captures)
 			var stdout, stderr bytes.Buffer
-			status := run(context.Background(), []string{"--screenshot-graph=150x42"}, &stdout, &stderr, deps)
+			size := fmt.Sprintf("%dx%d", graphFrameW, graphFrameH)
+			status := run(context.Background(), []string{"--screenshot-graph=" + size}, &stdout, &stderr, deps)
 			if status != 0 || captures.Load() != 1 {
 				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: status=%d captures=%d stderr=%q",
 					status, captures.Load(), stderr.String())
 			}
 			frame := ansi.Strip(stdout.String())
 			lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
-			if len(lines) != 42 {
-				t.Fatalf("screenshot-graph-renders-the-requested-size rule violated: %d lines want 42", len(lines))
+			if len(lines) != graphFrameH {
+				t.Fatalf("screenshot-graph-renders-the-requested-size rule violated: %d lines want %d", len(lines), graphFrameH)
+			}
+			// Height alone is not size, and asserting only the line count let a
+			// hardcoded WIDTH through the entire suite: a 42-line frame is 42
+			// lines at any width, the spy renderers discard their int arguments,
+			// and internal/ui's geometry test calls RenderGraph directly rather
+			// than through runScreenshot. Cell width, not byte length, because
+			// the pane is drawn in box glyphs.
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w != graphFrameW {
+					t.Fatalf("screenshot-graph-renders-the-requested-size rule violated: line %d is %d cells wide, want %d: %q",
+						i, w, graphFrameW, l)
+				}
 			}
 			// The pane's own border tab. "2 graph" also appears in the TABLE's key
 			// row, so a frame-wide scan for the bare word would certify the wrong
@@ -1349,7 +1368,8 @@ func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
 		var captures atomic.Int32
 		deps := graphFrameDeps(populated, &captures)
 		var stdout, stderr bytes.Buffer
-		status := run(context.Background(), []string{"--screenshot=150x42"}, &stdout, &stderr, deps)
+		size := fmt.Sprintf("%dx%d", graphFrameW, graphFrameH)
+		status := run(context.Background(), []string{"--screenshot=" + size}, &stdout, &stderr, deps)
 		if status != 0 {
 			t.Fatalf("screenshot-graph-leaves-the-table-flag-alone rule violated: status=%d stderr=%q", status, stderr.String())
 		}
