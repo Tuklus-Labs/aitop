@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"aitop/internal/act"
 	"aitop/internal/graph"
 	"aitop/internal/overlay/inference"
@@ -174,6 +176,7 @@ func (w *failWriter) Write(p []byte) (int, error) {
 
 type runSpies struct {
 	now, capture, writeJSON, theme, render, newSup, newActor, interactive atomic.Int32
+	renderGraph                                                           atomic.Int32
 	writeJSONNow, renderNow                                               time.Time
 	captureErr, writeJSONErr, interactiveErr                              error
 	nilSup, nilActor                                                      bool
@@ -225,6 +228,10 @@ func testRunDeps(t *testing.T) (runDeps, *runSpies) {
 		RenderScreenshot: func(*snapshot.Snapshot, theme.Theme, int, int, time.Time) string {
 			spies.render.Add(1)
 			return "FRAME"
+		},
+		RenderGraphScreenshot: func(*snapshot.Snapshot, theme.Theme, int, int, time.Time) string {
+			spies.renderGraph.Add(1)
+			return "GRAPHFRAME"
 		},
 		NewSupervisor: func(ctx context.Context) runSupervisor {
 			spies.newSup.Add(1)
@@ -321,6 +328,10 @@ func TestRunRejectsMissingSelectedDependency(t *testing.T) {
 		{"screenshot-capture", []string{"--screenshot=120x40"}, func(d *runDeps) { d.CaptureOnce = nil }, "dependency", "screenshot"},
 		{"screenshot-theme", []string{"--screenshot=120x40"}, func(d *runDeps) { d.ResolveTheme = nil }, "dependency", "screenshot"},
 		{"screenshot-render", []string{"--screenshot=120x40"}, func(d *runDeps) { d.RenderScreenshot = nil }, "dependency", "screenshot"},
+		{"screenshot-graph-now", []string{"--screenshot-graph=120x40"}, func(d *runDeps) { d.Now = nil }, "dependency", "screenshot"},
+		{"screenshot-graph-capture", []string{"--screenshot-graph=120x40"}, func(d *runDeps) { d.CaptureOnce = nil }, "dependency", "screenshot"},
+		{"screenshot-graph-theme", []string{"--screenshot-graph=120x40"}, func(d *runDeps) { d.ResolveTheme = nil }, "dependency", "screenshot"},
+		{"screenshot-graph-render", []string{"--screenshot-graph=120x40"}, func(d *runDeps) { d.RenderGraphScreenshot = nil }, "dependency", "screenshot"},
 		{"interactive-supervisor", nil, func(d *runDeps) { d.NewSupervisor = nil }, "dependency", "interactive"},
 		{"interactive-actor", nil, func(d *runDeps) { d.NewActor = nil }, "dependency", "interactive"},
 		{"interactive-run", nil, func(d *runDeps) { d.RunInteractive = nil }, "dependency", "interactive"},
@@ -768,6 +779,18 @@ func TestRunRejectsScreenshotWithJSONOrOnce(t *testing.T) {
 		{"--screenshot=120x40", "--once"},
 		{"--json", "--screenshot=120x40"},
 		{"--once", "--screenshot=120x40"},
+		{"--screenshot-graph="},
+		{"--json", "--screenshot-graph="},
+		{"--once", "--screenshot-graph="},
+		{"--screenshot-graph=", "--json"},
+		{"--screenshot-graph=", "--once"},
+		{"--screenshot-graph=120x40", "--json"},
+		{"--screenshot-graph=120x40", "--once"},
+		{"--json", "--screenshot-graph=120x40"},
+		{"--once", "--screenshot-graph=120x40"},
+		// Two frames, one stdout, no ordering worth defining.
+		{"--screenshot=120x40", "--screenshot-graph=120x40"},
+		{"--screenshot-graph=120x40", "--screenshot=120x40"},
 	}
 	for _, args := range cases {
 		deps, spies := testRunDeps(t)
@@ -776,8 +799,8 @@ func TestRunRejectsScreenshotWithJSONOrOnce(t *testing.T) {
 		if status != 2 {
 			t.Fatalf("run-rejects-screenshot-with-json-or-once rule violated: args=%v status=%d stderr=%q", args, status, stderr.String())
 		}
-		if spies.capture.Load() != 0 || spies.writeJSON.Load() != 0 || spies.newSup.Load() != 0 || spies.newActor.Load() != 0 || spies.theme.Load() != 0 || spies.render.Load() != 0 {
-			t.Fatalf("run-rejects-screenshot-with-json-or-once rule violated: args=%v capture=%d write=%d sup=%d actor=%d theme=%d render=%d", args, spies.capture.Load(), spies.writeJSON.Load(), spies.newSup.Load(), spies.newActor.Load(), spies.theme.Load(), spies.render.Load())
+		if spies.capture.Load() != 0 || spies.writeJSON.Load() != 0 || spies.newSup.Load() != 0 || spies.newActor.Load() != 0 || spies.theme.Load() != 0 || spies.render.Load() != 0 || spies.renderGraph.Load() != 0 {
+			t.Fatalf("run-rejects-screenshot-with-json-or-once rule violated: args=%v capture=%d write=%d sup=%d actor=%d theme=%d render=%d renderGraph=%d", args, spies.capture.Load(), spies.writeJSON.Load(), spies.newSup.Load(), spies.newActor.Load(), spies.theme.Load(), spies.render.Load(), spies.renderGraph.Load())
 		}
 		assertDiagnosticLine(t, strings.TrimSpace(stderr.String()), "usage", "flags", "usage", "")
 	}
@@ -1221,4 +1244,128 @@ func TestNativeFirstTickBudgetIsTwoSeconds(t *testing.T) {
 	if nativeFirstTickBudget != 2*time.Second {
 		t.Fatalf("native-first-tick-budget-is-two-seconds rule violated: budget=%s", nativeFirstTickBudget)
 	}
+}
+
+// --- Task 7: --screenshot-graph --------------------------------------------
+
+// graphFrameDeps wires the PRODUCTION renderers against a fixed snapshot. The
+// spy deps in testRunDeps hand back the string "FRAME", which proves routing
+// and says nothing about what was drawn; this test's whole claim is about what
+// lands on stdout, so the render funcs have to be the ones main() installs.
+func graphFrameDeps(snap *snapshot.Snapshot, captures *atomic.Int32) runDeps {
+	deps := productionRunDeps()
+	deps.Now = func() time.Time { return time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC) }
+	deps.ResolveTheme = func(string, string) theme.Theme { return theme.Nightfable() }
+	deps.CaptureOnce = func(context.Context, runOptions) (*snapshot.Snapshot, error) {
+		captures.Add(1)
+		return snap, nil
+	}
+	return deps
+}
+
+const graphFrameName = "gate-probe-79"
+
+func graphFrameSnapshot(nodes ...graph.Node) *snapshot.Snapshot {
+	at := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	return &snapshot.Snapshot{
+		At:    at,
+		Rows:  []types.Row{},
+		Graph: &graph.Snapshot{At: at, Nodes: nodes, Edges: []graph.Edge{}, Gaps: []graph.Gap{}},
+	}
+}
+
+// graphFrameBody is everything painted below the pane's own top border. The
+// header carries the canary on every frame, so a whole-frame scan for it would
+// pass on the table view too; only the body distinguishes "the graph pane drew
+// its empty state" from "aitop drew a frame".
+func graphFrameBody(t *testing.T, frame string) []string {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+	for i, l := range lines {
+		if strings.Contains(l, "┤ graph ├") {
+			return lines[i+1:]
+		}
+	}
+	return nil
+}
+
+func graphFrameLinesWith(lines []string, needle string) int {
+	n := 0
+	for _, l := range lines {
+		if strings.Contains(l, needle) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
+	populated := graphFrameSnapshot(graph.Node{
+		ID: graph.NodeID("claude:session:62fee278"), Runtime: types.RuntimeClaude,
+		Role: types.RolePrimary, ProvenName: graphFrameName, Model: "claude-fable-5",
+		Project: "aitop", State: graph.NodeState{Value: graph.StateActive},
+	})
+	empty := graphFrameSnapshot()
+
+	for _, tc := range []struct {
+		name           string
+		snap           *snapshot.Snapshot
+		wantName       int
+		wantCanaryBody int
+	}{
+		// A populated pane names its nodes and must NOT fall back to the empty
+		// state; an empty one says so out loud rather than painting blank, which
+		// is byte-identical to a dead collector.
+		{"nodes", populated, 1, 0},
+		{"empty", empty, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var captures atomic.Int32
+			deps := graphFrameDeps(tc.snap, &captures)
+			var stdout, stderr bytes.Buffer
+			status := run(context.Background(), []string{"--screenshot-graph=150x42"}, &stdout, &stderr, deps)
+			if status != 0 || captures.Load() != 1 {
+				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: status=%d captures=%d stderr=%q",
+					status, captures.Load(), stderr.String())
+			}
+			frame := ansi.Strip(stdout.String())
+			lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+			if len(lines) != 42 {
+				t.Fatalf("screenshot-graph-renders-the-requested-size rule violated: %d lines want 42", len(lines))
+			}
+			// The pane's own top border. "2 graph" also appears in the TABLE's key
+			// row, so a frame-wide scan for the word would certify the wrong view.
+			if !strings.Contains(frame, "┤ graph ├") {
+				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: no pane border tab in\n%s", frame)
+			}
+			body := graphFrameBody(t, frame)
+			if len(body) == 0 {
+				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: pane border is the last line of the frame")
+			}
+			if got := graphFrameLinesWith(body, graphFrameName); got != tc.wantName {
+				t.Fatalf("screenshot-graph-draws-the-nodes-it-was-given rule violated: %d body lines name %q want %d:\n%s",
+					got, graphFrameName, tc.wantName, strings.Join(body, "\n"))
+			}
+			if got := graphFrameLinesWith(body, snapshot.Canary); got != tc.wantCanaryBody {
+				t.Fatalf("screenshot-graph-empty-is-not-quiet rule violated: %d body lines carry %s want %d:\n%s",
+					got, snapshot.Canary, tc.wantCanaryBody, strings.Join(body, "\n"))
+			}
+		})
+	}
+
+	// The negative half. Without it "renders the graph pane" is unmeasured: a
+	// --screenshot-graph wired to ui.Render would still exit 0, still write 42
+	// lines, and still name the node, because the table draws it too.
+	t.Run("table flag is untouched", func(t *testing.T) {
+		var captures atomic.Int32
+		deps := graphFrameDeps(populated, &captures)
+		var stdout, stderr bytes.Buffer
+		status := run(context.Background(), []string{"--screenshot=150x42"}, &stdout, &stderr, deps)
+		if status != 0 {
+			t.Fatalf("screenshot-graph-leaves-the-table-flag-alone rule violated: status=%d stderr=%q", status, stderr.String())
+		}
+		if frame := ansi.Strip(stdout.String()); strings.Contains(frame, "┤ graph ├") {
+			t.Fatalf("screenshot-graph-leaves-the-table-flag-alone rule violated: --screenshot drew the graph pane:\n%s", frame)
+		}
+	})
 }

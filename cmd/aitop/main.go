@@ -30,14 +30,16 @@ import (
 )
 
 type runOptions struct {
-	JSON          bool
-	Once          bool
-	Screenshot    string
-	ScreenshotSet bool
-	ThemePath     string
-	PricesPath    string
-	NoPrices      bool
-	Interval      time.Duration
+	JSON               bool
+	Once               bool
+	Screenshot         string
+	ScreenshotSet      bool
+	ScreenshotGraph    string
+	ScreenshotGraphSet bool
+	ThemePath          string
+	PricesPath         string
+	NoPrices           bool
+	Interval           time.Duration
 }
 
 type runSupervisor interface {
@@ -89,9 +91,14 @@ type runDeps struct {
 	WriteJSON        func(*snapshot.Snapshot, io.Writer, time.Time) error
 	ResolveTheme     func(path, configured string) theme.Theme
 	RenderScreenshot func(*snapshot.Snapshot, theme.Theme, int, int, time.Time) string
-	NewSupervisor    func(context.Context) runSupervisor
-	NewActor         func() *act.Actor
-	RunInteractive   func(context.Context, runOptions, taskRegistrar, *act.Actor, io.Writer) error
+	// RenderGraphScreenshot paints the same snapshot as the graph pane rather
+	// than the table. Two funcs rather than a view argument because the two
+	// renderers are two exported entry points and nothing here should have to
+	// know how the pane picks itself.
+	RenderGraphScreenshot func(*snapshot.Snapshot, theme.Theme, int, int, time.Time) string
+	NewSupervisor         func(context.Context) runSupervisor
+	NewActor              func() *act.Actor
+	RunInteractive        func(context.Context, runOptions, taskRegistrar, *act.Actor, io.Writer) error
 }
 
 var (
@@ -117,6 +124,10 @@ func productionRunDeps() runDeps {
 		RenderScreenshot: func(s *snapshot.Snapshot, th theme.Theme, w, h int, now time.Time) string {
 			lipgloss.SetColorProfile(termenv.TrueColor)
 			return ui.Render(s, th, w, h, now)
+		},
+		RenderGraphScreenshot: func(s *snapshot.Snapshot, th theme.Theme, w, h int, now time.Time) string {
+			lipgloss.SetColorProfile(termenv.TrueColor)
+			return ui.RenderGraph(s, th, w, h, now)
 		},
 		NewSupervisor: func(ctx context.Context) runSupervisor {
 			return supervisor.New(ctx)
@@ -283,11 +294,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps runD
 		writeDiag(stderr, diagnosticScopeUsage, diagnosticTaskFlags, errUsage)
 		return 2
 	}
+	// Both screenshot flags write one frame to stdout and exit. Asking for both
+	// asks for two frames down one pipe with no ordering anyone could rely on.
+	if opt.ScreenshotGraphSet && (opt.ScreenshotGraph == "" || opt.JSON || opt.Once || opt.ScreenshotSet) {
+		writeDiag(stderr, diagnosticScopeUsage, diagnosticTaskFlags, errUsage)
+		return 2
+	}
 	if opt.JSON || opt.Once {
 		return runJSON(ctx, stdout, stderr, opt, deps)
 	}
 	if opt.ScreenshotSet {
-		return runScreenshot(ctx, stdout, stderr, opt, deps)
+		return runScreenshot(ctx, stdout, stderr, opt, deps, opt.Screenshot, deps.RenderScreenshot)
+	}
+	if opt.ScreenshotGraphSet {
+		return runScreenshot(ctx, stdout, stderr, opt, deps, opt.ScreenshotGraph, deps.RenderGraphScreenshot)
 	}
 	return runInteractive(ctx, stdout, stderr, opt, deps)
 }
@@ -300,23 +320,28 @@ func parseRunOptions(args []string) (runOptions, error) {
 	themePath := fs.String("theme", "", "btop .theme file")
 	interval := fs.Duration("interval", 100*time.Millisecond, "proc sample and paint interval")
 	screenshot := fs.String("screenshot", "", "render one frame at WxH to stdout and exit")
+	screenshotGraph := fs.String("screenshot-graph", "", "render one graph-pane frame at WxH to stdout and exit")
 	pricesPath := fs.String("prices", "", "price table override")
 	noPrices := fs.Bool("no-prices", false, "never estimate cost")
 	if err := fs.Parse(args); err != nil {
 		return runOptions{}, err
 	}
 	opt := runOptions{
-		JSON:       *jsonOnce,
-		Once:       *once,
-		Screenshot: *screenshot,
-		ThemePath:  *themePath,
-		PricesPath: *pricesPath,
-		NoPrices:   *noPrices,
-		Interval:   *interval,
+		JSON:            *jsonOnce,
+		Once:            *once,
+		Screenshot:      *screenshot,
+		ScreenshotGraph: *screenshotGraph,
+		ThemePath:       *themePath,
+		PricesPath:      *pricesPath,
+		NoPrices:        *noPrices,
+		Interval:        *interval,
 	}
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "screenshot" {
+		switch f.Name {
+		case "screenshot":
 			opt.ScreenshotSet = true
+		case "screenshot-graph":
+			opt.ScreenshotGraphSet = true
 		}
 	})
 	return opt, nil
@@ -340,13 +365,17 @@ func runJSON(ctx context.Context, stdout, stderr io.Writer, opt runOptions, deps
 	return 0
 }
 
-func runScreenshot(ctx context.Context, stdout, stderr io.Writer, opt runOptions, deps runDeps) int {
+// runScreenshot renders one frame and exits. Both screenshot flags come through
+// here with their own size and renderer; they share the diagnostic scope/task
+// pair because that table is a closed enum and both paths fail in exactly the
+// same places for exactly the same reasons.
+func runScreenshot(ctx context.Context, stdout, stderr io.Writer, opt runOptions, deps runDeps, size string, render func(*snapshot.Snapshot, theme.Theme, int, int, time.Time) string) int {
 	var width, height int
-	if _, err := fmt.Sscanf(opt.Screenshot, "%dx%d", &width, &height); err != nil || width < 1 || height < 1 {
+	if _, err := fmt.Sscanf(size, "%dx%d", &width, &height); err != nil || width < 1 || height < 1 {
 		writeDiag(stderr, diagnosticScopeUsage, diagnosticTaskFlags, errInvalidScreenshot)
 		return 2
 	}
-	if deps.Now == nil || deps.CaptureOnce == nil || deps.ResolveTheme == nil || deps.RenderScreenshot == nil {
+	if deps.Now == nil || deps.CaptureOnce == nil || deps.ResolveTheme == nil || render == nil {
 		writeDiag(stderr, diagnosticScopeDependency, diagnosticTaskScreenshot, errMissingDependency)
 		return 1
 	}
@@ -357,7 +386,7 @@ func runScreenshot(ctx context.Context, stdout, stderr io.Writer, opt runOptions
 		return 1
 	}
 	th := deps.ResolveTheme(opt.ThemePath, "")
-	frame := deps.RenderScreenshot(snap, th, width, height, now)
+	frame := render(snap, th, width, height, now)
 	n, err := io.WriteString(stdout, frame)
 	if err != nil || n != len(frame) {
 		if err == nil {
