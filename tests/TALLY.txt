@@ -99,3 +99,82 @@ re-run after writing this file:
 
 HEAD recorded here: a5c15eef8930fd776dcd0817d9b907b9a83f8fc2
 after evidence commit, this file is one commit behind that SHA by design.
+
+================================================================
+recertification: occupancy wiring tail
+date: 2026-08-30
+go: go1.27.0-X:nodwarf5 linux/amd64
+certified_tree: ae330623a05b0e543bff5cb1f37853be523fa8fc
+reason: three commits landed after the evidence commit (da342c0 interactive
+supervisor context, 06b0f01 occupancy rows into live graph, ae33062 passive
+idle-to-unknown). The prior tally certifies a5c15ee; this section certifies
+the current HEAD with the identical gate command list run from the repo root
+at /home/aegis/Projects/aitop.
+
+commands: identical to the list above, run 2026-08-30 from repo root.
+
+go test ./... -count=1
+  exit: 0
+  packages: 24
+  failed packages: 0
+  package results:
+    ok  	aitop/cmd/aitop	0.281s
+    ok  	aitop/internal/act	0.077s
+    ok  	aitop/internal/act/claude	0.003s
+    ok  	aitop/internal/act/codex	0.003s
+    ok  	aitop/internal/act/grok	0.003s
+    ok  	aitop/internal/act/local	0.003s
+    ok  	aitop/internal/classify	0.003s
+    ok  	aitop/internal/graph	1.606s
+    ok  	aitop/internal/join	0.003s
+    ok  	aitop/internal/overlay/claude	0.045s
+    ok  	aitop/internal/overlay/codex	0.004s
+    ok  	aitop/internal/overlay/forks	0.005s
+    ok  	aitop/internal/overlay/grok	0.005s
+    ok  	aitop/internal/overlay/heartbeat	0.004s
+    ok  	aitop/internal/overlay/inference	0.408s
+    ok  	aitop/internal/overlay/local	0.005s
+    ok  	aitop/internal/present	0.003s
+    ok  	aitop/internal/price	0.004s
+    ok  	aitop/internal/proc	0.033s
+    ok  	aitop/internal/snapshot	0.210s
+    ok  	aitop/internal/supervisor	0.003s
+    ok  	aitop/internal/theme	0.005s
+    ok  	aitop/internal/types	0.003s
+    ok  	aitop/internal/ui	0.017s
+
+go test -race ./... -count=1
+  exit: 0 (first run; no retry needed)
+  packages: 24
+  failed packages: 0
+  graph race: ok aitop/internal/graph 13.808s
+  proc race: ok aitop/internal/proc 1.089s
+
+go vet ./...
+  exit: 0
+
+go list -deps ./cmd/aitop | rg '^github.com/santhosh-tekuri/jsonschema'
+  match: none
+  exit: 0 (absence required)
+
+rg production jsonschema imports
+  match: none
+  exit: 0 (absence required)
+
+aegis-taste-check --fail-on critical
+  exit: 0
+  Total: 0 violations
+  critical: 0
+
+git diff --check
+  exit: 0
+
+live handoff probe (not a gate command; recorded):
+  ~/bin/aitop --json --once (binary built 2026-08-30 23:31 from this HEAD)
+  schema: 2, canary absent from JSON, graph non-null with 27 nodes / 0 edges
+  (edges await native collectors), 43 occupancy rows; TUI header canary
+  still present in --screenshot output as required.
+  running instance PID 2731977 started 23:32:40, after the rebuild.
+
+HEAD recorded here: ae330623a05b0e543bff5cb1f37853be523fa8fc
+after this tally commit, this file is one commit behind that SHA by design.
