@@ -561,8 +561,13 @@ CYCLES = [
     ("S-T6-34-weak", [P_KEY_ONE_DEAD_IN_PANE, W_ONE_RETURNS, W_ONE_SHOWS_TABLE, W_TAB_OPENS, W_TAB_CLOSES], T_KEYS, "GREEN", None),
     ("S-T6-35-prod", [P_DEFAULT_GRAPH], T_KEYS, "RED", R_TOGGLE),
     ("S-T6-35-weak", [P_DEFAULT_GRAPH, W_DEFAULT_TABLE, W_FOOTER_PRESETS, W_TWO_SHOWS, W_TWO_REPLACES, W_ONE_SHOWS_TABLE], T_KEYS, "GREEN", None),
-    ("S-T6-36-prod", [P_GRAPH_NOT_PAINTED], T_KEYS, "RED", R_TWO_SHOWS),
-    ("S-T6-36-weak", [P_GRAPH_NOT_PAINTED, W_TWO_SHOWS, W_TWO_REPLACES], T_KEYS, "GREEN", None),
+    # Predicted R_TWO_SHOWS and measured R_WAYBACK. With the preset ignored at
+    # paint time the 80-cell RenderGraph falls back to the table, whose key row
+    # at that width carries no `1 table` at all, and the way-back witness sits
+    # earlier in the test than the one this plant was aimed at.
+    ("S-T6-36-prod", [P_GRAPH_NOT_PAINTED], T_KEYS, "RED", R_WAYBACK),
+    ("S-T6-36-mid", [P_GRAPH_NOT_PAINTED, W_PANE_WAYBACK], T_KEYS, "RED", R_TWO_SHOWS),
+    ("S-T6-36-weak", [P_GRAPH_NOT_PAINTED, W_PANE_WAYBACK, W_TWO_SHOWS, W_TWO_REPLACES], T_KEYS, "GREEN", None),
     ("S-T6-36b-prod", [P_GRAPH_NOT_PAINTED], T_FOREST, "RED", R_EVERY),
     # The read-only rule. Without the pane's own keymap the table's runs
     # underneath it and k arms a kill on whatever row the cursor indexes.

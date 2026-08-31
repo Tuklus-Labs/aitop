@@ -1410,3 +1410,202 @@ S-T6-37-prod: AS-PREDICTED
 S-T6-37-weak: AS-PREDICTED
 total=8 as_predicted=8
 production_RED=42 predicted_GREEN=39
+head: b386958f67dc54641ca30be10de2f92e50f513fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [66:83) of 83
+
+===== S-T6-31-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 2 --
+ 1 file changed, 2 deletions(-)
+exit=1 wall=0.4s
+                                                                                       │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                                                                                │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                                                                                │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                                                                         │
+        │ subagents1 running · 12 declared                                                                                                                                                                     │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                                                                            │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                                                                            │
+        │                                                                                                                                                                                                      │
+        ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-31-prod: AS-PREDICTED
+S-T6-31-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-31-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go      | 2 --
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.007s
+S-T6-31-weak: AS-PREDICTED
+S-T6-31-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-31b-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.5s
+───────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮
+        │ ● aegis-79                             fable-5        aitop        active    │
+        │ └─● impl-t6?                           opus           aitop        thinking  │
+        │ ○ ✝ 01a022e3                           grok-4.6       aitop        completed │
+        │ └─• codex-worker                       gpt-5.6-sol    aitop        active    │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 2 graph ├──────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-31b-prod: AS-PREDICTED
+S-T6-31b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-31b-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go      | 1 -
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.009s
+S-T6-31b-weak: AS-PREDICTED
+S-T6-31b-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-32-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1110: graph-pane-keys-toggle rule violated: 2 did not open the graph
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-32-prod: AS-PREDICTED
+S-T6-32-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-32-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 8 ++++----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.006s
+S-T6-32-weak: AS-PREDICTED
+S-T6-32-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-33-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1130: graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph
+FAIL
+FAIL	aitop/internal/ui	0.007s
+FAIL
+S-T6-33-prod: AS-PREDICTED
+S-T6-33-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-33-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.005s
+S-T6-33-weak: AS-PREDICTED
+S-T6-33-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-34-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1122: graph-pane-keys-toggle rule violated: 1 did not return to the table
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-34-prod: AS-PREDICTED
+S-T6-34-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-34-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 8 ++++----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.006s
+S-T6-34-weak: AS-PREDICTED
+S-T6-34-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-35-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 +
+ 1 file changed, 1 insertion(+)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1089: graph-pane-keys-toggle rule violated: the table is not the default view
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-35-prod: AS-PREDICTED
+S-T6-35-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-35-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     |  1 +
+ internal/ui/view_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
+S-T6-35-weak: AS-PREDICTED
+S-T6-35-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-36-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+├─┤ sort cpu rss tok age name cost ▼ ├──────────────────────┤ 1/5 ├─╮
+        │ NAME                   PROJECT        CPU    RSS    AGE STAT   TITLE         │
+        │ ▾○ Grok +1             aitop         12.1   1.3G  4d15h busy   aitop: house-…│
+        │ └─◌ explore            —                —      —    10s busy   Scout Grok ov…│
+        │  ● claude              aitop          3.2   1.1G  4d15h busy   aitop polish …│
+        │ ▸▪ parlor ×1           —              0.0   129M  4d15h idle   parlor reside…│
+        │ ▸▪ monitors ×1         —              0.0   2.0G  4d15h idle   house monitors│
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        │                                                                              │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├───────╯
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-36-prod: MISMATCH
+S-T6-36-prod: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection
