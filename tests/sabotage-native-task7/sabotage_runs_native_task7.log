@@ -1,0 +1,305 @@
+head: 8e9af1d936789cde8ade39603081a0bf00c20af0
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [0:6) of 16
+
+===== S-T7-01-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/nodes (0.00s)
+        main_test.go:1332: screenshot-graph-renders-the-graph-pane rule violated: no pane border tab in
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ forest ├────────────────────────────────────────────────────────────────────────────────────────────────┤ 1 nodes · 0 edges · 0 gaps · topo r0 ├─╮
+            │ ● gate-probe-79                                                                                              fable-5        aitop        active
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/cmd/aitop	0.006s
+FAIL
+S-T7-01-prod: AS-PREDICTED
+S-T7-01-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-01-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main_test.go | 2 +-
+ internal/ui/view.go    | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/cmd/aitop	0.005s
+S-T7-01-weak: AS-PREDICTED
+S-T7-01-weak: restored, porcelain clean, focused test green again
+
+===== S-T7-02-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/nodes (0.00s)
+        main_test.go:1332: screenshot-graph-renders-the-graph-pane rule violated: no pane border tab in
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ agents ├─┤ sort cpu rss tok age name cost ▼ ├────────────────────────────────────────────────────────────────────────────────────────────────────╮
+            │ NAME                   PROJECT      MODEL            CPU    RSS    TOK CTX           COST   T/S    AGE STAT   TITLE                            
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ 2 graph ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├────────╯
+FAIL
+FAIL	aitop/cmd/aitop	0.005s
+FAIL
+S-T7-02-prod: AS-PREDICTED
+S-T7-02-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-02-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go      | 2 +-
+ cmd/aitop/main_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/cmd/aitop	0.005s
+S-T7-02-weak: AS-PREDICTED
+S-T7-02-weak: restored, porcelain clean, focused test green again
+
+===== S-T7-03-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/nodes (0.00s)
+        main_test.go:1332: screenshot-graph-renders-the-graph-pane rule violated: no pane border tab in
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ agents ├─┤ sort cpu rss tok age name cost ▼ ├────────────────────────────────────────────────────────────────────────────────────────────────────╮
+            │ NAME                   PROJECT      MODEL            CPU    RSS    TOK CTX           COST   T/S    AGE STAT   TITLE                            
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ 2 graph ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├────────╯
+FAIL
+FAIL	aitop/cmd/aitop	0.004s
+FAIL
+S-T7-03-prod: AS-PREDICTED
+S-T7-03-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-03-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go      | 2 +-
+ cmd/aitop/main_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/cmd/aitop	0.006s
+S-T7-03-weak: AS-PREDICTED
+S-T7-03-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [0:6)
+S-T7-01-prod: AS-PREDICTED
+S-T7-01-weak: AS-PREDICTED
+S-T7-02-prod: AS-PREDICTED
+S-T7-02-weak: AS-PREDICTED
+S-T7-03-prod: AS-PREDICTED
+S-T7-03-weak: AS-PREDICTED
+total=6 as_predicted=6
+production_RED=8 predicted_GREEN=8
+head: 8e9af1d936789cde8ade39603081a0bf00c20af0
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [6:12) of 16
+
+===== S-T7-04-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+internal/ui/graph.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.4s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/nodes (0.00s)
+        main_test.go:1335: screenshot-graph-draws-the-nodes-it-was-given rule violated: 0 lines name "gate-probe-79" want 1:
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ graph ├─────────────────────────────────────────────────────────────────────────────────────────────────┤ 1 nodes · 0 edges · 0 gaps · topo r0 ├─╮
+            │ ● 62fee278                                                                                                   fable-5      
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├────────────────────────────────────────────────────────────────────────────────────────────┤ 1/1 ├─╯
+FAIL
+FAIL	aitop/cmd/aitop	0.004s
+FAIL
+S-T7-04-prod: AS-PREDICTED
+S-T7-04-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-04-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main_test.go | 2 +-
+ internal/ui/graph.go   | 3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/cmd/aitop	0.004s
+S-T7-04-weak: AS-PREDICTED
+S-T7-04-weak: restored, porcelain clean, focused test green again
+
+===== S-T7-05-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/empty (0.00s)
+        main_test.go:1339: screenshot-graph-empty-is-not-quiet rule violated: 1 lines carry aitop-canary want 2:
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ graph ├─────────────────────────────────────────────────────────────────────────────────────────────────┤ 0 nodes · 0 edges · 0 gaps · topo r0 ├─╮
+            │                                                                                                                                       
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/cmd/aitop	0.005s
+FAIL
+S-T7-05-prod: AS-PREDICTED
+S-T7-05-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-05-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main_test.go | 2 +-
+ internal/ui/view.go    | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/cmd/aitop	0.007s
+S-T7-05-weak: AS-PREDICTED
+S-T7-05-weak: restored, porcelain clean, focused test green again
+
+===== S-T7-06-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/nodes (0.00s)
+        main_test.go:1326: screenshot-graph-renders-the-requested-size rule violated: 24 lines want 42
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/empty (0.00s)
+        main_test.go:1326: screenshot-graph-renders-the-requested-size rule violated: 24 lines want 42
+FAIL
+FAIL	aitop/cmd/aitop	0.004s
+FAIL
+S-T7-06-prod: AS-PREDICTED
+S-T7-06-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-06-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go      | 2 +-
+ cmd/aitop/main_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/cmd/aitop	0.004s
+S-T7-06-weak: AS-PREDICTED
+S-T7-06-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [6:12)
+S-T7-04-prod: AS-PREDICTED
+S-T7-04-weak: AS-PREDICTED
+S-T7-05-prod: AS-PREDICTED
+S-T7-05-weak: AS-PREDICTED
+S-T7-06-prod: AS-PREDICTED
+S-T7-06-weak: AS-PREDICTED
+total=6 as_predicted=6
+production_RED=8 predicted_GREEN=8
+head: 8e9af1d936789cde8ade39603081a0bf00c20af0
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [12:16) of 16
+
+===== S-T7-07-prod expect=RED run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestScreenshotGraphRendersTheGraphPane (0.00s)
+    --- FAIL: TestScreenshotGraphRendersTheGraphPane/table_flag_is_untouched (0.00s)
+        main_test.go:1357: screenshot-graph-leaves-the-table-flag-alone rule violated: --screenshot drew the graph pane:
+            ╭─┤ aitop ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┤ nightfable · aitop-canary ├─╮
+            │ 0 agents   ● 0 busy   ○ 0 idle   ◌ 0 wait   ✕ 0 err                                                                             overlay —   tick — │
+            │ cpu ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁      —   agents —   rss —   tok —   ctx —   cost —                                                                    │
+            ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+            ╭─┤ graph ├─────────────────────────────────────────────────────────────────────────────────────────────────┤ 1 nodes · 0 edges · 0 gaps · topo r0 ├─╮
+            │ ● gate-probe-79                                                                                             
+...[middle elided]...
+                                                                                                             │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            │                                                                                                                                                    │
+            ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├────────────────────────────────────────────────────────────────────────────────────────────┤ 1/1 ├─╯
+FAIL
+FAIL	aitop/cmd/aitop	0.005s
+FAIL
+S-T7-07-prod: AS-PREDICTED
+S-T7-07-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-07-weak expect=GREEN run=^TestScreenshotGraphRendersTheGraphPane$
+plant diffstat:
+cmd/aitop/main.go      | 2 +-
+ cmd/aitop/main_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/cmd/aitop	0.005s
+S-T7-07-weak: AS-PREDICTED
+S-T7-07-weak: restored, porcelain clean, focused test green again
+
+===== S-T7-08-prod expect=RED run=^TestRunRejectsScreenshotWithJSONOrOnce$
+plant diffstat:
+cmd/aitop/main.go | 6 ------
+ 1 file changed, 6 deletions(-)
+exit=1 wall=0.4s
+--- FAIL: TestRunRejectsScreenshotWithJSONOrOnce (0.00s)
+    main_test.go:800: run-rejects-screenshot-with-json-or-once rule violated: args=[--json --screenshot-graph=] status=0 stderr=""
+FAIL
+FAIL	aitop/cmd/aitop	0.003s
+FAIL
+S-T7-08-prod: AS-PREDICTED
+S-T7-08-prod: restored, porcelain clean, focused test green again
+
+===== S-T7-08-weak expect=GREEN run=^TestRunRejectsScreenshotWithJSONOrOnce$
+plant diffstat:
+cmd/aitop/main.go      |  6 ------
+ cmd/aitop/main_test.go | 12 ------------
+ 2 files changed, 18 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/cmd/aitop	0.002s
+S-T7-08-weak: AS-PREDICTED
+S-T7-08-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [12:16)
+S-T7-07-prod: AS-PREDICTED
+S-T7-07-weak: AS-PREDICTED
+S-T7-08-prod: AS-PREDICTED
+S-T7-08-weak: AS-PREDICTED
+total=4 as_predicted=4
+production_RED=8 predicted_GREEN=8

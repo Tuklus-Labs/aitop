@@ -2769,3 +2769,66 @@ is not a duplicate, and both its back references have to survive.
 S-T6-38b and S-T6-39b show the cursor plants moving nothing in the forest and
 geometry tests, which is exactly why they were invisible. Stating that from the
 epoch is worth more than stating it from reasoning.
+
+## Native provenance Task 7
+
+The `--screenshot-graph WxH` flag: `parseRunOptions`, the exclusivity guards and
+the renderer dispatch in `run()`, the shared `runScreenshot` body, and
+`productionRunDeps`'s wiring of `ui.RenderGraph`. Driver
+`tests/sabotage-native-task7/sabotage_driver.py`, log
+`tests/sabotage-native-task7/sabotage_runs_native_task7.log`. Epoch head
+`8e9af1d936789cde8ade39603081a0bf00c20af0`. 16 cycles, 16 as predicted, 8
+production REDs and 8 predicted GREENs, run as three bounded chunks against one
+head with no tree drift between them.
+
+The instrument under measurement is `TestScreenshotGraphRendersTheGraphPane`,
+which makes five separable claims about one frame (its size, its pane identity,
+the node it drew, the empty state it did not draw, and the table flag it did not
+disturb) plus the eleven rows added to
+`TestRunRejectsScreenshotWithJSONOrOnce`. Every one has a plant aimed at it.
+
+**Two predictions were wrong, and neither was visible by reading the plant.**
+
+- **S-T7-02/03 needed three relaxations, not two.** Wiring the graph flag to
+  `ui.Render` was predicted to move the border-tab and node-name assertions. It
+  moves a third: the table's empty state carries no second canary line, so
+  `screenshot-graph-empty-is-not-quiet` fires on the `empty` subtest while the
+  `nodes` subtest has already gone fully green. The canary assertion is the one
+  that survives a two-site weakening, which is the whole argument for having it.
+- **S-T7-04 was aimed at a branch this test never reaches.** The first form
+  emptied `graphNodeName`'s ID-TAIL fallback and went GREEN, because the fixture
+  node carries a `ProvenName` and returns before the fallback. Being right that
+  the pane must draw the name it was given is one claim; knowing which line
+  carries that claim is another. Re-aimed at the `ProvenName` preference, it
+  reds. The fallback branch stays covered where it is actually exercised, by
+  `internal/ui`'s own `TestGraphPaneRendersSpawnForest`, whose grok node is
+  deliberately unnamed.
+
+**The driver's own log was repaired mid-epoch.** Its excerpt kept the last 1800
+bytes of `go test` output. The offending state these assertions print is a whole
+150x42 frame, so the excerpt was several kilobytes of box drawing and the
+`t.Fatalf` rule phrase, printed first, was elided. The first mismatch had to be
+reproduced by hand to be read at all. The verdict itself was never affected (it
+matches on the untruncated output), but a record that cannot say which rule
+moved is not a record. It now keeps the head as well as the tail.
+
+**S-T7-08 is what earns the eleven added rows.** Dropping the whole graph
+exclusivity guard reds `run-rejects-screenshot-with-json-or-once`; the weakened
+cycle deletes exactly the eleven rows this task added and nothing else, and goes
+green. The nine pre-existing `--screenshot` rows pass either way, so the GREEN
+says the new rows are the ones doing the catching rather than riding along.
+
+**S-T7-01 and S-T7-07 are the two halves of pane identity.** S-T7-01 renames the
+pane's border tab and leaves everything else correct, so only an assertion
+reading the border can see it; its weakened form relaxes `┤ graph ├` to `┤ `,
+which is true of every pane aitop draws. S-T7-07 is the mirror: the TABLE flag
+wired to `ui.RenderGraph`, caught only by the negative half of the test. Without
+that negative half, "renders the graph pane" would be satisfied by a build in
+which both flags render the graph pane.
+
+**Plants reach outside `cmd/aitop` on purpose.** Four of the eight touch
+`internal/ui`, and they break `internal/ui`'s own suite while planted. That is
+not blast radius in the sense STYLE warns about: the instrument under
+measurement is the focused `cmd/aitop` test, and what matters is which of ITS
+assertions move. Restores are verified by porcelain and a post-restore green on
+the focused test, every cycle.
