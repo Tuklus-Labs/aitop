@@ -87,7 +87,7 @@ func TestForksOverlayReadsRuntime(t *testing.T) {
 		`","kind":"fork","capsule_id":"01k9","worktree":"/home/aegis/Projects/aitop",` +
 		`"child_session":"` + childSession + `","runtime":"claude"}`
 	if err := os.WriteFile(filepath.Join(dir, childSession+".json"), []byte(body), 0644); err != nil {
-		t.Fatal(err)
+		t.Fatalf("fork-sidecar-fixture-is-written rule violated: dir=%s child=%s err=%v", dir, childSession, err)
 	}
 
 	ovs, err := Collect(dir)

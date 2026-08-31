@@ -38,9 +38,45 @@ build_exit=0
 
 == go test ./... -count=1 ==
 packages_reporting=25 non_ok_lines=0 all_exit=0
+note: all_exit is go test's own status, not a grep's; non_ok_lines counts
+note: lines that do not start with "ok", so 0 is the only clean reading.
 
 == test function inventory (authoritative count) ==
 28
+note: restored 2026-08-31 at the Task 7 gate. This section had been reduced to
+note: the bare number with its 22 non-Task-4 names deleted, which left an
+note: "authoritative count" backed by nothing a reader could check. The names
+note: below are the internal/native test functions present at parent_commit
+note: 3f10b4d, re-derived from that tree rather than retyped, and they count 28.
+func TestNativeEmitOrderNodesBeforeEdges
+func TestNativeEventIDsDeterministicAcrossTicks
+func TestNativeIncarnationPrefersLiveProcess
+func TestNativeStateClaimGetsHeartbeatLane
+func TestNativeExitWindowSkipsStaleTerminals
+func TestNativeRejectionDoesNotStopRun
+func TestNativeDisplayBoundsAndUTF8
+func TestNativeDescriptorValid
+func TestNativeSpawnRelationshipSeamGuard
+func TestNativeSpawnEdgeLandsInRealShadow
+func TestCodexScannerNodeUsesOwnThreadID
+func TestCodexScannerSpawnFromParentThreadID
+func TestCodexScannerSkipsMalformedAndStale
+func TestCodexScannerScansOnlyRecentDateDirs
+func TestCodexCollectorMakesNoStateOrTerminalClaims
+func TestCodexCollectorLandsForkInRealShadow
+func TestGrokScannerRosterAndDarkMains
+func TestGrokScannerChildLifecycle
+func TestGrokScannerSpawnEdges
+func TestGrokScannerCWDEncoding
+func TestGrokScannerToleratesRosterShapes
+func TestGrokCollectorLandsSubagentInRealShadow
+func TestClaudeScannerFindsSidecarPrimaries
+func TestClaudeScannerEmitsAgentSpawnChain
+func TestClaudeScannerHorizonSkipsStale
+func TestClaudeScannerVanishesOrphanedChildren
+func TestClaudeScannerAgentIDFromFilename
+func TestClaudeCollectorLandsChainInRealShadow
+
 == Task 4 tests only ==
 6
 func TestGrokScannerRosterAndDarkMains
@@ -64,3 +100,6 @@ epoch_head: 3f10b4d13edd9350b6abfefb39a9818fe91e36ac
 pre-amendment   wall=824us   nodes=1  (bucket-bounded walk read 0 summaries)
 post-amendment  wall=5.62ms  nodes=1  (434 stats, 1 summary read)
 post-fix        wall=5.53ms  nodes=1  (all skip counters 0)
+note: restored 2026-08-31 at the Task 7 gate, having been dropped when the
+note: post-fix row was added: 5.53ms is 0.28% of the 2s nativePollInterval,
+note: which is the number that says whether the walk's cost matters at all.

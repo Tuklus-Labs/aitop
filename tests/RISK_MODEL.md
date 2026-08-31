@@ -1677,3 +1677,100 @@ treat every named branch as a separate physical production plant.
 | Native state claim decays without a heartbeat lane inside `HookFreshness` | `native.TestNativeStateClaimGetsHeartbeatLane` |
 | Runtime-supplied display string rejected by the event validator (over 128 bytes, invalid UTF-8, control runes, or cut mid-rune) | `native.TestNativeDisplayBoundsAndUTF8` |
 | Malformed collector descriptor (unsorted or duplicate capabilities) fails `NewShadow` at construction | `native.TestNativeDescriptorValid` |
+
+## Native provenance, Tasks 2-7 gate-time coverage reconciliation (2026-08-31)
+
+**Read the label before the table.** The Task 1 section above is a risk model:
+it was written before the tests. This section is not. Tasks 2 through 6 carried
+their risk models in their own briefs and never added rows here, so what
+follows is a reconciliation done at the phase gate, mapping each task's named
+risks onto the tests that actually exist. It is a coverage check, not a
+forecast, and it cannot do what a pre-test risk model does, which is discover a
+risk nobody had thought to test for. Recorded as a process finding: the next
+phase's per-task briefs should land their rows in this file when they are
+written, not at the gate.
+
+The test names below were taken from `go test <pkg> -list '.*'`, not from the
+briefs, so a row naming a test that no longer exists is impossible here.
+
+### Task 2, Claude sidecar and agent scanner
+
+| Risk | Test |
+|------|------|
+| Child identity taken from the transcript's `sessionId`, which is the PARENT's (the disk survey's named trap) | `native.TestClaudeScannerAgentIDFromFilename` |
+| Live sessions in the sidecar roster not observed at all | `native.TestClaudeScannerFindsSidecarPrimaries` |
+| Nested spawn mis-parented when `parentAgentId` is present | `native.TestClaudeScannerEmitsAgentSpawnChain` |
+| A session idle longer than `nativeHorizon` still observed | `native.TestClaudeScannerHorizonSkipsStale` |
+| Orphaned child of a dead session left terminal-less, so it never leaves the store | `native.TestClaudeScannerVanishesOrphanedChildren` |
+| Scanner output rejected by the production reconciler on endpoint identity | `native.TestClaudeCollectorLandsChainInRealShadow` |
+| `RelationshipID` carrying a canonical NodeID instead of the child's short id, hiding in expected Rejected noise | `native.TestNativeSpawnRelationshipSeamGuard` |
+
+### Task 3, codex thread and fork scanner
+
+| Risk | Test |
+|------|------|
+| Node keyed on `session_id` (the ROOT thread) rather than `id` (its own thread) | `native.TestCodexScannerNodeUsesOwnThreadID` |
+| Parent link taken from anything but the child's own `parent_thread_id` | `native.TestCodexScannerSpawnFromParentThreadID` |
+| Malformed or out-of-horizon rollout files admitted | `native.TestCodexScannerSkipsMalformedAndStale` |
+| The whole session store walked every tick instead of the recent date dirs | `native.TestCodexScannerScansOnlyRecentDateDirs` |
+| Codex claiming state or terminals it has no on-disk evidence for | `native.TestCodexCollectorMakesNoStateOrTerminalClaims` |
+| Fork rejected by the production reconciler | `native.TestCodexCollectorLandsForkInRealShadow` |
+
+### Task 4, grok session and subagent scanner
+
+| Risk | Test |
+|------|------|
+| Sessions present on disk but absent from the live roster never observed | `native.TestGrokScannerRosterAndDarkMains` |
+| A torn or unexpected `active_sessions.json` read taking the scanner down | `native.TestGrokScannerToleratesRosterShapes` |
+| Child lifecycle mis-stamped; a terminal inferred from roster absence rather than meta status | `native.TestGrokScannerChildLifecycle` |
+| Parent-side `subagents/<child>/meta.json` not producing a spawn edge | `native.TestGrokScannerSpawnEdges` |
+| cwd percent-encoding narrower than the scheme grok actually writes | `native.TestGrokScannerCWDEncoding` |
+| Scanner output rejected by the production reconciler | `native.TestGrokCollectorLandsSubagentInRealShadow` |
+
+### Task 5, wiring, liveness, and the one-shot
+
+| Risk | Test |
+|------|------|
+| Graph collectors pointed at homes other than the engine's | `snapshot.TestAttachGraphResolvesRelativeHomes`, `main.TestProductionCaptureOncePassesEngineHomes`, `main.TestProductionRunInteractivePassesEngineHomes` |
+| Collectors ticking before the engine holds rows, so native and occupancy fight over incarnations | `main.TestProductionCaptureOnceFillsRowsBeforeRunningCollectors` (canaried by `main.TestDarkLocalUnitNeedsNoSpine`, which proves the fixture still produces the row the ordering rule discriminates on) |
+| The one-shot sampling the graph before any native lane has finished its first walk, yielding an occupancy-only graph with `gaps=0` and no signal | `main.TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap`, `main.TestProductionCaptureOnceReturnsAtTheCapForASlowerLane`, `main.TestNativeFirstTickBudgetIsTwoSeconds`, `snapshot.TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn`, `snapshot.TestWaitNativeEvidenceIsBoundedByItsBudget`, `snapshot.TestWaitNativeEvidenceSharesOneBudgetAcrossLanes`, `snapshot.TestWaitNativeEvidenceWithNoLanesIsFree` |
+| First-tick readiness signalled before the tick finished, or re-opened on a later tick | `native.TestCollectorSignalsItsFirstTickAfterItFinishes`, `native.TestCollectorSignalsItsFirstTickWhenTheScanFails`, `native.TestCollectorFirstTickStaysClosedAcrossTicks`, `native.TestCollectorFirstTickNodesAreWhatTheStoreTook`, `native.TestCollectorFirstTickNodesStopAtTheFirstTick` |
+| Fork-child overlays carrying no `Runtime`, so every aitop-forked child is dropped at `occupancy.go` (the known repo bug this phase fixes) | `act.TestForkSidecarCarriesRuntime`, `act.TestForkSidecarRuntimeFollowsTheTarget`, `forks.TestForksOverlayReadsRuntime` |
+| Fork child dropped by occupancy on role rather than runtime | `join.TestForkChildRowCarriesSubagentRole` |
+| A native-only node with no claimed state breaking `--json` outright | `snapshot.TestSchema2WritesUnclaimedStateAsUnknown` |
+| A live session idle longer than the file-mtime horizon going dark despite its process being up | `native.TestClaudeScannerLiveSessionIsInsideHorizon`, `native.TestCodexScannerLiveThreadIsInsideHorizon`, `native.TestGrokScannerLiveSessionIsInsideHorizon` |
+| Native collectors not registered, registered against empty homes, or registered without a matching readiness lane | `snapshot.TestAttachGraphRegistersNativeCollectors`, `snapshot.TestAttachGraphEmptyHomesIsOccupancyOnly`, `snapshot.TestAttachGraphReturnsOneLanePerHome` |
+| Native nodes not bound to the live process the engine already knows about | `snapshot.TestAttachGraphBindsNativeNodesToLiveProcesses` |
+
+### Task 6, the graph pane
+
+| Risk | Test |
+|------|------|
+| The spawn forest flattened wrong (children not under parents, roots railed) | `ui.TestGraphPaneRendersSpawnForest` |
+| Ghost and partial nodes painted the same as live ones | `ui.TestGraphPaneMarksGhostAndPartial` |
+| An empty pane painting blank, which is byte-identical to a dead collector | `ui.TestGraphPaneEmptyShowsCanary` |
+| The pane unreachable, or reachable with no way back at a real terminal width | `ui.TestGraphPaneKeysToggle` |
+| A fabricated cycle in the store hanging the renderer | `ui.TestGraphPaneCycleSafe` |
+| The read-only pane offering action keys that mutate a session | `ui.TestGraphPaneSelectionCarriesNoActions` |
+| Frame geometry drifting from the requested size | `ui.TestGraphPaneKeepsFrameGeometry` |
+| Node ordering unstable across ticks | `ui.TestGraphPaneOrdersRuntimeGroupsThenName` |
+| A chatty node burying its own subtree under message edges | `ui.TestGraphPaneCapsMessageEdgesAtThree` |
+| The cursor and scroll window untested, so scrolling breaks unnoticed | `ui.TestGraphPaneScrollsThroughTheForest` |
+| One spawn re-observed under a second relationship id painting a phantom child | `ui.TestGraphPaneDuplicateSpawnEdgeDrawsOneChild` |
+| Every colour assertion in `internal/ui` vacuous, because lipgloss detects no terminal under `go test` and renders each style as the bare word | `ui.TestMain`'s colour-profile pin; the proof is sabotage cycle S-T6-30, which greens the ghost-dimming plant with the pin removed |
+
+### Task 7, the flag
+
+| Risk | Test |
+|------|------|
+| `ui.RenderGraph` exported with no production caller, so the phase's headline view has no runnable evidence and can rot unnoticed | `main.TestScreenshotGraphRendersTheGraphPane` |
+| `--screenshot-graph` rendering the table, or `--screenshot` rendering the graph | same test: the border-tab assertion and the negative half (sabotage S-T7-01, S-T7-02, S-T7-03, S-T7-07) |
+| Two frames written to one stdout when both screenshot flags are given | `main.TestRunRejectsScreenshotWithJSONOrOnce`, eleven added rows (sabotage S-T7-08) |
+
+**Blank rows: none.** Every row in this section and in the Task 1 section above
+names at least one test. 71 distinct names are cited across both; 70 of them
+appear in `go test <pkg> -list '.*'`. The 71st is `ui.TestMain`, which `-list`
+never reports because it is the harness entry point rather than a test case; it
+is present at `internal/ui/view_test.go:31`. Saying "70 of 71 plus a named
+exception" rather than "all present" is the point of checking against the
+toolchain instead of against the document.

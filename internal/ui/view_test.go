@@ -1381,7 +1381,7 @@ func TestGraphPaneDuplicateSpawnEdgeDrawsOneChild(t *testing.T) {
 	second.Relationship = "aimpl-t6-rescanned"
 	second.Key = graph.RelationshipEdgeKey(graph.EdgeSpawn, graphRootID, graphAgentID, second.Relationship)
 	if first.Key == second.Key {
-		t.Fatalf("graph-pane-duplicate-edge-precondition violated: the two observations share an edge key, so the store would have coalesced them and this measures nothing")
+		t.Fatalf("graph-pane-duplicate-edge-precondition violated: both observations key to %q, so the store would have coalesced them and this measures nothing", first.Key)
 	}
 	s.Graph.Edges[0] = first
 	s.Graph.Edges = append(s.Graph.Edges, second)

@@ -3623,3 +3623,73 @@ the two occupancy tests added at the tail). Every failure path names a
 present-tense rule with a unique greppable phrase and prints the offending
 state (actor/want, event counts, node counts, mappable-row cardinality,
 registrar counters). 30 sites PASS, zero repairs, zero exemptions.
+
+## Addendum 2026-08-31: native provenance, Tasks 1-7
+
+Covers every `_test.go` assertion site ADDED between the branch's merge base
+`fd4991403d704b69eba17383eb8cab81e56b1874` and the Task 7 gate head. The
+audited set is derived from `git diff -U0 <base>..HEAD -- '*_test.go'` rather
+than typed by hand, because a hand-maintained inventory omits sites in the same
+direction as the defect it exists to catch: whoever forgot to make an assertion
+loud also forgot to list it.
+
+| file | added lines | line range | assertion sites | named rule | prints state |
+|------|------------:|-----------:|----------------:|-----------:|-------------:|
+| `cmd/aitop/main_test.go` | 506 | 12-1360 | 28 | 28 | 27 |
+| `internal/act/sidecar_test.go` | 85 | 1-85 | 9 | 9 | 9 |
+| `internal/join/join_test.go` | 69 | 225-293 | 7 | 7 | 7 |
+| `internal/native/claude_test.go` | 713 | 1-713 | 81 | 81 | 81 |
+| `internal/native/codex_test.go` | 831 | 1-831 | 76 | 76 | 76 |
+| `internal/native/grok_test.go` | 1383 | 1-1383 | 125 | 125 | 125 |
+| `internal/native/native_test.go` | 938 | 1-938 | 87 | 87 | 84 |
+| `internal/overlay/forks/forks_test.go` | 85 | 7-146 | 7 | 7 | 7 |
+| `internal/snapshot/graph_attach_test.go` | 607 | 1-607 | 56 | 56 | 54 |
+| `internal/ui/view_test.go` | 514 | 4-1410 | 55 | 55 | 48 |
+| **total** | **5731** | | **531** | **531** | **518** |
+
+An assertion site is a `t.Fatalf`/`t.Errorf`/`t.Fatal`/`t.Error` call on an
+added line. "Named rule" means the message carries a present-tense
+`<phrase> rule violated` (or `<phrase> violated`); "prints state" means the
+call carries at least one format verb naming the offending value.
+
+**531 of 531 name a rule. 428 distinct phrases, and not one of them appears in
+more than one file**, so every phrase in this phase greps to exactly one place.
+That is the property the phrases exist for: a rule name that two files share
+sends whoever is reading a failure to the wrong test.
+
+### Repairs
+
+Two, both assertion-message-only, no production code touched. Both kept to a
+single line so no line number recorded elsewhere in this phase's evidence
+shifts underneath it.
+
+- `internal/overlay/forks/forks_test.go:90` was a bare `t.Fatal(err)` on the
+  fixture write, the only unnamed site in 531. Now
+  `fork-sidecar-fixture-is-written rule violated: dir=%s child=%s err=%v`. The
+  case for repairing rather than exempting it is the count: the other 530 name
+  their rule, including their fixture failures, so this one read as an
+  oversight rather than a convention.
+- `internal/ui/view_test.go:1384` asserted that two spawn observations do NOT
+  share an edge key and printed no key. It now prints the colliding key, which
+  is the only value that tells you whether the fixture or the key constructor
+  moved.
+
+### Exemptions
+
+Thirteen sites carry a named rule and no format verb. Every one asserts a
+TWO-VALUED condition whose single offending value the sentence already states
+in words, so a verb would print a constant:
+
+- `cmd/aitop/main_test.go:1059` (row count is zero, and the sentence says so)
+- `internal/native/native_test.go:798`, `:813`, `:843` (the first-tick signal is
+  open or closed, and each message names which)
+- `internal/snapshot/graph_attach_test.go:164`, `:188` (still running after
+  cancel; `GraphSnapshot=nil`)
+- `internal/ui/view_test.go:1096`, `:1118`, `:1130`, `:1138`, `:1142`, `:1170`,
+  `:1214` (the view is in the table or the graph, and each message names which
+  transition failed to happen)
+
+The line to hold: this exemption is for a boolean, not for a value the author
+did not bother to print. `:1384` above was in this list on the first pass and
+came out of it, because its condition compares two keys and the keys are worth
+seeing.
