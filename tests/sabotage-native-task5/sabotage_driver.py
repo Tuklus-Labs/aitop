@@ -28,6 +28,12 @@ import time
 REPO = "/home/aegis/Projects/aitop/.worktrees/native-provenance"
 LOG = os.path.join(REPO, "tests/sabotage-native-task5/sabotage_runs_native_task5.log")
 
+# Go's own per-run bound. It has to be shorter than the subprocess timeout, so a
+# plant that removes a wait's bound is killed by Go (which panics with a stack
+# naming the blocked goroutine) rather than by the harness (which would have to
+# abandon the restore).
+GO_TEST_TIMEOUT = "90s"
+
 NAT = "internal/native/native.go"
 NATT = "internal/native/native_test.go"
 CLA = "internal/native/claude.go"
@@ -765,7 +771,19 @@ def main():
         logf.flush()
 
     def sh(args, timeout=600):
-        return subprocess.run(args, cwd=REPO, capture_output=True, text=True, timeout=timeout)
+        # A plant CAN hang: removing a bound is exactly the mutation a bounded
+        # wait needs tested. Every go test call therefore carries its own
+        # -timeout, so Go kills the run and panics with a stack well inside the
+        # subprocess timeout below.
+        try:
+            return subprocess.run(args, cwd=REPO, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            # Never propagate: an exception here skips the restore and leaves a
+            # plant in the tree, which is a far worse outcome than a mismatch.
+            return subprocess.CompletedProcess(args, 124, exc.stdout or "", (exc.stderr or "") + "\nDRIVER: subprocess timed out")
+
+    def gotest(pkg, rx):
+        return sh(["go", "test", pkg, "-run", rx, "-count=1", "-timeout", GO_TEST_TIMEOUT])
 
     def porcelain():
         # This driver's own log lives in the repo on purpose, so the evidence is
@@ -809,7 +827,7 @@ def main():
             sys.exit(1)
         emit("plant diffstat:\n" + diff)
         started = time.time()
-        r = sh(["go", "test", pkg, "-run", rx, "-count=1"])
+        r = gotest(pkg, rx)
         out = r.stdout + r.stderr
         emit(f"exit={r.returncode} wall={time.time() - started:.1f}s")
         emit(out.strip()[-1800:])
@@ -824,7 +842,7 @@ def main():
         if dirt:
             emit(f"ABORT: restore left dirt: {dirt}")
             sys.exit(1)
-        rg = sh(["go", "test", pkg, "-run", rx, "-count=1"])
+        rg = gotest(pkg, rx)
         if rg.returncode != 0:
             emit(f"ABORT: post-restore green check failed:\n{rg.stdout}{rg.stderr}")
             sys.exit(1)
