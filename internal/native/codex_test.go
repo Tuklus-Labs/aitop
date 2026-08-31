@@ -435,6 +435,15 @@ func TestCodexScannerSkipsMalformedAndStale(t *testing.T) {
 	// Malformed first line.
 	tree.rawRollout(now, "019fbf6c-73f4-7c31-b617-1fa074e2bd7d", "{ this is not json\n"+codexTailRecords(), now.Add(-time.Minute))
 
+	// Valid JSON, a session_meta type, and a field of the wrong type. This is the
+	// only shape that separates the decode gate from the type gate: a syntax
+	// error never populates anything (encoding/json validates the whole input
+	// before decoding), so both gates catch it, while a type error leaves `type`
+	// set and only the decode gate sees it.
+	tree.rawRollout(now, "019fbd5d-6c9c-7c90-be06-757d9b3c42a3",
+		`{"timestamp":"2026-08-31T07:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"id":42,"session_id":"019faa13-fd80-7db0-a2fa-a71ffaa87690","thread_source":"user","cwd":"/home/aegis"}}`+"\n"+codexTailRecords(),
+		now.Add(-time.Minute))
+
 	// A first record that is not session_meta: what a rotated or truncated file
 	// looks like. Its payload carries no thread ids at all.
 	tree.rawRollout(now, "019fbf7b-41b3-7780-a7a0-5fda51ee8d69",
@@ -486,8 +495,8 @@ func TestCodexScannerSkipsMalformedAndStale(t *testing.T) {
 	}
 
 	// A skipped file and an absent one are the same silence without these.
-	if skipped := scanner.skippedRollouts.Load(); skipped != 3 {
-		t.Fatalf("codex-unreadable-rollouts-counted rule violated: skippedRollouts=%d want=3 (malformed, non-session_meta, oversized) ids=%v", skipped, nodeIDs(nodes))
+	if skipped := scanner.skippedRollouts.Load(); skipped != 4 {
+		t.Fatalf("codex-unreadable-rollouts-counted rule violated: skippedRollouts=%d want=4 (malformed, wrong-typed id, non-session_meta, oversized) ids=%v", skipped, nodeIDs(nodes))
 	}
 	if skipped := scanner.skippedThreads.Load(); skipped != 1 {
 		t.Fatalf("codex-unusable-thread-ids-counted rule violated: skippedThreads=%d want=1 (empty id) ids=%v", skipped, nodeIDs(nodes))
