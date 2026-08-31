@@ -1,0 +1,517 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aitop.local/schema/aitop-v2.schema.json",
+  "title": "aitop schema 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "at", "host", "rows", "graph"],
+  "properties": {
+    "schema": { "type": "integer", "const": 2 },
+    "at": { "$ref": "#/$defs/timestamp" },
+    "host": { "$ref": "#/$defs/dumpHost" },
+    "rows": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dumpRow" }
+    },
+    "graph": { "$ref": "#/$defs/dumpGraphV2" }
+  },
+  "$defs": {
+    "safeNonnegInt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "safePosInt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "pid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "finiteNonneg": {
+      "type": "number",
+      "minimum": 0,
+      "not": { "enum": ["NaN", "Infinity", "-Infinity"] }
+    },
+    "unitInterval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1,
+      "format": "date-time"
+    },
+    "idString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192
+    },
+    "displayString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "runtime": {
+      "type": "string",
+      "enum": ["grok", "claude", "codex", "hermes", "parlor", "forge", "local"]
+    },
+    "publicRole": {
+      "type": "string",
+      "enum": ["primary", "subagent", "sidecar", "desktop", "workflow", "monitor"]
+    },
+    "stateValue": {
+      "type": "string",
+      "enum": ["unknown", "idle", "active", "thinking", "tool", "shell", "waiting", "approval", "blocked", "error", "completed", "failed", "vanished"]
+    },
+    "authority": {
+      "type": "string",
+      "enum": ["passive", "native", "hook"]
+    },
+    "costSource": {
+      "type": "string",
+      "enum": ["table:builtin", "table:user"]
+    },
+    "sourceIncarnation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "not": { "const": "0000000000000000" }
+    },
+    "rawURLRelationship": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 86,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "rawURLTrace": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 22,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "dumpHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "ncpu": { "$ref": "#/$defs/safePosInt" },
+        "mem_total": { "$ref": "#/$defs/safeNonnegInt" },
+        "mem_avail": { "$ref": "#/$defs/safeNonnegInt" },
+        "uptime_s": { "$ref": "#/$defs/finiteNonneg" }
+      }
+    },
+    "dumpUse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "cache_read", "cache_write", "output"],
+      "properties": {
+        "input": { "$ref": "#/$defs/safeNonnegInt" },
+        "cache_read": { "$ref": "#/$defs/safeNonnegInt" },
+        "cache_write": { "$ref": "#/$defs/safeNonnegInt" },
+        "output": { "$ref": "#/$defs/safeNonnegInt" }
+      }
+    },
+    "dumpRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overlay_ok"],
+      "properties": {
+        "pid": { "$ref": "#/$defs/pid" },
+        "comm": { "type": "string" },
+        "name": { "type": "string" },
+        "project": { "type": "string" },
+        "model": { "type": "string" },
+        "role": { "type": "string" },
+        "runtime": { "type": "string" },
+        "status": { "type": "string" },
+        "rss": { "$ref": "#/$defs/safeNonnegInt" },
+        "cpu": { "$ref": "#/$defs/finiteNonneg" },
+        "tokens": { "$ref": "#/$defs/safeNonnegInt" },
+        "ctx_window": { "$ref": "#/$defs/safeNonnegInt" },
+        "ctx_fill": { "$ref": "#/$defs/unitInterval" },
+        "cost_usd": { "$ref": "#/$defs/finiteNonneg" },
+        "cost_source": { "$ref": "#/$defs/costSource" },
+        "ctx_window_source": { "type": "string" },
+        "usage": { "$ref": "#/$defs/dumpUse" },
+        "age_s": { "$ref": "#/$defs/finiteNonneg" },
+        "subagents_live": { "$ref": "#/$defs/safeNonnegInt" },
+        "subagents_declared": { "$ref": "#/$defs/safeNonnegInt" },
+        "subagent_status": { "type": "string" },
+        "subagent_type": { "type": "string" },
+        "title": { "type": "string" },
+        "session_name": { "type": "string" },
+        "session_id": { "type": "string" },
+        "branch": { "type": "string" },
+        "effort": { "type": "string" },
+        "entrypoint": { "type": "string" },
+        "tag": { "type": "string" },
+        "fork_of": { "type": "string" },
+        "kind": { "type": "string" },
+        "worktree": { "type": "string" },
+        "capsule_id": { "type": "string" },
+        "tok_per_sec": { "$ref": "#/$defs/finiteNonneg" },
+        "dark": { "const": true },
+        "slot_index": { "$ref": "#/$defs/safeNonnegInt" },
+        "overlay_ok": { "type": "boolean" },
+        "overlay_only": { "const": true },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dumpRow" }
+        }
+      }
+    },
+    "dumpGraphV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "topology_revision", "visibility_revision", "state_revision", "metrics_revision", "nodes", "edges", "gaps"],
+      "properties": {
+        "at": { "$ref": "#/$defs/timestamp" },
+        "topology_revision": { "$ref": "#/$defs/safeNonnegInt" },
+        "visibility_revision": { "$ref": "#/$defs/safeNonnegInt" },
+        "state_revision": { "$ref": "#/$defs/safeNonnegInt" },
+        "metrics_revision": { "$ref": "#/$defs/safeNonnegInt" },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dumpNode" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dumpEdge" }
+        },
+        "gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dumpGap" }
+        }
+      }
+    },
+    "dumpGraphSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "runtime", "incarnation", "authority"],
+      "properties": {
+        "id": { "$ref": "#/$defs/idString" },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "incarnation": { "$ref": "#/$defs/sourceIncarnation" },
+        "authority": { "$ref": "#/$defs/authority" }
+      }
+    },
+    "dumpGraphProcess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "start_ticks"],
+      "properties": {
+        "pid": { "$ref": "#/$defs/pid" },
+        "start_ticks": { "$ref": "#/$defs/safePosInt" }
+      }
+    },
+    "dumpGraphUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "cache_read", "cache_write", "output"],
+      "properties": {
+        "input": { "$ref": "#/$defs/safeNonnegInt" },
+        "cache_read": { "$ref": "#/$defs/safeNonnegInt" },
+        "cache_write": { "$ref": "#/$defs/safeNonnegInt" },
+        "output": { "$ref": "#/$defs/safeNonnegInt" }
+      }
+    },
+    "dumpGraphMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "usage": { "$ref": "#/$defs/dumpGraphUsage" },
+        "token_rate": { "$ref": "#/$defs/finiteNonneg" },
+        "context_used": { "$ref": "#/$defs/safeNonnegInt" },
+        "context_window": { "$ref": "#/$defs/safeNonnegInt" },
+        "context_fill": { "$ref": "#/$defs/unitInterval" },
+        "cache_use": { "$ref": "#/$defs/unitInterval" },
+        "cost_usd": { "$ref": "#/$defs/finiteNonneg" },
+        "cost_source": { "$ref": "#/$defs/costSource" }
+      }
+    },
+    "dumpGraphState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "stale"],
+      "properties": {
+        "value": { "$ref": "#/$defs/stateValue" },
+        "source": { "$ref": "#/$defs/dumpGraphSource" },
+        "since": { "$ref": "#/$defs/timestamp" },
+        "valid_until": { "$ref": "#/$defs/timestamp" },
+        "stale": { "type": "boolean" }
+      },
+      "dependentRequired": {
+        "source": ["since"],
+        "since": ["source"]
+      },
+      "allOf": [
+        {
+          "if": { "required": ["valid_until"] },
+          "then": { "required": ["source", "since"] }
+        },
+        {
+          "if": {
+            "required": ["value"],
+            "properties": { "value": { "enum": ["completed", "failed", "vanished"] } }
+          },
+          "then": {
+            "required": ["source", "since"],
+            "not": { "required": ["valid_until"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["value"],
+            "properties": { "value": { "enum": ["approval", "blocked"] } }
+          },
+          "then": { "not": { "required": ["valid_until"] } }
+        },
+        {
+          "if": {
+            "required": ["source"],
+            "properties": {
+              "source": {
+                "required": ["authority"],
+                "properties": { "authority": { "const": "passive" } }
+              }
+            }
+          },
+          "then": { "not": { "required": ["valid_until"] } }
+        }
+      ]
+    },
+    "dumpGraphTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "state", "source"],
+      "properties": {
+        "at": { "$ref": "#/$defs/timestamp" },
+        "state": { "$ref": "#/$defs/stateValue" },
+        "source": { "$ref": "#/$defs/dumpGraphSource" }
+      }
+    },
+    "dumpNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "incarnation", "runtime", "role", "state", "metrics", "pinned", "telemetry_at", "partial", "transitions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/idString" },
+        "incarnation": { "$ref": "#/$defs/idString" },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "role": { "$ref": "#/$defs/publicRole" },
+        "proven_name": { "$ref": "#/$defs/displayString" },
+        "model": { "$ref": "#/$defs/displayString" },
+        "project": { "$ref": "#/$defs/displayString" },
+        "worktree": { "$ref": "#/$defs/displayString" },
+        "task_name": { "$ref": "#/$defs/displayString" },
+        "process": { "$ref": "#/$defs/dumpGraphProcess" },
+        "state": { "$ref": "#/$defs/dumpGraphState" },
+        "metrics": { "$ref": "#/$defs/dumpGraphMetrics" },
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "completed_at": { "$ref": "#/$defs/timestamp" },
+        "failed_at": { "$ref": "#/$defs/timestamp" },
+        "ghost_expires_at": { "$ref": "#/$defs/timestamp" },
+        "pinned": { "type": "boolean" },
+        "telemetry_at": { "$ref": "#/$defs/timestamp" },
+        "partial": { "type": "boolean" },
+        "transitions": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/dumpGraphTransition" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "required": ["value"],
+                "properties": { "value": { "const": "completed" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["completed_at", "ghost_expires_at"],
+            "not": { "required": ["failed_at"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "required": ["value"],
+                "properties": { "value": { "const": "failed" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["failed_at", "ghost_expires_at"],
+            "not": { "required": ["completed_at"] }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "required": ["value"],
+                "properties": { "value": { "const": "vanished" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["ghost_expires_at"],
+            "not": {
+              "anyOf": [
+                { "required": ["completed_at"] },
+                { "required": ["failed_at"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["state"],
+            "properties": {
+              "state": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "enum": ["unknown", "idle", "active", "thinking", "tool", "shell", "waiting", "approval", "blocked", "error"]
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["completed_at"] },
+                { "required": ["failed_at"] },
+                { "required": ["ghost_expires_at"] }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "dumpDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unknown", "emitted", "received", "failed", "latest"],
+      "properties": {
+        "unknown": { "$ref": "#/$defs/safeNonnegInt" },
+        "emitted": { "$ref": "#/$defs/safeNonnegInt" },
+        "received": { "$ref": "#/$defs/safeNonnegInt" },
+        "failed": { "$ref": "#/$defs/safeNonnegInt" },
+        "latest": { "type": "string", "enum": ["unknown", "emitted", "received", "failed"] }
+      }
+    },
+    "dumpEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "source", "target", "type", "provenance", "created_at", "last_activity", "event_count", "lifecycle", "partial"],
+      "properties": {
+        "key": { "$ref": "#/$defs/idString" },
+        "source": { "$ref": "#/$defs/idString" },
+        "target": { "$ref": "#/$defs/idString" },
+        "type": { "type": "string", "enum": ["spawn", "launch", "message", "service"] },
+        "provenance": { "type": "string", "enum": ["native", "aitop-sidecar", "trace-handshake"] },
+        "relationship": { "$ref": "#/$defs/rawURLRelationship" },
+        "trace": { "$ref": "#/$defs/rawURLTrace" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "last_activity": { "$ref": "#/$defs/timestamp" },
+        "event_count": { "$ref": "#/$defs/safePosInt" },
+        "lifecycle": { "type": "string", "enum": ["active", "ghost"] },
+        "message_kind": {
+          "type": "string",
+          "enum": ["direct", "broadcast", "shutdown_request", "shutdown_response", "plan_approval_response"]
+        },
+        "delivery": { "$ref": "#/$defs/dumpDelivery" },
+        "partial": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "enum": ["spawn", "service"] } }
+          },
+          "then": {
+            "required": ["relationship"],
+            "properties": {
+              "provenance": { "enum": ["native", "aitop-sidecar"] }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["trace"] },
+                { "required": ["message_kind"] },
+                { "required": ["delivery"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "launch" } }
+          },
+          "then": {
+            "required": ["relationship", "trace"],
+            "properties": {
+              "provenance": { "const": "trace-handshake" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["message_kind"] },
+                { "required": ["delivery"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "message" } }
+          },
+          "then": {
+            "required": ["message_kind", "delivery", "lifecycle"],
+            "properties": {
+              "lifecycle": { "const": "active" },
+              "provenance": { "const": "native" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["relationship"] },
+                { "required": ["trace"] }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "dumpGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "kind", "at", "count"],
+      "properties": {
+        "source": { "$ref": "#/$defs/idString" },
+        "capability": {
+          "type": "string",
+          "enum": ["identity", "state", "metrics", "spawn", "message", "terminal", "service"]
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["collector", "schema", "sequence", "saturation", "collision", "resource"]
+        },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "count": { "$ref": "#/$defs/safePosInt" }
+      }
+    }
+  }
+}

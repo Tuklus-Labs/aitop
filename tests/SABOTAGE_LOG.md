@@ -1860,3 +1860,38 @@ TDD RED before the production fix (20/20): `queued-only Enqueue succeeded after 
 | T10-13b | `TestActorCancellationStopsEnqueueAndDrainsQueued/queued-only-not-dispatched` | Restore select-without-`ctx.Err()`-first and skip `run` cancel guards so queued work can dispatch after cancel. Prediction: adapter fork count is nonzero. | RED (10/10): `actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=1 want=0 keys=[queued:a]` (counts varied 1-3). | Remove only the queued-forks==0 check. false-GREEN 0 on known-good. Stacked still RED on the sibling successful-LastResult check, as specified (narrow plant). | Restored snapshot hashes. Load-bearing forks==0 oracle. |
 
 Supervisor `record` now suppresses when `s.ctx.Err() != nil && errors.Is(err, s.ctx.Err())` regardless of state. `TestSupervisorSuppressesOnlyOwnedCancellation` still passes.
+
+
+## Task 11 schema-2 JSON and one-shot command paths (2026-08-30)
+
+Physical sabotage of the frozen 66 names. Good copies lived in `/tmp/aitop-task11-good`. Every restore used `cp -f` from that snapshot, never `git checkout --`. Production plants RED; assertion plants false-GREEN on known-good production. Combined diagnostic rows also planted each named branch separately.
+
+66/66 production RED. 66/66 assertion plants GREEN on known-good. Extra branch plants: missing-dependency `%v` RED, stderr retry RED, JSON write `%v` RED, interactive `%v` RED, shutdown `%v` RED. Full-Supervisor plant (`pass sup` as registrar) plus removal of the dynamic-capability cluster (Shutdown / runSupervisor / taskRegistrarFunc) falsely GREEN while context, one-writer, and Go-delegation remain.
+
+Runner log (`PROD`/`ASSERT` per exact name): 132/132 ok. Restore hashes after the epoch matched the pre-plant files (`json_v2.go` `2988e0dc4d8b162f353506dba887814d892dd249ca46045d729d67d78b15a9be`, `main.go` `f024c59b4f446a38f6246a56541439b4183d307479c71c5663d1beee01297988`, schema `212b2181a0d430abf0a2b2897ff306e94adf03a33954068ba2e4272a6ae4f42d`).
+
+### Mutation escalation
+
+Attempted the pinned tool on both critical production files as specified.
+
+```
+aitop_task11_mutation_dir="$(mktemp -d)"
+GOBIN="$aitop_task11_mutation_dir" go install github.com/zimmski/go-mutesting/cmd/go-mutesting@v0.0.0-20210610104036-6d9217011a00
+aitop_task11_mutation_tool="$aitop_task11_mutation_dir/go-mutesting"
+go version
+go version -m "$aitop_task11_mutation_tool"
+"$aitop_task11_mutation_tool" --exec-timeout=15 internal/snapshot/json_v2.go
+"$aitop_task11_mutation_tool" --exec-timeout=15 cmd/aitop/main.go
+```
+
+- Go: `go1.27.0-X:nodwarf5 linux/amd64`
+- Tool: `github.com/zimmski/go-mutesting v0.0.0-20210610104036-6d9217011a00 h1:KNiPkpQpqXvq40f8hh/1T7QasLJT/1MuBoOYA2vlxJk=`
+- `json_v2.go` exit 2; `main.go` exit 2
+- Crash: `go/types.(*StdSizes).Sizeof(0x0, {0xad9228, 0xae4d20})` nil-receiver during package loading near `/usr/lib/go/src/internal/coverage/rtcov/rtcov.go:19:6`
+- No timeout / timed out / signal: killed
+- Killed/survived/timed-out totals unavailable; Task 11 has no mutation score
+- Post-run `diff` against the good copies of `json_v2.go` and `main.go` was empty
+
+Fallback report: the 66 exhaustive physical production mutants above.
+
+This is the same same-tool/same-family crash previously recorded for Tasks 2A/3A under the same pin.

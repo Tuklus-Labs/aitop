@@ -1,0 +1,16 @@
+{
+  "canary": "aitop-canary",
+  "at": "2026-08-26T12:00:00Z",
+  "rows": [
+    {
+      "pid": 42,
+      "comm": "grok",
+      "name": "grok",
+      "role": "primary",
+      "runtime": "grok",
+      "status": "idle",
+      "rss": 2048,
+      "overlay_ok": false
+    }
+  ]
+}

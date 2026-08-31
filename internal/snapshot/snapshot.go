@@ -1,8 +1,6 @@
 package snapshot
 
 import (
-	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -283,12 +281,6 @@ func flattenWith(r types.Row, host proc.HostSample, now time.Time) dumpRow {
 		out.Children = append(out.Children, flattenWith(c, host, now))
 	}
 	return out
-}
-
-func WriteJSON(s *Snapshot, w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(ToDumpSnapshot(s, time.Now()))
 }
 
 func DefaultHomes() (procRoot, grokHome, claudeHome, codexHome, hbDir, forksDir string) {

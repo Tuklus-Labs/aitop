@@ -1447,3 +1447,189 @@ subrows within the frozen top-level test and do not add top-level test names.
 | `GF-T7-PUBLIC-EDGE` | `TestReconcileMessageDeliveryCountsMixed/public-message-shape`, `TestEdgePublicShapeOmitsEndpointIncarnations` |
 | `GF-T7-SCOPE` | `TestReconcilePublicLaunchRejected`, `TestEdgePublicShapeOmitsEndpointIncarnations` |
 | `GF-T7-FLEET` | `TestReconcileNativeSpawn/representative-fleet-batch` |
+
+#### Task 11 schema-2 JSON and one-shot command paths: eight-axis risk model
+
+Task 11 owns schema-2 JSON Schema, strict DTO conversion/validation, the compact
+writer, injected `run`/`runDeps`/`safeDiagnostic`, and screenshot/JSON/interactive
+command branches. JSON Schema is Draft 2020-12 syntax only; semantic validation
+on `dumpV2` is the authority for byte limits, referential integrity, canonical
+times, RawURL pad bits, and delivery sums. The JSON Schema artifact does not
+replace that validator. Tests use completion channels and contexts, not Sleep.
+Production packages do not import `github.com/santhosh-tekuri/jsonschema`.
+
+**Invariants**
+
+- `GF-T11-SCHEMA`: Schema 2 is integer constant 2. Root is closed and requires
+  exactly `schema`, `at`, `host`, `rows`, and `graph`. Host is always an object.
+  Required arrays are non-null. There is no production canary.
+- `GF-T11-ROW`: `dumpRow` stays the 39-field schema-1 compatibility contract.
+  `overlay_ok` is the sole required row property. Known zero pointer fields emit.
+- `GF-T11-GRAPH`: Graph is closed with eight required properties, zero revisions
+  emitted, sorted unique nodes/edges/gaps, and existing distinct edge endpoints.
+- `GF-T11-STATE`: Source and since appear together. `valid_until` implies that
+  pair, is forbidden for terminal/approval/blocked/passive, and must be strictly
+  after since.
+- `GF-T11-PRIVACY`: Schema 2 omits canary, private endpoint incarnation, prompt
+  or message content, and command diagnostics never echo secrets, paths, types,
+  or `err.Error()`.
+- `GF-T11-WRITER`: Build and marshal complete in memory, append one newline, call
+  the sink once. Build/marshal failure writes zero bytes. Short writes join
+  `io.ErrShortWrite` with a sink error; a full count with error is not short-write.
+- `GF-T11-CMD`: `--once` aliases JSON. Screenshot presence comes from
+  `FlagSet.Visit`. JSON and screenshot return before Supervisor/Actor.
+  Interactive Shutdown happens exactly once after a nonnil Supervisor exists.
+
+**State transitions**
+
+- `GF-T11-TERMINAL`: Completed/failed/vanished timestamp matrix and required
+  state source pair. Ghost message edges are illegal; relationship edges may be
+  active or ghost.
+- `GF-T11-INTERACTIVE`: Nil Supervisor returns nonzero with no Shutdown. Nil
+  Actor, register Go error, interactive error, and nonempty Shutdown failures all
+  return nonzero after exactly one Shutdown. Interactive error plus Shutdown
+  failures emit separate diagnostic lines.
+
+**Boundaries**
+
+- `GF-T11-SAFEINT`: JSON integers stay in `[0, 9007199254740991]`. PID is
+  positive int32. Event and gap counts are positive. Inclusive ceiling is legal;
+  `2^53` is not.
+- `GF-T11-RAWURL`: Relationship decoded lengths 1, 2, 3, 62, 63, 64 legal; 65,
+  padding, and noncanonical pad bits illegal. Opaque invalid UTF-8 bytes are
+  legal relationship payload. Trace is 16 nonzero bytes.
+- `GF-T11-TIME`: Canonical UTC RFC3339Nano with `Z`. Offset and noncanonical
+  fractional forms fail semantic validation. `valid_until > since`.
+- `GF-T11-ID`: Public IDs are UTF-8, control-free, nonempty, and at most 192
+  encoded bytes. Display strings cap at 128 encoded bytes.
+
+**Malformed inputs**
+
+- `GF-T11-CLOSED`: Unknown properties, JSON null properties, null arrays, and
+  classifier sentinels `ignore`/empty-drop fail. Invalid latest delivery
+  vocabulary, zero selected delivery bucket, and delivery sum != event_count fail.
+- `GF-T11-USAGE`: Standalone `--screenshot=`, empty screenshot with JSON/Once,
+  and nonempty screenshot with JSON/Once are usage status 2 before capture,
+  selected dependencies, output, Supervisor, or Actor.
+
+**Concurrency**
+
+- N/A for new shared mutable state. Command tests inject spies and completion;
+  no Sleep oracles. Interactive Shutdown is exactly-once on one Supervisor.
+
+**Persistence and replay**
+
+- `GF-T11-GOLDEN`: Empty and full goldens are byte-exact writer output including
+  the one final newline. Schema-1 remains fixture-only and must contain the
+  literal token `aitop-canary`. Schema 2 is the sole production JSON.
+
+**Integration contracts**
+
+- `GF-T11-DEPS`: `run` uses only injected `runDeps` for the selected branch.
+  Missing selected-branch functions, nil Supervisor, and nil Actor are
+  `dependency` diagnostics. Validator module is test-only.
+- `GF-T11-DIAG`: Closed diagnostic form `aitop scope=<scope> task=<task> class=<class>`,
+  ASCII, control-free, <=256 bytes excluding newline. Pair normalization happens
+  before classification. Sentinel order is canceled, deadline, io, then fallback.
+
+**Regression traps, all nine-prefix sweep**
+
+- boundary: populated by safe-integer ceiling, RawURL 1..65, ID byte caps,
+  screenshot empty-vs-absent, and diagnostic 256-byte cap.
+- concurrency: populated by exactly-once Shutdown and no Actor construction on
+  JSON/screenshot.
+- contract: populated by frozen 39-field rows, closed root/graph objects,
+  exact `runDeps` fields, and valid diagnostic pairs.
+- encoding: populated by canonical Z times, unpadded RawURL, 16-hex source
+  incarnation, and compact JSON plus one newline.
+- framework: populated by FlagSet.Visit screenshot presence, `taskRegistrarFunc`
+  not implementing Shutdown/runSupervisor, and test-only jsonschema import.
+- io: populated by zero-byte build/marshal failure, one sink call, short-write
+  join, full-count-with-error, capture failure writing no document, and stderr
+  write failure not retrying or flipping status.
+- persistence: populated by empty/full golden byte equality and schema-1 fixture
+  remaining non-production.
+- resource: populated by JSON/screenshot returning before Supervisor/Actor and
+  interactive Shutdown after every nonnil Supervisor path.
+- state: populated by source/since pairing, terminal timestamp matrix, ghost
+  message rejection, and interactive nil-Supervisor/nil-Actor/Go/error/Shutdown
+  branches.
+
+### Task 11 exact 66-name Coverage Matrix (Phase A fence)
+
+Every exact top-level name is listed. Sabotage pairs are declared here before
+test code: one production plant and one weakened-assertion plant per frozen name.
+
+| Exact test | Task 11 risk groups | Production plant | Assertion plant |
+|---|---|---|---|
+| `snapshot.TestSchema2UsesDraft202012AndClosedObjects` | `GF-T11-SCHEMA`, `GF-T11-CLOSED` | Open one schema object. | Remove that object check. |
+| `snapshot.TestSchema2RequiresExactTopLevelFields` | `GF-T11-SCHEMA` | Make host optional. | Remove host row. |
+| `snapshot.TestSchema2RequiresNonNullArrays` | `GF-T11-SCHEMA` | Marshal nil nodes as null. | Remove nodes assertion. |
+| `snapshot.TestSchema2ValidatesEmptyGolden` | `GF-T11-GOLDEN` | Delete graph.at. | Skip validator call. |
+| `snapshot.TestSchema2ValidatesFullGolden` | `GF-T11-GOLDEN` | Add unknown edge field. | Skip full golden. |
+| `snapshot.TestSchema2RejectsUnknownAndNullProperties` | `GF-T11-CLOSED` | Allow one null property. | Remove that case. |
+| `snapshot.TestLegacyRowContractHasExactly39Fields` | `GF-T11-ROW` | Rename one tag. | Remove exact field/tag list. |
+| `snapshot.TestLegacyRowsPreserveSchema1Compatibility` | `GF-T11-ROW`, `GF-T11-GOLDEN` | Drop one row property. | Remove fixture comparison. |
+| `snapshot.TestSchema1FixtureContainsActualCanary` | `GF-T11-GOLDEN` | Remove fixture canary. | Remove exact value assertion. |
+| `snapshot.TestSchema2OmitsCanary` | `GF-T11-PRIVACY` | Emit canary. | Remove absence assertion. |
+| `snapshot.TestStateSourceAndSinceAppearTogether` | `GF-T11-STATE` | Emit source alone. | Remove source-only case. |
+| `snapshot.TestStateSchemaEncodesConditionalRules` | `GF-T11-STATE` | Remove one pairing, implication, terminal, approval/blocked, or passive condition from schema. | Remove only the matching schema mutant row. |
+| `snapshot.TestStateSemanticValidationMatchesConditionalRules` | `GF-T11-STATE` | Accept one missing pair or forbidden terminal/approval/blocked/passive valid_until. | Remove only the matching semantic row. |
+| `snapshot.TestStateValidUntilAfterSince` | `GF-T11-TIME` | Accept valid_until equal to or before since. | Remove only the ordering row. |
+| `snapshot.TestGraphReferentialIntegrity` | `GF-T11-GRAPH` | Accept missing endpoint. | Remove endpoint case. |
+| `snapshot.TestTerminalTimestampMatrix` | `GF-T11-TERMINAL` | Allow completed without completed_at. | Remove matrix row. |
+| `snapshot.TestSafeIntegerBoundaries` | `GF-T11-SAFEINT` | Accept 2^53. | Remove upper-bound case. |
+| `snapshot.TestPublicRolesExcludeClassifierSentinels` | `GF-T11-CLOSED` | Emit ignore. | Remove sentinel case. |
+| `snapshot.TestGraphTimestampsCanonicalUTC` | `GF-T11-TIME` | Accept offset timestamp. | Remove offset case. |
+| `snapshot.TestGraphSortAndUniqueness` | `GF-T11-GRAPH` | Keep duplicate node. | Remove duplicate assertion. |
+| `snapshot.TestRelationshipRawURLBoundaries` | `GF-T11-RAWURL` | Accept decoded length 65 or padding. | Remove that row. |
+| `snapshot.TestTraceRawURLContract` | `GF-T11-RAWURL` | Accept zero trace. | Remove zero case. |
+| `snapshot.TestEdgeConditionalMatrix` | `GF-T11-GRAPH` | Put relationship on message. | Remove message row. |
+| `snapshot.TestEdgeEventCountMustBePositive` | `GF-T11-SAFEINT` | Accept event_count zero in schema or semantic validator. | Remove only zero-count row. |
+| `snapshot.TestMessageEdgeLifecycleMustBeActive` | `GF-T11-TERMINAL` | Accept ghost message in schema or semantic validator. | Remove only message-lifecycle mutant row. |
+| `snapshot.TestMessageDeliveryMatchesEventCount` | `GF-T11-CLOSED` | Accept invalid latest, zero selected bucket, or mismatched sum. | Remove only the matching schema/semantic mutant row. |
+| `snapshot.TestGapCapabilityOmittedWhenUnknown` | `GF-T11-GRAPH` | Emit null capability. | Remove omission assertion. |
+| `snapshot.TestSchema2GapCountMustBePositive` | `GF-T11-SAFEINT` | Accept gap count zero. | Remove only zero-count row. |
+| `snapshot.TestSchema2OmitsPrivateAndContentFields` | `GF-T11-PRIVACY` | Emit endpoint incarnation. | Remove reflection property. |
+| `snapshot.TestSchema2RequiredFalseAndZeroFields` | `GF-T11-SCHEMA` | Add omitempty to partial. | Remove false-field assertion. |
+| `snapshot.TestSchema2KnownZeroMetricsRemainPresent` | `GF-T11-ROW` | Omit zero context window. | Remove known-zero case. |
+| `snapshot.TestWriterBuildFailureWritesZeroBytes` | `GF-T11-WRITER` | Write prefix before build. | Remove zero-byte assertion. |
+| `snapshot.TestWriterMarshalFailureWritesZeroBytes` | `GF-T11-WRITER` | Write before marshal completes. | Remove zero-byte assertion. |
+| `snapshot.TestWriterCallsSinkExactlyOnce` | `GF-T11-WRITER` | Split payload into two writes. | Remove call-count assertion. |
+| `snapshot.TestWriterSinkFailureReturnsError` | `GF-T11-WRITER` | Swallow sink error. | Remove error assertion. |
+| `snapshot.TestWriterShortWrite` | `GF-T11-WRITER` | Treat short nil write as success. | Remove `io.ErrShortWrite` assertion. |
+| `snapshot.TestWriterShortWriteWithSinkErrorPreservesBoth` | `GF-T11-WRITER` | Drop either short-write or sink sentinel from the joined error. | Remove only that `errors.Is` assertion. |
+| `snapshot.TestWriterFullCountWithErrorIsNotShortWrite` | `GF-T11-WRITER` | Always join io.ErrShortWrite when sink returns any error. | Remove only negative short-write or positive sentinel assertion. |
+| `snapshot.TestWriteJSONMatchesEmptyGoldenExactly` | `GF-T11-GOLDEN` | Change empty-field ordering or whitespace. | Replace byte equality with parse-only comparison. |
+| `snapshot.TestWriteJSONMatchesFullGoldenExactly` | `GF-T11-GOLDEN` | Skip deterministic node/edge/gap sort. | Replace byte equality with semantic comparison. |
+| `snapshot.TestWriteJSONHasExactlyOneFinalNewline` | `GF-T11-WRITER` | Omit or append a second newline. | Remove exact trailing-byte assertion. |
+| `main.TestCaptureFailureEmitsNoSuccessfulDocument` | `GF-T11-WRITER`, `GF-T11-CMD` | Emit empty success. | Remove zero-byte/exit pair. |
+| `snapshot.TestWriteJSONEmitsSchema2Only` | `GF-T11-SCHEMA` | Emit schema 1. | Remove schema assertion. |
+| `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays` | `GF-T11-SCHEMA` | Emit null rows. | Remove exact arrays. |
+| `main.TestWriterSinkFailureNoRetryAndNonzeroExit` | `GF-T11-WRITER`, `GF-T11-CMD` | Retry after a prefix/error or return zero status. | Remove call-count or exit assertion. |
+| `main.TestRunRejectsMissingSelectedDependency` | `GF-T11-DEPS` | Call a nil selected-branch dependency. | Remove exact missing-field/error assertion. |
+| `main.TestRunUsesInjectedClockAndBranchDependencies` | `GF-T11-DEPS` | Read `time.Now` or a global capture dependency. | Remove spy time/call-order assertion. |
+| `main.TestRunRegistersActorWithSupervisor` | `GF-T11-CMD` | Call `actor.Run` directly or register the wrong task name. | Remove only Supervisor.Go name/function spy. |
+| `main.TestRunInteractiveUsesSupervisorContext` | `GF-T11-CMD`, `GF-T11-INTERACTIVE` | Separately pass parent context, add raw stderr as a second writer, and pass `sup` directly instead of `taskRegistrarFunc(sup.Go)`. | Remove only the matching context, one-writer type, Go-delegation, or dynamic non-`Shutdown`/non-`runSupervisor` assertion. |
+| `main.TestRunInteractiveAlwaysShutsDownOnce` | `GF-T11-INTERACTIVE` | Skip or double Shutdown after successful interaction. | Remove only exact call-count assertion. |
+| `main.TestRunInteractiveRejectsNilSupervisorOrActor` | `GF-T11-INTERACTIVE` | Continue with nil Supervisor or return before shutting down nil-Actor branch. | Remove only matching status/Shutdown row. |
+| `main.TestRunInteractiveGoFailureReturnsNonzeroAndShutsDown` | `GF-T11-INTERACTIVE` | Ignore registerActor error or skip Shutdown. | Remove only status or Shutdown assertion. |
+| `main.TestRunInteractiveErrorReturnsNonzeroAndShutsDown` | `GF-T11-INTERACTIVE` | Return zero or skip Shutdown on interactive error. | Remove only status or Shutdown assertion. |
+| `main.TestRunInteractiveShutdownFailuresReturnNonzero` | `GF-T11-INTERACTIVE` | Ignore failures, or overwrite interactive error instead of reporting both. | Remove only status or dual-error assertion. |
+| `main.TestSafeDiagnosticClassificationPrecedence` | `GF-T11-DIAG` | Inspect arbitrary error text/type, check short-write before joined cancellation/deadline, or return invalid-pair `failure` before testing its known sentinels. | Remove only the affected valid or invalid-pair nil/canceled/deadline/io/precedence/arbitrary-error row. |
+| `main.TestRunFlagAndDependencyDiagnosticsAreRedacted` | `GF-T11-PRIVACY`, `GF-T11-DIAG` | Let the flag parser print a rejected argument, format a missing-dependency error with `%v`, or retry a failed stderr write. | Remove only the matching sentinel-absence, control-free, scope/task/class, status, or one-write assertion. |
+| `main.TestRunCaptureAndJSONDiagnosticsAreRedacted` | `GF-T11-PRIVACY` | Format a CaptureOnce or WriteJSON error with `%v` in that branch. | Remove only the matching unique-sentinel, control-free, scope/task/class, or status assertion. |
+| `main.TestRunScreenshotWriterDiagnosticsAreRedacted` | `GF-T11-PRIVACY` | Format the post-render stdout writer error with `%v`. | Remove only the writer sentinel, control-free, `screenshot/write`, or nonzero-status assertion. |
+| `main.TestRunRegisterInteractiveShutdownDiagnosticsAreRedacted` | `GF-T11-PRIVACY` | Format the registerActor error, RunInteractive error, or any Shutdown `Failure.Err` with `%v` in that branch. | Remove only the matching branch sentinel, control-free, scope/task/class, all-failures, or status assertion. |
+| `main.TestRunOnceAliasesJSON` | `GF-T11-CMD` | Route Once to interactive or require JSON false. | Remove only branch/dependency spy assertion. |
+| `main.TestRunRejectsScreenshotWithJSONOrOnce` | `GF-T11-USAGE` | Derive screenshot presence from nonempty value instead of `FlagSet.Visit`, letting standalone or combined `--screenshot=` fall through. | Remove only the matching standalone-empty, empty+JSON, empty+Once, or pre-dependency/output/runtime status/call-count assertion. |
+| `main.TestJSONDoesNotStartActor` | `GF-T11-CMD` | Construct Actor in JSON path. | Remove factory count. |
+| `main.TestScreenshotDoesNotStartActor` | `GF-T11-CMD` | Construct Actor in screenshot path. | Remove factory count. |
+| `snapshot.TestCanaryRemovedFromProductionOutput` | `GF-T11-PRIVACY` | Restore canary. | Remove absence assertion. |
+| `snapshot.TestSchemaValidatorAbsentFromProductionDependencies` | `GF-T11-DEPS` | Import the validator in `json_v2.go` through a compile-used symbol. | Remove only the rooted `go list` module-output assertion. |
+| `snapshot.TestSchemaValidatorImportedOnlyByTests` | `GF-T11-DEPS` | Import the validator in `json_v2.go` through a compile-used symbol. | Remove only the rooted production-source import assertion. |
+
+For `TestRunInteractiveUsesSupervisorContext`, the full-Supervisor production
+plant plus removal of only the dynamic-capability assertion must falsely GREEN
+while callback invocation and Go-delegation remain. Combined diagnostic rows
+treat every named branch as a separate physical production plant.
