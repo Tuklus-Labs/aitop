@@ -1,4 +1,4 @@
-head: 162c3d60b5dd19870d4040563f7b69d00ed5eaa0
+head: cfddee5aa3451de7475e376e606d632f9da23065
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 tz_offset: -0700
 
@@ -56,7 +56,7 @@ exit=1 wall=0.1s
 --- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
     claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
 FAIL
-FAIL	aitop/internal/native	0.002s
+FAIL	aitop/internal/native	0.001s
 FAIL
 S-T5-03-prod: AS-PREDICTED
 S-T5-03-prod: restored, porcelain clean, focused test green again
@@ -79,7 +79,7 @@ exit=1 wall=0.1s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:816: codex-live-thread-is-inside-horizon rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 absent rolloutAge=3h0m0s liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2] nodes=0
 FAIL
-FAIL	aitop/internal/native	0.002s
+FAIL	aitop/internal/native	0.001s
 FAIL
 S-T5-04-prod: AS-PREDICTED
 S-T5-04-prod: restored, porcelain clean, focused test green again
@@ -98,11 +98,11 @@ S-T5-04-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.1s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:810: codex-cold-thread-with-no-process-is-not-observed rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 rolloutAge=3h0m0s horizon=1h0m0s nodes=2
 FAIL
-FAIL	aitop/internal/native	0.002s
+FAIL	aitop/internal/native	0.001s
 FAIL
 S-T5-05-prod: AS-PREDICTED
 S-T5-05-prod: restored, porcelain clean, focused test green again
@@ -112,8 +112,8 @@ plant diffstat:
 internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.2s
-ok  	aitop/internal/native	0.002s
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
 S-T5-05-weak: AS-PREDICTED
 S-T5-05-weak: restored, porcelain clean, focused test green again
 
@@ -121,11 +121,86 @@ S-T5-05-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.0s
-FAIL	aitop/internal/native [build failed]
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
+    codex_test.go:819: codex-live-lift-admits-only-the-live-thread rule violated: id=codex:thread:01a0537d-2b5d-7c60-9b8c-99ff4cecb7ea admitted while absent from liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2]
 FAIL
-# aitop/internal/native [aitop/internal/native.test]
-internal/native/codex.go:263:2: declared and not used: base
-S-T5-06-prod: MISMATCH
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-06-prod: AS-PREDICTED
 S-T5-06-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-06-weak expect=GREEN pkg=./internal/native run=^TestCodexScannerLiveThreadIsInsideHorizon$
+plant diffstat:
+internal/native/codex.go      | 2 +-
+ internal/native/codex_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-06-weak: AS-PREDICTED
+S-T5-06-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-07-prod expect=GREEN pkg=./internal/native run=^TestCodexScannerLiveThreadIsInsideHorizon$
+plant diffstat:
+internal/native/codex.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.001s
+S-T5-07-prod: AS-PREDICTED
+S-T5-07-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-08-prod expect=RED pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
+    grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-08-prod: AS-PREDICTED
+S-T5-08-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-08-weak expect=GREEN pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go      |  2 +-
+ internal/native/grok_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-08-weak: AS-PREDICTED
+S-T5-08-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-09-prod expect=RED pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
+    grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-09-prod: AS-PREDICTED
+S-T5-09-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-09-weak expect=GREEN pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go      |  2 +-
+ internal/native/grok_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-09-weak: AS-PREDICTED
+S-T5-09-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-10-prod expect=RED pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
+S-T5-10-prod: MISMATCH
+S-T5-10-prod: restored, porcelain clean, focused test green again
 STOP on mismatch for inspection

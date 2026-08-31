@@ -122,9 +122,17 @@ P_GRK_NO_STAT_LIFT = (GRK,
 P_GRK_NO_RECORDED_LIFT = (GRK,
                           "\tif now.Sub(*activity) > nativeHorizon && !live[visit.session] {",
                           "\tif now.Sub(*activity) > nativeHorizon {")
+# Both grok bounds widened. ONE of them is not enough to admit a cold session:
+# the stat prefilter and the runtime's own last_active_at each independently
+# reject it, so a plant that removes either alone leaves the absence assertion
+# correctly green. Measured, not predicted -- the first attempt aimed at the
+# recorded horizon alone and went green.
 P_GRK_NO_HORIZON = (GRK,
                     "\tif now.Sub(*activity) > nativeHorizon && !live[visit.session] {",
-                    "\tif false {")
+                    "\tif now.Sub(*activity) > 100*nativeHorizon && !live[visit.session] {")
+P_GRK_WIDE_STAT = (GRK,
+                   "\t\tif now.Sub(info.ModTime()) > nativeHorizon && !live[visit.session] {",
+                   "\t\tif now.Sub(info.ModTime()) > 100*nativeHorizon && !live[visit.session] {")
 
 # --- the fork sidecar's runtime -------------------------------------------
 
@@ -397,8 +405,10 @@ CYCLES = [
     ("S-T5-08-weak", [P_GRK_NO_STAT_LIFT, W_GRK_PRESENT, W_GRK_CONTENT, W_GRK_STARTED, W_GRK_NOCLAIM, W_GRK_SKIP], P_NATIVE, T_GRK_LIVE, "GREEN", None),
     ("S-T5-09-prod", [P_GRK_NO_RECORDED_LIFT], P_NATIVE, T_GRK_LIVE, "RED", "grok-live-session-is-inside-horizon rule violated"),
     ("S-T5-09-weak", [P_GRK_NO_RECORDED_LIFT, W_GRK_PRESENT, W_GRK_CONTENT, W_GRK_STARTED, W_GRK_NOCLAIM, W_GRK_SKIP], P_NATIVE, T_GRK_LIVE, "GREEN", None),
-    ("S-T5-10-prod", [P_GRK_NO_HORIZON], P_NATIVE, T_GRK_LIVE, "RED", "grok-cold-session-with-no-process-is-not-observed rule violated"),
-    ("S-T5-10-weak", [P_GRK_NO_HORIZON, W_GRK_ABSENT], P_NATIVE, T_GRK_LIVE, "GREEN", None),
+    ("S-T5-10a-prod", [P_GRK_NO_HORIZON], P_NATIVE, T_GRK_LIVE, "GREEN", None),
+    ("S-T5-10b-prod", [P_GRK_WIDE_STAT], P_NATIVE, T_GRK_LIVE, "GREEN", None),
+    ("S-T5-10-prod", [P_GRK_NO_HORIZON, P_GRK_WIDE_STAT], P_NATIVE, T_GRK_LIVE, "RED", "grok-cold-session-with-no-process-is-not-observed rule violated"),
+    ("S-T5-10-weak", [P_GRK_NO_HORIZON, P_GRK_WIDE_STAT, W_GRK_ABSENT], P_NATIVE, T_GRK_LIVE, "GREEN", None),
 
     # --- the fork sidecar's runtime ---------------------------------------
     ("S-T5-11-prod", [P_SID_NO_RUNTIME], P_ACT, T_SID_RT, "RED", "fork-sidecar-carries-target-runtime rule violated"),
