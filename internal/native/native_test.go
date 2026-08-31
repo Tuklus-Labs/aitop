@@ -750,3 +750,189 @@ func TestNativeSpawnEdgeLandsInRealShadow(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// slowScanner blocks inside scan for a controlled duration, which is what a
+// native lane's first tick really is: a disk walk over a runtime's whole
+// session store, cold cache and all.
+type slowScanner struct {
+	delay  time.Duration
+	nodes  []NodeSighting
+	err    error
+	inScan chan struct{} // closed the moment scan is entered
+	once   sync.Once
+}
+
+func (s *slowScanner) scan(time.Time, map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
+	s.once.Do(func() { close(s.inScan) })
+	time.Sleep(s.delay)
+	if s.err != nil {
+		return nil, nil, s.err
+	}
+	return append([]NodeSighting(nil), s.nodes...), nil, nil
+}
+
+// TestCollectorSignalsItsFirstTickAfterItFinishes covers the readiness signal
+// the one-shot waits on. A one-shot has no next tick: if it samples the graph
+// while a native lane is still walking a session store, it emits an
+// occupancy-only graph with no gap and no other sign anything was missed, and
+// the thinner graph is indistinguishable from a quiet box.
+//
+// The signal has to close AFTER the tick, not when the tick starts, or waiting
+// on it would prove only that the collector was running.
+func TestCollectorSignalsItsFirstTickAfterItFinishes(t *testing.T) {
+	scanner := &slowScanner{
+		delay:  120 * time.Millisecond,
+		inScan: make(chan struct{}),
+		nodes: []NodeSighting{{
+			ID:        mustSessionID(t, testParentSession),
+			SessionID: testParentSession,
+			Runtime:   types.RuntimeClaude,
+			Role:      types.RolePrimary,
+			Location:  testParentFile,
+		}},
+	}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, nil)
+
+	select {
+	case <-collector.FirstTick():
+		t.Fatalf("native-first-tick-is-open-before-the-collector-runs rule violated: signal closed with no tick taken")
+	default:
+	}
+
+	sink := &recordingSink{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = collector.Run(ctx, sink) }()
+
+	<-scanner.inScan
+	// Inside the scan, so the tick has started and has not finished. A signal
+	// that closed here would let the one-shot sample a graph the lane has not
+	// published into yet, which is the exact failure it exists to prevent.
+	select {
+	case <-collector.FirstTick():
+		t.Fatalf("native-first-tick-closes-only-when-the-tick-finishes rule violated: signal closed while scan was still running")
+	default:
+	}
+
+	select {
+	case <-collector.FirstTick():
+	case <-time.After(3 * time.Second):
+		t.Fatalf("native-first-tick-closes rule violated: signal still open 3s after a %s scan", scanner.delay)
+	}
+	// Closed means published, not merely returned: the lane's own events are
+	// already at the sink by the time anything is allowed to sample.
+	if n := sink.count(); n == 0 {
+		t.Fatalf("native-first-tick-closes-after-publishing rule violated: signal closed with events=%d", n)
+	}
+}
+
+// TestCollectorSignalsItsFirstTickWhenTheScanFails keeps the signal a statement
+// about the TICK rather than about the sighting. A scanner error publishes
+// nothing, and a waiter that only learned about successful ticks would block a
+// one-shot for the whole cap every time a runtime's home was unreadable.
+func TestCollectorSignalsItsFirstTickWhenTheScanFails(t *testing.T) {
+	collector := newCollector(testSourceID, types.RuntimeClaude,
+		&slowScanner{delay: time.Millisecond, inScan: make(chan struct{}), err: errors.New("home unreadable")}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = collector.Run(ctx, &recordingSink{}) }()
+
+	select {
+	case <-collector.FirstTick():
+	case <-time.After(3 * time.Second):
+		t.Fatalf("native-first-tick-closes-on-a-failed-scan rule violated: signal still open 3s after a scan error")
+	}
+	if n := collector.scanErrors.Load(); n != 1 {
+		t.Fatalf("native-failed-scan-is-counted rule violated: scanErrors=%d", n)
+	}
+}
+
+// TestCollectorFirstTickStaysClosedAcrossTicks pins the signal to the FIRST
+// tick. Reopening or re-closing it per tick would make a waiter's answer depend
+// on which tick it happened to ask during.
+func TestCollectorFirstTickStaysClosedAcrossTicks(t *testing.T) {
+	scanner := &fakeScanner{}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, nil)
+	collector.interval = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = collector.Run(ctx, &recordingSink{}) }()
+
+	<-collector.FirstTick()
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		select {
+		case <-collector.FirstTick():
+		default:
+			t.Fatalf("native-first-tick-stays-closed rule violated: signal reopened after tick %d", scanner.callCount())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := scanner.callCount(); n < 2 {
+		t.Fatalf("native-first-tick-test-saw-more-than-one-tick rule violated: calls=%d", n)
+	}
+}
+
+// TestCollectorFirstTickNodesAreWhatTheStoreTook covers the ids a one-shot
+// waits on. They have to be what the store ACCEPTED, not what the collector
+// tried to publish: a rejected or dropped event will never reach a snapshot, so
+// a waiter told to look for it spends its entire budget on evidence that is not
+// coming, every run, and the wait built to make a one-shot complete makes it
+// slow instead.
+func TestCollectorFirstTickNodesAreWhatTheStoreTook(t *testing.T) {
+	parent := mustSessionID(t, testParentSession)
+	second := mustSessionID(t, testSecondSession)
+	nodes := []NodeSighting{
+		{ID: parent, SessionID: testParentSession, Runtime: types.RuntimeClaude, Role: types.RolePrimary, Location: testParentFile},
+		{ID: second, SessionID: testSecondSession, Runtime: types.RuntimeClaude, Role: types.RolePrimary, Location: testChildFile},
+	}
+	collector := newCollector(testSourceID, types.RuntimeClaude, &fakeScanner{nodes: nodes}, nil)
+	sink := &recordingSink{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = collector.Run(ctx, sink) }()
+	<-collector.FirstTick()
+
+	got := collector.FirstTickNodes()
+	if len(got) != 2 || got[0] != parent || got[1] != second {
+		t.Fatalf("native-first-tick-nodes-are-what-it-published rule violated: got=%v want=[%s %s]", got, parent, second)
+	}
+
+	// The same tick against a store that takes nothing records nothing.
+	dropped := newCollector(testSourceID, types.RuntimeClaude, &fakeScanner{nodes: nodes}, nil)
+	dropCtx, dropCancel := context.WithCancel(context.Background())
+	defer dropCancel()
+	go func() { _ = dropped.Run(dropCtx, &recordingSink{disp: graph.PublishDroppedNormal}) }()
+	<-dropped.FirstTick()
+	if got := dropped.FirstTickNodes(); len(got) != 0 {
+		t.Fatalf("native-first-tick-nodes-exclude-what-the-store-refused rule violated: got=%v want none", got)
+	}
+	if n := dropped.Disp().Dropped.Load(); n == 0 {
+		t.Fatalf("native-first-tick-drop-fixture-actually-dropped rule violated: dropped=%d", n)
+	}
+}
+
+// TestCollectorFirstTickNodesStopAtTheFirstTick keeps the list a record of ONE
+// tick. Growing it every poll would turn a bounded wait into one that scans a
+// list that never stops growing, and would name nodes from a tick nobody is
+// waiting on.
+func TestCollectorFirstTickNodesStopAtTheFirstTick(t *testing.T) {
+	scanner := &fakeScanner{nodes: []NodeSighting{
+		{ID: mustSessionID(t, testParentSession), SessionID: testParentSession, Runtime: types.RuntimeClaude, Role: types.RolePrimary, Location: testParentFile},
+	}}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, nil)
+	collector.interval = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = collector.Run(ctx, &recordingSink{}) }()
+	<-collector.FirstTick()
+
+	first := len(collector.FirstTickNodes())
+	time.Sleep(150 * time.Millisecond)
+	if n := scanner.callCount(); n < 3 {
+		t.Fatalf("native-first-tick-nodes-test-saw-later-ticks rule violated: calls=%d", n)
+	}
+	if got := len(collector.FirstTickNodes()); got != first {
+		t.Fatalf("native-first-tick-nodes-stop-at-the-first-tick rule violated: nodes grew from %d to %d over %d ticks", first, got, scanner.callCount())
+	}
+}

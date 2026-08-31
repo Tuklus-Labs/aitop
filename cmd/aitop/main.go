@@ -142,6 +142,14 @@ func productionRunDeps() runDeps {
 // tell "wired to the engine's homes" from "wired to some homes".
 var attachGraph = snapshot.AttachGraph
 
+// nativeFirstTickBudget bounds how long a one-shot waits for the native lanes'
+// first disk walk, in total across every lane. A one-shot has no next tick: it
+// samples the graph once and exits, so a lane still walking a session store
+// when the sample is taken is simply missing from the output, with gaps=0 and
+// nothing else to say so. The wait is bounded rather than blocking because a
+// pathological store must cost a late graph, never a hung command.
+const nativeFirstTickBudget = 2 * time.Second
+
 // productionGraphHomes is the one place the engine's homes become the graph's.
 // Both run paths go through it so a home added to the engine cannot reach the
 // overlay collectors while silently missing the native ones.
@@ -188,7 +196,7 @@ func reapEngineOnCancel(ctx context.Context, wait func()) {
 
 func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snapshot, error) {
 	eng := productionEngine(opt)
-	shadow, occ, err := attachGraph(eng, productionGraphHomes(eng))
+	shadow, occ, lanes, err := attachGraph(eng, productionGraphHomes(eng))
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +223,10 @@ func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snaps
 		rows = snap.Rows
 	}
 	snapshot.WaitOccupancyGraph(shadow, rows, 500*time.Millisecond)
+	// Occupancy's wait is satisfied by any node, and occupancy publishes one
+	// well before a native lane has finished walking a home, so it says nothing
+	// about whether the native evidence is in. This is the wait that does.
+	lanes.WaitNativeEvidence(shadow, nativeFirstTickBudget)
 	if snap != nil {
 		snap.Graph = shadow.Snapshot()
 	}
@@ -228,7 +240,10 @@ func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snaps
 
 func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegistrar, actor *act.Actor, out io.Writer) error {
 	eng := productionEngine(opt)
-	shadow, _, err := attachGraph(eng, productionGraphHomes(eng))
+	// The interactive path takes no lanes: it repaints every 2 s, so a lane
+	// still walking on the first frame is in by the next one. Only a one-shot
+	// has to wait, because it has no second frame.
+	shadow, _, _, err := attachGraph(eng, productionGraphHomes(eng))
 	if err != nil {
 		return err
 	}

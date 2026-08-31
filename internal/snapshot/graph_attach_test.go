@@ -176,7 +176,7 @@ func TestAttachGraphRegistersNativeCollectors(t *testing.T) {
 		Grok:   t.TempDir(),
 	}
 	eng := &Engine{ProcRoot: t.TempDir()}
-	shadow, occ, err := AttachGraph(eng, homes)
+	shadow, occ, _, err := AttachGraph(eng, homes)
 	if err != nil {
 		t.Fatalf("attach-graph-constructs rule violated: err=%v", err)
 	}
@@ -260,7 +260,7 @@ func TestAttachGraphBindsNativeNodesToLiveProcesses(t *testing.T) {
 		t.Fatalf("attach-fixture-produces-a-bound-row rule violated: rows=%+v", rows)
 	}
 
-	shadow, _, err := AttachGraph(eng, homes)
+	shadow, _, _, err := AttachGraph(eng, homes)
 	if err != nil {
 		t.Fatalf("attach-graph-constructs rule violated: err=%v", err)
 	}
@@ -444,5 +444,119 @@ func TestAttachGraphResolvesRelativeHomes(t *testing.T) {
 
 	if got, err := absHome(""); err != nil || got != "" {
 		t.Fatalf("attach-empty-home-stays-empty rule violated: home=%q err=%v", got, err)
+	}
+}
+
+// slowLane is a native lane whose first tick takes a controlled time, which is
+// what a real one is: a disk walk over a runtime's whole session store.
+type slowLane struct {
+	ready chan struct{}
+	nodes []graph.NodeID
+}
+
+func newSlowLane(delay time.Duration) *slowLane {
+	lane := &slowLane{ready: make(chan struct{})}
+	go func() {
+		time.Sleep(delay)
+		close(lane.ready)
+	}()
+	return lane
+}
+
+func (l *slowLane) FirstTick() <-chan struct{}     { return l.ready }
+func (l *slowLane) FirstTickNodes() []graph.NodeID { return l.nodes }
+
+// TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn covers the waiting half. The count
+// is the point: a caller that only learned "the wait returned" cannot tell a
+// quiet box from a lane still walking, which is the whole defect this closes.
+func TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn(t *testing.T) {
+	lanes := NativeLanes{newSlowLane(10 * time.Millisecond), newSlowLane(30 * time.Millisecond), newSlowLane(0)}
+	started := time.Now()
+	if ready := lanes.WaitNativeEvidence(nil, 2*time.Second); ready != 3 {
+		t.Fatalf("wait-native-evidence-counts-every-lane-that-came-in rule violated: ready=%d want=3", ready)
+	}
+	// Returned on the lanes, not on the budget: a wait that simply slept its
+	// budget would also report three.
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("wait-native-evidence-returns-on-the-lanes-not-the-budget rule violated: elapsed=%s budget=2s", elapsed)
+	}
+}
+
+// TestWaitNativeEvidenceIsBoundedByItsBudget is the other direction. A pathological
+// store must cost a late graph, never a hung command.
+func TestWaitNativeEvidenceIsBoundedByItsBudget(t *testing.T) {
+	lanes := NativeLanes{newSlowLane(0), newSlowLane(time.Hour)}
+	started := time.Now()
+	ready := lanes.WaitNativeEvidence(nil, 150*time.Millisecond)
+	elapsed := time.Since(started)
+	if ready != 1 {
+		t.Fatalf("wait-native-evidence-reports-only-the-lanes-that-came-in rule violated: ready=%d want=1", ready)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("wait-native-evidence-is-bounded rule violated: elapsed=%s budget=150ms", elapsed)
+	}
+}
+
+// TestWaitNativeEvidenceSharesOneBudgetAcrossLanes pins the budget to the CALL and
+// not to each lane. Per-lane budgets would let three slow homes cost a one-shot
+// three times the bound it was given, which is the shape of a "bounded" wait
+// that is not actually bounded.
+func TestWaitNativeEvidenceSharesOneBudgetAcrossLanes(t *testing.T) {
+	lanes := NativeLanes{newSlowLane(time.Hour), newSlowLane(time.Hour), newSlowLane(time.Hour)}
+	started := time.Now()
+	if ready := lanes.WaitNativeEvidence(nil, 120*time.Millisecond); ready != 0 {
+		t.Fatalf("wait-native-evidence-reports-only-the-lanes-that-came-in rule violated: ready=%d want=0", ready)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("wait-native-evidence-shares-one-budget-across-lanes rule violated: elapsed=%s for 3 lanes on a 120ms budget", elapsed)
+	}
+}
+
+// TestWaitNativeEvidenceWithNoLanesIsFree keeps the occupancy-only path free of a
+// wait it has no reason to take.
+func TestWaitNativeEvidenceWithNoLanesIsFree(t *testing.T) {
+	started := time.Now()
+	if ready := (NativeLanes(nil)).WaitNativeEvidence(nil, time.Hour); ready != 0 {
+		t.Fatalf("wait-native-evidence-with-no-lanes-is-free rule violated: ready=%d", ready)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("wait-native-evidence-with-no-lanes-is-free rule violated: elapsed=%s on an empty lane set", elapsed)
+	}
+}
+
+// TestAttachGraphReturnsOneLanePerHome pins what the one-shot ends up waiting
+// on. A home that registers a collector but no lane would be waited on by
+// nobody, which reads exactly like a fast lane.
+func TestAttachGraphReturnsOneLanePerHome(t *testing.T) {
+	now := time.Now()
+	eng := &Engine{ProcRoot: t.TempDir()}
+	for _, tc := range []struct {
+		name  string
+		homes GraphHomes
+		want  int
+	}{
+		{"none", GraphHomes{}, 0},
+		{"claude", GraphHomes{Claude: attachClaudeHome(t, now, false)}, 1},
+		{"claude+codex", GraphHomes{Claude: attachClaudeHome(t, now, false), Codex: t.TempDir()}, 2},
+		{"all three", GraphHomes{Claude: attachClaudeHome(t, now, false), Codex: t.TempDir(), Grok: t.TempDir()}, 3},
+	} {
+		shadow, _, lanes, err := AttachGraph(eng, tc.homes)
+		if err != nil {
+			t.Fatalf("attach-graph-constructs rule violated: case=%s err=%v", tc.name, err)
+		}
+		if len(lanes) != tc.want {
+			t.Fatalf("attach-graph-returns-one-lane-per-home rule violated: case=%s lanes=%d want=%d", tc.name, len(lanes), tc.want)
+		}
+		for i, lane := range lanes {
+			if lane == nil {
+				t.Fatalf("attach-graph-lanes-are-usable rule violated: case=%s lane %d is nil", tc.name, i)
+			}
+			select {
+			case <-lane.FirstTick():
+				t.Fatalf("attach-graph-lanes-start-unready rule violated: case=%s lane %d signalled before the shadow ran", tc.name, i)
+			default:
+			}
+		}
+		_ = shadow
 	}
 }

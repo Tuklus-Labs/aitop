@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -101,6 +102,20 @@ type Collector struct {
 	now      func() time.Time
 	interval time.Duration
 
+	// firstTick closes once the collector's first poll has finished publishing.
+	// A one-shot capture has no next tick to converge on, so it needs to know
+	// when a lane's first disk walk is in rather than sampling the graph while
+	// the walk is still running: the thinner graph that produces carries no gap
+	// and is indistinguishable from a quiet box.
+	firstTick     chan struct{}
+	firstTickOnce sync.Once
+	// firstTickNodes are the node ids the first tick published and the store
+	// took. They are written only during that tick and read only after
+	// firstTick closes, so the channel close is the happens-before that makes
+	// them safe to read from the waiting goroutine without a lock.
+	firstTickNodes   []graph.NodeID
+	firstTickPending bool
+
 	disp Dispositions
 	// Counters below record decisions that publish nothing, so a silent tick
 	// and a tick that deliberately emitted nothing are distinguishable.
@@ -113,12 +128,15 @@ type Collector struct {
 
 func newCollector(id graph.SourceID, rt types.Runtime, sc scanner, latest func() []types.Row) *Collector {
 	return &Collector{
-		id:       id,
-		runtime:  rt,
-		scan:     sc,
-		latest:   latest,
-		now:      time.Now,
-		interval: nativePollInterval,
+		id:        id,
+		runtime:   rt,
+		scan:      sc,
+		latest:    latest,
+		now:       time.Now,
+		interval:  nativePollInterval,
+		firstTick: make(chan struct{}),
+
+		firstTickPending: true,
 	}
 }
 
@@ -134,6 +152,28 @@ func (c *Collector) Descriptor() graph.CollectorDescriptor {
 			graph.CapabilityTerminal,
 		},
 	}
+}
+
+// FirstTick closes when this collector's first poll has finished, whether that
+// poll published anything or failed. It is a statement about the TICK and not
+// about the sighting: a waiter that only learned about successful ticks would
+// block for its whole budget every time a runtime's home was unreadable.
+//
+// It never reopens. A signal that moved per tick would make a waiter's answer
+// depend on which tick it happened to ask during.
+func (c *Collector) FirstTick() <-chan struct{} {
+	return c.firstTick
+}
+
+// FirstTickNodes are the nodes the first tick published and the store accepted.
+// Reading it before FirstTick has closed is a race and answers nothing.
+//
+// It exists so a one-shot can wait for exactly what a lane produced rather than
+// for a stretch of quiet. Publishing is queued and applied asynchronously, so
+// "the lane finished" and "the graph shows it" are different facts, and a
+// waiter that guesses the gap between them by timing is wrong under load.
+func (c *Collector) FirstTickNodes() []graph.NodeID {
+	return c.firstTickNodes
 }
 
 func (c *Collector) Disp() *Dispositions {
@@ -166,6 +206,17 @@ func (c *Collector) Run(ctx context.Context, sink graph.EventSink) error {
 }
 
 func (c *Collector) tick(sink graph.EventSink) {
+	// Deferred so the signal follows the tick out by every path, the scan error
+	// included. Closing it on the way IN would say only that the collector was
+	// running, which is what a waiter already knows.
+	defer func() {
+		c.firstTickOnce.Do(func() {
+			// Cleared before the signal, so nothing that reads the ids after
+			// the close can see a later tick appending to them.
+			c.firstTickPending = false
+			close(c.firstTick)
+		})
+	}()
 	now := c.now()
 	// The bindings are read once and used twice: the scanner needs the id set to
 	// apply the horizon rule's live-process clause, and emit needs the identities
@@ -210,7 +261,10 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 			c.identityErrors.Add(1)
 			continue
 		}
-		c.publish(sink, c.nodeEvent(sighting, incarnation, now))
+		disposition := c.publish(sink, c.nodeEvent(sighting, incarnation, now))
+		if c.firstTickPending && admittedToStore(disposition) {
+			c.firstTickNodes = append(c.firstTickNodes, sighting.ID)
+		}
 		published[sighting.ID] = incarnation
 		if claimableState(sighting.State) {
 			claims = append(claims, sighting)
@@ -438,7 +492,7 @@ func (c *Collector) spawnEvent(spawn SpawnSighting, parent, child graph.Incarnat
 
 // publish counts every disposition. A rejection is swallowed on purpose:
 // returning from Run would mark the whole source stopped.
-func (c *Collector) publish(sink graph.EventSink, event graph.Event) {
+func (c *Collector) publish(sink graph.EventSink, event graph.Event) graph.PublishDisposition {
 	disposition, _ := sink.Publish(event)
 	switch disposition {
 	case graph.PublishAcceptedNormal, graph.PublishAcceptedCritical:
@@ -451,6 +505,21 @@ func (c *Collector) publish(sink graph.EventSink, event graph.Event) {
 		c.disp.Dropped.Add(1)
 	default:
 		c.disp.Rejected.Add(1)
+	}
+	return disposition
+}
+
+// admittedToStore reports whether the store took the event. A rejection or a
+// saturation drop means it will never reach a snapshot, so waiting on the node
+// it named would cost a caller its whole budget for evidence that is not
+// coming.
+func admittedToStore(disposition graph.PublishDisposition) bool {
+	switch disposition {
+	case graph.PublishAcceptedNormal, graph.PublishAcceptedCritical,
+		graph.PublishDuplicate, graph.PublishCoalesced:
+		return true
+	default:
+		return false
 	}
 }
 

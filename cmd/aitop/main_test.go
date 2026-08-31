@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -861,12 +862,12 @@ func spyAttach(t *testing.T, fail error) *attachSpy {
 	t.Helper()
 	spy := &attachSpy{}
 	prior := attachGraph
-	attachGraph = func(eng *snapshot.Engine, homes snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, error) {
+	attachGraph = func(eng *snapshot.Engine, homes snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
 		spy.calls++
 		spy.homes = homes
 		spy.engine = eng
 		if fail != nil {
-			return nil, nil, fail
+			return nil, nil, nil, fail
 		}
 		return prior(eng, homes)
 	}
@@ -950,9 +951,10 @@ func TestProductionRunInteractivePassesEngineHomes(t *testing.T) {
 // identity, publishes nothing, and blocks until the context ends, so it changes
 // what the graph contains not at all.
 type rowsAtRunProbe struct {
-	eng     *snapshot.Engine
-	ran     atomic.Bool
-	sawRows atomic.Bool
+	eng       *snapshot.Engine
+	ran       atomic.Bool
+	sawRows   atomic.Bool
+	rowsAtRun atomic.Int64
 }
 
 func (p *rowsAtRunProbe) Descriptor() graph.CollectorDescriptor {
@@ -966,6 +968,7 @@ func (p *rowsAtRunProbe) Descriptor() graph.CollectorDescriptor {
 
 func (p *rowsAtRunProbe) Run(ctx context.Context, _ graph.EventSink) error {
 	p.ran.Store(true)
+	p.rowsAtRun.Store(int64(len(p.eng.Rows())))
 	p.sawRows.Store(p.eng.Snapshot() != nil && len(p.eng.Rows()) > 0)
 	<-ctx.Done()
 	return ctx.Err()
@@ -983,19 +986,37 @@ func (p *rowsAtRunProbe) Run(ctx context.Context, _ graph.EventSink) error {
 // The probe answers the question directly rather than by looking for the
 // symptom: a gap count depends on what happens to be running on the box, and
 // would read clean on a machine with no live claude session at all.
+//
+// The engine's overlays are injected rather than collected, which is what makes
+// the test portable. join.Join emits a row only for a CLASSIFIED agent process,
+// and the go test binary matches no classifier entry, so on a box with nothing
+// agent-shaped running the engine legitimately holds zero rows and the ordering
+// question has no content. An earlier version asserted a bare "the engine had
+// rows" against real /proc and passed here only because a live claude session
+// happened to exist; anywhere else it would have failed and sent the reader
+// hunting an ordering bug that was not there. A dark local unit is the one
+// overlay shape join turns into a row with no process behind it, so it gives
+// the assertion something to be about on every machine.
 func TestProductionCaptureOnceFillsRowsBeforeRunningCollectors(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	var probe *rowsAtRunProbe
 	prior := attachGraph
-	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, error) {
+	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+		eng.Overlay = func() ([]types.Overlay, error) {
+			return []types.Overlay{{
+				Runtime:     types.RuntimeLocal,
+				SessionName: "aitop-test-dark-unit",
+				Status:      "off",
+			}}, nil
+		}
 		probe = &rowsAtRunProbe{eng: eng}
 		occ := graph.NewOccupancyCollector(func() []types.Row { return eng.Rows() })
 		shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), occ, probe)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		eng.GraphSnapshot = shadow.Snapshot
-		return shadow, occ, nil
+		return shadow, occ, nil, nil
 	}
 	t.Cleanup(func() { attachGraph = prior })
 
@@ -1007,10 +1028,197 @@ func TestProductionCaptureOnceFillsRowsBeforeRunningCollectors(t *testing.T) {
 	if probe == nil || !probe.ran.Load() {
 		t.Fatalf("capture-once-runs-the-collectors rule violated: probe=%v", probe)
 	}
-	// The canary: this box is running the test, so /proc always holds at least
-	// this process and the engine can never legitimately have zero rows. A zero
-	// here means the collectors ran first, not that the machine was idle.
+	// The canary, and it must be checked FIRST. If the injected unit stops
+	// producing a row, the ordering assertion below becomes vacuous and would
+	// go on passing forever without ever comparing anything.
+	rowsAfter := len(probe.eng.Rows())
+	if rowsAfter == 0 {
+		t.Fatalf("capture-once-fixture-produces-a-row rule violated: the injected dark local unit yielded no row, so the ordering rule below has nothing to discriminate")
+	}
 	if !probe.sawRows.Load() {
-		t.Fatalf("capture-once-fills-rows-before-running-collectors rule violated: collectors ran against an engine holding %d rows", len(probe.eng.Rows()))
+		t.Fatalf("capture-once-fills-rows-before-running-collectors rule violated: the collectors ran against an engine holding %d rows, and the capture that followed them produced %d", probe.rowsAtRun.Load(), rowsAfter)
+	}
+}
+
+// slowNativeLane is a stand-in for a native collector whose first tick is a
+// slow disk walk. It publishes one node and only then signals readiness, which
+// is the ordering a real lane has and the ordering the one-shot depends on.
+type slowNativeLane struct {
+	delay   time.Duration
+	session string
+	ready   chan struct{}
+	once    sync.Once
+}
+
+func newSlowNativeLane(delay time.Duration, session string) *slowNativeLane {
+	return &slowNativeLane{delay: delay, session: session, ready: make(chan struct{})}
+}
+
+func (l *slowNativeLane) FirstTick() <-chan struct{} { return l.ready }
+
+// FirstTickNodes reports what Run published, so the one-shot waits for this
+// lane's own node instead of for a stretch of quiet.
+func (l *slowNativeLane) FirstTickNodes() []graph.NodeID {
+	id, err := graph.ClaudeSessionID(l.session)
+	if err != nil {
+		return nil
+	}
+	return []graph.NodeID{id}
+}
+
+func (l *slowNativeLane) Descriptor() graph.CollectorDescriptor {
+	return graph.CollectorDescriptor{
+		ID:           graph.SourceID("aitop:test:slow-native-lane"),
+		Runtime:      types.RuntimeClaude,
+		Schemas:      []graph.InputSchema{{Name: "aitop-test", Version: 1}},
+		Capabilities: []graph.Capability{graph.CapabilityIdentity},
+	}
+}
+
+func (l *slowNativeLane) Run(ctx context.Context, sink graph.EventSink) error {
+	select {
+	case <-time.After(l.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	now := time.Now()
+	actor, err := graph.ClaudeSessionID(l.session)
+	if err != nil {
+		return err
+	}
+	inc, err := graph.InvocationIncarnation(types.RuntimeClaude, l.session)
+	if err != nil {
+		return err
+	}
+	_, _ = sink.Publish(graph.Event{
+		Schema: 1,
+		Source: graph.EventSource{
+			Ref: graph.SourceRef{
+				ID:          graph.SourceID("aitop:test:slow-native-lane"),
+				Runtime:     types.RuntimeClaude,
+				Incarnation: graph.SourceIncarnationID(1),
+				Authority:   graph.AuthorityNative,
+			},
+			Mode: graph.SourceImmutable,
+		},
+		ID:               graph.ImmutableEventID(types.RuntimeClaude, "slow-native-lane-record", "/aitop/test/slow-native-lane"),
+		ReceivedAt:       now,
+		Kind:             graph.EventNodeObserved,
+		Actor:            actor,
+		ActorIncarnation: inc,
+		Data:             graph.NodeObserved{Runtime: types.RuntimeClaude, Role: types.RolePrimary},
+	})
+	l.once.Do(func() { close(l.ready) })
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// attachWithSlowLane replaces the production attach with one that registers a
+// single slow native lane beside the real occupancy collector.
+func attachWithSlowLane(t *testing.T, lane *slowNativeLane) {
+	t.Helper()
+	prior := attachGraph
+	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+		occ := graph.NewOccupancyCollector(func() []types.Row { return eng.Rows() })
+		shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), occ, lane)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		eng.GraphSnapshot = shadow.Snapshot
+		return shadow, occ, snapshot.NativeLanes{lane}, nil
+	}
+	t.Cleanup(func() { attachGraph = prior })
+}
+
+func graphHasNode(snap *snapshot.Snapshot, id graph.NodeID) bool {
+	if snap == nil || snap.Graph == nil {
+		return false
+	}
+	for _, node := range snap.Graph.Nodes {
+		if node.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap is the readiness
+// half. The occupancy wait is satisfied by any node and occupancy publishes one
+// immediately, so before this wait existed a one-shot could sample the graph
+// while a native lane was still walking a session store and emit an
+// occupancy-only graph with gaps=0 and nothing to say anything was missed. A
+// thin graph and a quiet box looked identical.
+func TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const session = "84a06b9a-0873-4655-9eb9-d7cf99554b05"
+	// Well past the 500ms occupancy wait, well under the 2s native cap: the
+	// window where the old code was wrong and the new code has to be right.
+	lane := newSlowNativeLane(900*time.Millisecond, session)
+	attachWithSlowLane(t, lane)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	snap, err := productionCaptureOnce(ctx, runOptions{NoPrices: true})
+	if err != nil {
+		t.Fatalf("production-capture-once-succeeds rule violated: err=%v", err)
+	}
+	id, err := graph.ClaudeSessionID(session)
+	if err != nil {
+		t.Fatalf("capture-once-test-fixture-session-id rule violated: err=%v", err)
+	}
+	if !graphHasNode(snap, id) {
+		nodes := 0
+		if snap != nil && snap.Graph != nil {
+			nodes = len(snap.Graph.Nodes)
+		}
+		t.Fatalf("capture-once-waits-for-a-native-lane-under-the-cap rule violated: %s absent from a graph of %d nodes after a %s lane", id, nodes, lane.delay)
+	}
+}
+
+// TestProductionCaptureOnceReturnsAtTheCapForASlowerLane is the bounded half.
+// A pathological store must cost a late graph, never a hung command, so the
+// one-shot gives up and emits what it has rather than waiting on a lane that
+// may never come in.
+func TestProductionCaptureOnceReturnsAtTheCapForASlowerLane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const session = "8ad6c366-70de-429c-98bf-a1c350d6ac31"
+	lane := newSlowNativeLane(time.Hour, session)
+	attachWithSlowLane(t, lane)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	started := time.Now()
+	snap, err := productionCaptureOnce(ctx, runOptions{NoPrices: true})
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("production-capture-once-succeeds rule violated: err=%v", err)
+	}
+	id, err := graph.ClaudeSessionID(session)
+	if err != nil {
+		t.Fatalf("capture-once-test-fixture-session-id rule violated: err=%v", err)
+	}
+	if graphHasNode(snap, id) {
+		t.Fatalf("capture-once-test-lane-is-slower-than-the-cap rule violated: %s present, so the fixture never exercised the bound", id)
+	}
+	// Bounded, not blocking. The budget plus the occupancy wait plus the drain
+	// is the whole cost; the ceiling is loose because this asserts the absence
+	// of an unbounded wait, not a performance target.
+	if elapsed > 15*time.Second {
+		t.Fatalf("capture-once-returns-at-the-cap rule violated: elapsed=%s for a lane that never comes in, budget=%s", elapsed, nativeFirstTickBudget)
+	}
+	// The one-shot still emits everything that DID arrive, so giving up on a
+	// lane costs that lane's evidence and nothing else.
+	if snap == nil || snap.Graph == nil {
+		t.Fatalf("capture-once-still-emits-a-graph rule violated: snap=%v", snap)
+	}
+}
+
+// TestNativeFirstTickBudgetIsTwoSeconds pins the cap itself. Both tests above
+// are written around it and neither would notice it drifting: the fast lane
+// would still land and the slow one would still be dropped if the budget grew
+// to a minute, and a one-shot that takes a minute is a hung command.
+func TestNativeFirstTickBudgetIsTwoSeconds(t *testing.T) {
+	if nativeFirstTickBudget != 2*time.Second {
+		t.Fatalf("native-first-tick-budget-is-two-seconds rule violated: budget=%s", nativeFirstTickBudget)
 	}
 }
