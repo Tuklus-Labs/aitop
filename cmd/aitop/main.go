@@ -136,6 +136,22 @@ func productionRunDeps() runDeps {
 	}
 }
 
+// attachGraph is the production graph attach, indirected so a test can see the
+// homes the run paths pass it. The engine's homes and the graph's homes are two
+// separate arguments to two separate subsystems, and nothing but this seam can
+// tell "wired to the engine's homes" from "wired to some homes".
+var attachGraph = snapshot.AttachGraph
+
+// productionGraphHomes is the one place the engine's homes become the graph's.
+// Both run paths go through it so a home added to the engine cannot reach the
+// overlay collectors while silently missing the native ones.
+func productionGraphHomes(eng *snapshot.Engine) snapshot.GraphHomes {
+	if eng == nil {
+		return snapshot.GraphHomes{}
+	}
+	return snapshot.GraphHomes{Claude: eng.ClaudeHome, Codex: eng.CodexHome, Grok: eng.GrokHome}
+}
+
 func productionEngine(opt runOptions) *snapshot.Engine {
 	var prices *price.Table
 	if !opt.NoPrices {
@@ -172,20 +188,27 @@ func reapEngineOnCancel(ctx context.Context, wait func()) {
 
 func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snapshot, error) {
 	eng := productionEngine(opt)
-	shadow, occ, err := snapshot.AttachOccupancyGraph(eng)
+	shadow, occ, err := attachGraph(eng, productionGraphHomes(eng))
 	if err != nil {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- shadow.Run(runCtx) }()
+	// Rows BEFORE collectors. Every collector's first tick reads the engine's
+	// current rows, and that is where a session's process binding lives: a
+	// native collector that ticks against an empty engine dates its nodes by
+	// their invocation incarnation, and occupancy's process-incarnation events
+	// for the same sessions are then rejected on identity. That is the
+	// incarnation fight the shared incarnation rule exists to prevent, and it
+	// costs the one-shot its occupancy rows for good, because a one-shot has no
+	// next tick to converge on. Measured on this box: 3 collision gaps and a
+	// Partial occupancy source, every run, until the capture moved up here.
 	snap, err := eng.CaptureOnce(ctx)
 	if err != nil {
-		cancel()
-		<-done
 		return snap, err
 	}
+	done := make(chan error, 1)
+	go func() { done <- shadow.Run(runCtx) }()
 	occ.Notify()
 	rows := []types.Row(nil)
 	if snap != nil {
@@ -205,10 +228,18 @@ func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snaps
 
 func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegistrar, actor *act.Actor, out io.Writer) error {
 	eng := productionEngine(opt)
-	shadow, _, err := snapshot.AttachOccupancyGraph(eng)
+	shadow, _, err := attachGraph(eng, productionGraphHomes(eng))
 	if err != nil {
 		return err
 	}
+	// Rows before collectors, for the reason recorded in productionCaptureOnce.
+	// Start refreshes the overlay synchronously before it returns, so by the
+	// time the shadow runs every collector's first tick sees the engine's rows.
+	// The interactive path would converge on its own two seconds later; the
+	// ordering is the same here so that a session's incarnation does not move
+	// under the graph in the first frames anyone actually looks at.
+	src := eng.Start(ctx)
+	reapEngineOnCancel(ctx, eng.Wait)
 	if reg != nil {
 		if err := reg.Go("graph", shadow.Run); err != nil {
 			return err
@@ -216,8 +247,6 @@ func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegis
 	} else {
 		go func() { _ = shadow.Run(ctx) }()
 	}
-	src := eng.Start(ctx)
-	reapEngineOnCancel(ctx, eng.Wait)
 	th := theme.Resolve(opt.ThemePath, "")
 	p := tea.NewProgram(
 		ui.New(src, th, actor.Enqueue),

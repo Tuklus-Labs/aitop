@@ -312,7 +312,22 @@ func dumpNodeFrom(n graph.Node) (dumpNode, error) {
 }
 
 func dumpStateFrom(st graph.NodeState) (dumpGraphState, error) {
-	out := dumpGraphState{Value: string(st.Value), Stale: st.Stale}
+	value := st.Value
+	if value == "" {
+		// The reconciler sets no default state, so a node whose only evidence
+		// is a NodeObserved event carries the zero NodeState. That was
+		// unreachable while occupancy was the only source, because occupancy
+		// claims a state for every node it publishes; the native collectors
+		// publish primaries with no claim on purpose, so it is now ordinary.
+		//
+		// "unknown" is this vocabulary's own word for a state nobody has
+		// determined, and it is what the passive normalizer already returns in
+		// the same situation. Only the VALUE is filled in: source and since stay
+		// absent, because they are the record of who determined the state and
+		// nobody did.
+		value = graph.StateUnknown
+	}
+	out := dumpGraphState{Value: string(value), Stale: st.Stale}
 	src, err := dumpSourcePtr(st.Source)
 	if err != nil {
 		return dumpGraphState{}, err

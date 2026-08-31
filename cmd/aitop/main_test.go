@@ -854,3 +854,163 @@ func occupancyMappableRows(rows []types.Row) int {
 	}
 	return n
 }
+
+// spyAttach replaces the production attach for one test and records what it was
+// handed. It returns a real shadow so the caller's own lifecycle still runs.
+func spyAttach(t *testing.T, fail error) *attachSpy {
+	t.Helper()
+	spy := &attachSpy{}
+	prior := attachGraph
+	attachGraph = func(eng *snapshot.Engine, homes snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, error) {
+		spy.calls++
+		spy.homes = homes
+		spy.engine = eng
+		if fail != nil {
+			return nil, nil, fail
+		}
+		return prior(eng, homes)
+	}
+	t.Cleanup(func() { attachGraph = prior })
+	return spy
+}
+
+type attachSpy struct {
+	calls  int
+	homes  snapshot.GraphHomes
+	engine *snapshot.Engine
+}
+
+// check asserts the spy saw exactly one attach carrying the engine's own homes.
+func (spy *attachSpy) check(t *testing.T, path string) {
+	t.Helper()
+	if spy.calls != 1 {
+		t.Fatalf("production-attaches-the-graph-once rule violated: path=%s calls=%d", path, spy.calls)
+	}
+	eng := spy.engine
+	if eng == nil {
+		t.Fatalf("production-attaches-the-running-engine rule violated: path=%s engine=nil", path)
+	}
+	// Non-empty first: a path that passed GraphHomes{} against an engine whose
+	// homes were also empty would satisfy an equality check while registering
+	// no native collector at all.
+	if eng.ClaudeHome == "" || eng.CodexHome == "" || eng.GrokHome == "" {
+		t.Fatalf("production-engine-has-homes rule violated: path=%s claude=%q codex=%q grok=%q", path, eng.ClaudeHome, eng.CodexHome, eng.GrokHome)
+	}
+	want := snapshot.GraphHomes{Claude: eng.ClaudeHome, Codex: eng.CodexHome, Grok: eng.GrokHome}
+	if spy.homes != want {
+		t.Fatalf("production-passes-engine-homes-to-the-graph rule violated: path=%s got=%+v want=%+v", path, spy.homes, want)
+	}
+}
+
+// TestProductionCaptureOncePassesEngineHomes pins the one-shot wiring. The
+// native collectors read a runtime's home directory, and productionEngine is
+// the only thing that knows where those are; a capture that attached the graph
+// without them would produce schema-2 JSON whose graph is occupancy-only, which
+// looks exactly like a box with nothing running on it.
+func TestProductionCaptureOncePassesEngineHomes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	spy := spyAttach(t, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := productionCaptureOnce(ctx, runOptions{NoPrices: true}); err != nil {
+		t.Fatalf("production-capture-once-succeeds rule violated: err=%v", err)
+	}
+	spy.check(t, "captureOnce")
+	// The homes must be the ones under the HOME this run actually had, not a
+	// path baked in at build time.
+	if !strings.HasPrefix(spy.homes.Claude, home) {
+		t.Fatalf("production-homes-follow-the-environment rule violated: claude=%q home=%q", spy.homes.Claude, home)
+	}
+}
+
+// TestProductionRunInteractivePassesEngineHomes covers the second attach site.
+// Two call sites and one lapse is the shape that leaves the TUI running an
+// occupancy-only graph while the one-shot path looks correct, so the interactive
+// path is asserted directly rather than assumed to match. The attach is made to
+// fail so the run returns before any terminal is touched.
+func TestProductionRunInteractivePassesEngineHomes(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sentinel := errors.New("attach refused")
+	spy := spyAttach(t, sentinel)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := productionRunInteractive(ctx, runOptions{NoPrices: true}, nil, nil, io.Discard)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("production-run-interactive-returns-attach-errors rule violated: err=%v", err)
+	}
+	spy.check(t, "runInteractive")
+}
+
+// rowsAtRunProbe is a collector that records whether the engine had rows the
+// first time the shadow ran it. It claims no capability of its own beyond
+// identity, publishes nothing, and blocks until the context ends, so it changes
+// what the graph contains not at all.
+type rowsAtRunProbe struct {
+	eng     *snapshot.Engine
+	ran     atomic.Bool
+	sawRows atomic.Bool
+}
+
+func (p *rowsAtRunProbe) Descriptor() graph.CollectorDescriptor {
+	return graph.CollectorDescriptor{
+		ID:           graph.SourceID("aitop:test:rows-at-run"),
+		Runtime:      types.RuntimeLocal,
+		Schemas:      []graph.InputSchema{{Name: "aitop-test", Version: 1}},
+		Capabilities: []graph.Capability{graph.CapabilityIdentity},
+	}
+}
+
+func (p *rowsAtRunProbe) Run(ctx context.Context, _ graph.EventSink) error {
+	p.ran.Store(true)
+	p.sawRows.Store(p.eng.Snapshot() != nil && len(p.eng.Rows()) > 0)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestProductionCaptureOnceFillsRowsBeforeRunningCollectors pins the ordering
+// the incarnation rule depends on. Every collector's first tick reads the
+// engine's rows to decide each node's incarnation: native dates a session by
+// its process when the rows bind one and by its invocation when they do not,
+// and occupancy always dates it by its process. Run the collectors against an
+// empty engine and the two disagree, occupancy's events are rejected on
+// identity, and the one-shot emits a graph whose occupancy source is Partial --
+// with no next tick to converge on, unlike the interactive path.
+//
+// The probe answers the question directly rather than by looking for the
+// symptom: a gap count depends on what happens to be running on the box, and
+// would read clean on a machine with no live claude session at all.
+func TestProductionCaptureOnceFillsRowsBeforeRunningCollectors(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var probe *rowsAtRunProbe
+	prior := attachGraph
+	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, error) {
+		probe = &rowsAtRunProbe{eng: eng}
+		occ := graph.NewOccupancyCollector(func() []types.Row { return eng.Rows() })
+		shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), occ, probe)
+		if err != nil {
+			return nil, nil, err
+		}
+		eng.GraphSnapshot = shadow.Snapshot
+		return shadow, occ, nil
+	}
+	t.Cleanup(func() { attachGraph = prior })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := productionCaptureOnce(ctx, runOptions{NoPrices: true}); err != nil {
+		t.Fatalf("production-capture-once-succeeds rule violated: err=%v", err)
+	}
+	if probe == nil || !probe.ran.Load() {
+		t.Fatalf("capture-once-runs-the-collectors rule violated: probe=%v", probe)
+	}
+	// The canary: this box is running the test, so /proc always holds at least
+	// this process and the engine can never legitimately have zero rows. A zero
+	// here means the collectors ran first, not that the machine was idle.
+	if !probe.sawRows.Load() {
+		t.Fatalf("capture-once-fills-rows-before-running-collectors rule violated: collectors ran against an engine holding %d rows", len(probe.eng.Rows()))
+	}
+}
