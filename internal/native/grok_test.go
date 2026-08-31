@@ -50,6 +50,8 @@ const (
 	// one reached only by the roster.
 	grokStaleFileSession = "01a01639-60c4-7fd0-82a9-b1fca7bbd026"
 	grokQuietFileSession = "01a01639-60c4-7fd0-82a9-b20e11c2885c"
+	// A roster entry whose session directory has no summary.json yet.
+	grokNoSummarySession = "019ffdf5-2c64-7ad0-ae70-fac78cb7718c"
 
 	// Children, all real child_session_ids off the live box.
 	grokRunningChild    = "019fc18b-9518-7283-900c-e9e6450ba842"
@@ -378,6 +380,27 @@ func TestGrokScannerRosterAndDarkMains(t *testing.T) {
 		t.Fatalf("grok-main-makes-no-state-or-terminal-claim rule violated: state=%q exit=%q exitAt=%v", live.State, live.Exit, live.ExitAt)
 	}
 
+	// The reach a bucket-mtime bound did not have. This session is not in the
+	// roster and its bucket has not been touched in three hours, so the walk
+	// reaching it is the whole amendment.
+	host, ok := nodeByID(nodes, mustGrokID(t, grokHostSession))
+	if !ok {
+		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: session=%s absent, bucketAge=3h summaryAge=5m ids=%v", grokHostSession, nodeIDs(nodes))
+	}
+	if host.Location != hostPath || host.State != "" {
+		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: location=%q state=%q want=%q/%q", host.Location, host.State, hostPath, "")
+	}
+
+	// The other route, which the walk's gate cannot supply: the file is two
+	// hours cold and the roster says a process holds the session.
+	quiet, ok := nodeByID(nodes, mustGrokID(t, grokQuietFileSession))
+	if !ok {
+		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: session=%s absent, summaryAge=2h openedAge=20m ids=%v", grokQuietFileSession, nodeIDs(nodes))
+	}
+	if quiet.Location != quietPath || quiet.StartedAt == nil || !quiet.StartedAt.Equal(now.Add(-20*time.Minute)) {
+		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: location=%q startedAt=%v want=%q/%s", quiet.Location, quiet.StartedAt, quietPath, now.Add(-20*time.Minute))
+	}
+
 	dark, ok := nodeByID(nodes, mustGrokID(t, grokDarkSession))
 	if !ok {
 		t.Fatalf("grok-dark-main-observed rule violated: session=%s absent ids=%v", grokDarkSession, nodeIDs(nodes))
@@ -401,27 +424,6 @@ func TestGrokScannerRosterAndDarkMains(t *testing.T) {
 	}
 	if second.Name != "" || second.Location != secondPath {
 		t.Fatalf("grok-non-build-agent-is-unnamed rule violated: name=%q agentName=%q location=%q want=%q/%q", second.Name, "grok-plan", second.Location, "", secondPath)
-	}
-
-	// The reach a bucket-mtime bound did not have. This session is not in the
-	// roster and its bucket has not been touched in three hours, so the walk
-	// reaching it is the whole amendment.
-	host, ok := nodeByID(nodes, mustGrokID(t, grokHostSession))
-	if !ok {
-		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: session=%s absent, bucketAge=3h summaryAge=5m ids=%v", grokHostSession, nodeIDs(nodes))
-	}
-	if host.Location != hostPath || host.State != "" {
-		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: location=%q state=%q want=%q/%q", host.Location, host.State, hostPath, "")
-	}
-
-	// The other route, which the walk's gate cannot supply: the file is two
-	// hours cold and the roster says a process holds the session.
-	quiet, ok := nodeByID(nodes, mustGrokID(t, grokQuietFileSession))
-	if !ok {
-		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: session=%s absent, summaryAge=2h openedAge=20m ids=%v", grokQuietFileSession, nodeIDs(nodes))
-	}
-	if quiet.Location != quietPath || quiet.StartedAt == nil || !quiet.StartedAt.Equal(now.Add(-20*time.Minute)) {
-		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: location=%q startedAt=%v want=%q/%s", quiet.Location, quiet.StartedAt, quietPath, now.Add(-20*time.Minute))
 	}
 
 	for _, absent := range []struct {
@@ -941,9 +943,13 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 			now.Add(-25*time.Minute), now.Add(-4*time.Minute)),
 		now.Add(-4*time.Minute))
 
+	// A roster entry whose session directory holds no summary.json: what the
+	// window between opening a session and writing its first summary looks like,
+	// and the only thing in this fixture that may move the skip counter.
 	tree.roster([]map[string]any{
 		grokRosterEntryFields(grokLiveSession, plainCWD, now.Add(-20*time.Minute)),
 		grokRosterEntryFields(grokSecondSession, spacedCWD, now.Add(-18*time.Minute)),
+		grokRosterEntryFields(grokNoSummarySession, plainCWD, now.Add(-1*time.Minute)),
 	}, now.Add(-18*time.Minute))
 	tree.seal(plainCWD, now.Add(-3*time.Hour))
 	tree.sealRaw("-home-x", now.Add(-3*time.Hour))
@@ -974,11 +980,16 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 	if spaced.Location != spacedPath || spaced.Project != "Obsidian Vault" {
 		t.Fatalf("grok-spaced-cwd-is-reachable-by-roster-path rule violated: location=%q project=%q want=%q/%q", spaced.Location, spaced.Project, spacedPath, "Obsidian Vault")
 	}
-	// Nothing was looked for and missed. This counter is what told us the space
-	// was being lost in the first place, so it is asserted at zero rather than
-	// left to speak only when it moves.
-	if skipped := scanner.skippedSummaries.Load(); skipped != 0 {
-		t.Fatalf("grok-every-roster-summary-resolves rule violated: skippedSummaries=%d want=0 cwd=%q ids=%v", skipped, spacedCWD, nodeIDs(nodes))
+	// One, and exactly one: the entry with no summary.json on disk. This counter
+	// is what told us the spaced cwd was being lost in the first place, so it is
+	// pinned to a number rather than to zero -- a 2 here means the space is being
+	// dropped again, and a 0 means the counter has stopped seeing anything at
+	// all. Both readings are wrong and both are visible.
+	if skipped := scanner.skippedSummaries.Load(); skipped != 1 {
+		t.Fatalf("grok-unreadable-roster-summary-counted rule violated: skippedSummaries=%d want=1 (the entry with no summary.json, and NOT the spaced cwd %q) ids=%v", skipped, spacedCWD, nodeIDs(nodes))
+	}
+	if seen := countNodeID(nodes, mustGrokID(t, grokNoSummarySession)); seen != 0 {
+		t.Fatalf("grok-roster-entry-without-a-summary-publishes-nothing rule violated: session=%s count=%d ids=%v", grokNoSummarySession, seen, nodeIDs(nodes))
 	}
 
 	walked, ok := nodeByID(nodes, mustGrokID(t, grokDarkSession))
