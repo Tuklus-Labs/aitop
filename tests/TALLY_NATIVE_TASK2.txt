@@ -79,3 +79,34 @@ func TestClaudeScannerHorizonSkipsStale
 func TestClaudeScannerVanishesOrphanedChildren
 func TestClaudeScannerAgentIDFromFilename
 func TestClaudeCollectorLandsChainInRealShadow
+
+
+=== FIX ROUND 1 (review findings 1 and 2: synthesized-parent path) ===
+date: 2026-08-31T01:15:06-07:00
+parent_commit: f1759d2e3afee9fe7005ed669562500df90bdd6b
+note: certifies the tree carrying the two review fixes, measured before commit.
+
+== gofmt -l internal/native/ ==
+(empty above = formatted)
+
+== go vet ./internal/native ==
+vet_exit=0
+
+== go test ./internal/native -count=1 ==
+ok  	aitop/internal/native	0.215s
+test_exit=0
+
+== go test ./internal/native -count=1 -race ==
+ok  	aitop/internal/native	1.233s
+race_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+packages_reporting=25 non_ok_lines=0 all_exit=0
+note: all_exit is go test's own status, not a grep's; non_ok_lines counts
+note: lines that do not start with "ok", so 0 is the only clean reading.
+
+== test function inventory (authoritative count) ==
+16

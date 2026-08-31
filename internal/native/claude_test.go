@@ -433,6 +433,13 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 	if orphanParent.Role != types.RolePrimary || orphanParent.Name != "" {
 		t.Fatalf("claude-orphan-parent-is-minimal rule violated: role=%q name=%q want=%q/%q", orphanParent.Role, orphanParent.Name, types.RolePrimary, "")
 	}
+	// The missing roster entry that proves the children died proves the session
+	// died. A synthesized parent without a terminal is immortal: the reconciler
+	// sets GhostExpiresAt only from a terminal state and its sweep skips a node
+	// that has none, while MaxNodes gates admission rather than eviction.
+	if orphanParent.Exit != graph.OutcomeVanished || orphanParent.ExitAt == nil || !orphanParent.ExitAt.Equal(orphanAt) {
+		t.Fatalf("claude-orphan-parent-vanishes-with-its-children rule violated: exit=%q exitAt=%v want=%q/%s", orphanParent.Exit, orphanParent.ExitAt, graph.OutcomeVanished, orphanAt)
+	}
 
 	buried, ok := nodeByID(nodes, mustAgentID(t, claudeFixtureOrphanOld, "aburied0000000000"))
 	if !ok {
@@ -440,6 +447,16 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 	}
 	if buried.Exit != graph.OutcomeVanished || buried.ExitAt == nil || now.Sub(*buried.ExitAt) <= nativeExitWindow {
 		t.Fatalf("claude-old-orphan-terminal-is-dated rule violated: exit=%q exitAt=%v window=%s", buried.Exit, buried.ExitAt, nativeExitWindow)
+	}
+	// Every child of that store is past the exit window and will be dropped by
+	// the core, so a parent synthesized for them would outlive every child it
+	// exists for, with no edge, no state and no terminal to end it.
+	buriedParent := mustSessionID(t, claudeFixtureOrphanOld)
+	if _, ok := nodeByID(nodes, buriedParent); ok {
+		t.Fatalf("claude-buried-store-synthesizes-no-parent rule violated: session=%s present with every child past window=%s ids=%v", claudeFixtureOrphanOld, nativeExitWindow, nodeIDs(nodes))
+	}
+	if len(nodes) != 6 {
+		t.Fatalf("claude-orphan-fixture-node-count rule violated: nodes=%d want=6 ids=%v", len(nodes), nodeIDs(nodes))
 	}
 
 	// End-to-end: the core must drop that old terminal entirely rather than
@@ -453,16 +470,28 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 	}
 	buriedID := mustAgentID(t, claudeFixtureOrphanOld, "aburied0000000000")
 	for _, ev := range events {
-		if ev.Actor == buriedID || ev.Target == buriedID {
-			t.Fatalf("claude-old-orphan-not-observed rule violated: kind=%s actor=%s exitAt=%v window=%s", ev.Kind, ev.Actor, buried.ExitAt, nativeExitWindow)
+		if ev.Actor == buriedID || ev.Target == buriedID || ev.Actor == buriedParent || ev.Target == buriedParent {
+			t.Fatalf("claude-old-orphan-not-observed rule violated: kind=%s actor=%s target=%s exitAt=%v window=%s", ev.Kind, ev.Actor, ev.Target, buried.ExitAt, nativeExitWindow)
 		}
 	}
+	// Five published nodes: the live session, its two children, the fresh
+	// orphan and that orphan's synthesized parent. A sixth would be the
+	// immortal one this test exists to keep out.
+	if published := countKind(events, graph.EventNodeObserved); published != 5 {
+		t.Fatalf("claude-orphan-published-node-count rule violated: node_observed=%d want=5 kinds=%v", published, kindsOf(events))
+	}
+	// One, not two: the buried child is dropped here, while its parent was
+	// never synthesized in the first place.
 	if skipped := collector.staleTerminals.Load(); skipped != 1 {
 		t.Fatalf("claude-old-orphan-drop-counted rule violated: staleTerminals=%d want=1 events=%d", skipped, len(events))
 	}
 	orphanID := mustAgentID(t, claudeFixtureOrphan, "aorphan0000000000")
 	if _, ok := firstOfKind(events, graph.EventExitObserved, orphanID); !ok {
 		t.Fatalf("claude-fresh-orphan-exit-emitted rule violated: no exit_observed for actor=%s kinds=%v", orphanID, kindsOf(events))
+	}
+	orphanParentID := mustSessionID(t, claudeFixtureOrphan)
+	if _, ok := firstOfKind(events, graph.EventExitObserved, orphanParentID); !ok {
+		t.Fatalf("claude-orphan-parent-exit-emitted rule violated: no exit_observed for actor=%s kinds=%v", orphanParentID, kindsOf(events))
 	}
 }
 

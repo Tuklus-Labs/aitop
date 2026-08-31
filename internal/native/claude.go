@@ -188,29 +188,46 @@ func (s *claudeScanner) scanSubagentStores(now time.Time, live map[string]*claud
 				continue // <sessionId>.jsonl main transcripts are not parsed in v1
 			}
 			store := filepath.Join(projects, slug.Name(), session.Name(), claudeSubagentsDir)
-			storeChildren, storeSpawns, firstLocation := s.scanStore(now, store, session.Name(), live[session.Name()])
+			parent := live[session.Name()]
+			storeChildren, storeSpawns, anchor := s.scanStore(now, store, session.Name(), parent)
 			if len(storeChildren) == 0 {
 				continue
 			}
 			children = append(children, storeChildren...)
 			spawns = append(spawns, storeSpawns...)
-			s.appendSessionParent(session.Name(), firstLocation, emitted, nodes)
+			if anchor.location == "" {
+				// Every child here carries a terminal the core will drop, so a
+				// session synthesized for them would outlive every child it
+				// exists for, with no edge, no state and no terminal to end it.
+				continue
+			}
+			s.appendSessionParent(session.Name(), anchor, parent == nil, emitted, nodes)
 		}
 	}
 	return children, spawns
 }
 
-// scanStore reads one subagents directory. It returns the location of the first
-// meta file it accepted, which dates the enclosing session when no roster entry
-// does; directory order is sorted, so that choice is stable across ticks.
-func (s *claudeScanner) scanStore(now time.Time, store, session string, parent *claudeSidecar) ([]NodeSighting, []SpawnSighting, string) {
+// claudeStoreAnchor is what one subagents directory says about its enclosing
+// session: which file to date the session from, and when anything in the store
+// was last touched. location stays empty unless the store accepted at least one
+// child the core will actually publish, which is what keeps a session from
+// being synthesized for children that are all past the exit window.
+type claudeStoreAnchor struct {
+	location       string
+	newestActivity time.Time
+}
+
+// scanStore reads one subagents directory. Its anchor names the first
+// admissible meta file it accepted; directory order is sorted, so that choice
+// is stable across ticks.
+func (s *claudeScanner) scanStore(now time.Time, store, session string, parent *claudeSidecar) ([]NodeSighting, []SpawnSighting, claudeStoreAnchor) {
+	var anchor claudeStoreAnchor
 	entries, err := os.ReadDir(store)
 	if err != nil {
-		return nil, nil, ""
+		return nil, nil, anchor
 	}
 	var children []NodeSighting
 	var spawns []SpawnSighting
-	firstLocation := ""
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasPrefix(name, claudeAgentPrefix) || !strings.HasSuffix(name, claudeMetaSuffix) {
@@ -284,8 +301,11 @@ func (s *claudeScanner) scanStore(now time.Time, store, session string, parent *
 			sighting.ExitAt = &vanishedAt
 		}
 		children = append(children, sighting)
-		if firstLocation == "" {
-			firstLocation = metaPath
+		if activity.After(anchor.newestActivity) {
+			anchor.newestActivity = activity
+		}
+		if anchor.location == "" && !terminalOutsideWindow(sighting, now) {
+			anchor.location = metaPath
 		}
 
 		parentID, err := claudeParentID(session, meta.ParentAgentID)
@@ -306,12 +326,13 @@ func (s *claudeScanner) scanStore(now time.Time, store, session string, parent *
 			Location:        metaPath,
 		})
 	}
-	return children, spawns, firstLocation
+	return children, spawns, anchor
 }
 
 // appendSessionParent publishes the enclosing session when no roster entry did,
-// so the spawn edge rooted at it has both endpoints.
-func (s *claudeScanner) appendSessionParent(session, location string, emitted map[graph.NodeID]bool, nodes *[]NodeSighting) {
+// so the spawn edge rooted at it has both endpoints. orphaned says the session
+// has no roster entry at all.
+func (s *claudeScanner) appendSessionParent(session string, anchor claudeStoreAnchor, orphaned bool, emitted map[graph.NodeID]bool, nodes *[]NodeSighting) {
 	id, err := graph.ClaudeSessionID(session)
 	if err != nil {
 		s.skippedSpawns.Add(1)
@@ -321,13 +342,25 @@ func (s *claudeScanner) appendSessionParent(session, location string, emitted ma
 		return
 	}
 	emitted[id] = true
-	*nodes = append(*nodes, NodeSighting{
+	sighting := NodeSighting{
 		ID:        id,
 		SessionID: session,
 		Runtime:   types.RuntimeClaude,
 		Role:      types.RolePrimary,
-		Location:  location,
-	})
+		Location:  anchor.location,
+	}
+	if orphaned {
+		// The same absence that proves the children died proves the session
+		// did: there is no roster entry, and in-process children cannot
+		// outlive their session. Without a terminal this node is immortal,
+		// because the reconciler dates eviction from a terminal state and
+		// nothing else would ever end it. A sidecar that is merely stale is
+		// not death evidence, so a session that still has one stands as it is.
+		vanishedAt := anchor.newestActivity
+		sighting.Exit = graph.OutcomeVanished
+		sighting.ExitAt = &vanishedAt
+	}
+	*nodes = append(*nodes, sighting)
 }
 
 // claudeParentID resolves a child's parent endpoint: the sibling agent named by

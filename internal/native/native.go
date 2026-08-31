@@ -182,7 +182,7 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, nodes []NodeSighti
 	exits := make([]NodeSighting, 0, len(nodes))
 
 	for _, sighting := range nodes {
-		if c.terminalOutsideWindow(sighting, now) {
+		if terminalOutsideWindow(sighting, now) {
 			c.staleTerminals.Add(1)
 			continue
 		}
@@ -274,7 +274,10 @@ func (c *Collector) incarnationFor(processes map[string]graph.ProcessIdentity, s
 
 // terminalOutsideWindow reports a terminal we must not observe at all. A
 // terminal we cannot date cannot be proven fresh, so it counts as stale.
-func (c *Collector) terminalOutsideWindow(sighting NodeSighting, now time.Time) bool {
+// Scanners share this predicate rather than restating the window: a scanner
+// deciding admissibility by its own copy of the rule would drift from the
+// gate that actually drops the sighting.
+func terminalOutsideWindow(sighting NodeSighting, now time.Time) bool {
 	if sighting.Exit == "" {
 		return false
 	}
