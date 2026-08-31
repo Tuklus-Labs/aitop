@@ -1,14 +1,15 @@
-aitop native provenance Task 6 tally (graph pane, post-sabotage-epoch)
-date: 2026-08-31T06:57:42-07:00
+aitop native provenance Task 6 tally (graph pane, post-amendment)
+date: 2026-08-31T07:07:34-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-head: b5bc2d44331823410aa7d48a55624e27995baeea
-epoch_head: 55742c8f434decbcfd3a6c1db77a06cfadbad505
-note: certifies the graph pane: flattenGraph, renderGraph, the 1/2/tab
-note: presets, and the pane's read-only keymap. Measured after the
-note: sabotage epoch, before the tally commit. Exit codes below are
-note: captured from the command itself, never from the tail of a pipe.
+head: f50c7812265eee7314accc1f02f5426f4ae26212
+epoch_head: f50c7812265eee7314accc1f02f5426f4ae26212
+note: certifies the graph pane (flattenGraph, renderGraph, the 1/2/tab
+note: presets, the pane's read-only keymap) plus the controller's footer
+note: ruling: `2 graph` at high priority in the table key row.
+note: supersedes the pre-amendment tally at 4ae1255 (84 cycles).
+note: exit codes are captured from each command, never from a pipe tail.
 
 commands (exact, from worktree root):
   gofmt -l internal/ cmd/
@@ -24,27 +25,45 @@ commands (exact, from worktree root):
 == go vet ./... ==
 vet_exit=0
 
+
 == go build ./... ==
 build_exit=0
 
 == go test ./... -count=1 ==
 all_exit=0
-packages_ok=25
-non_ok_lines=0
+packages_ok=25 non_ok_lines=0
 
 == go test -race ./internal/ui -count=1 ==
 race_exit=0
-ok  	aitop/internal/ui	1.321s
+ok  	aitop/internal/ui	1.320s
 
 == go run ./cmd/aitop --screenshot 150x42 ==
 screenshot_exit=0
 rendered_lines=42  (want 42)
 distinct_line_widths=[150]  (want [150])
-┤ agents ├     occurrences=1 expected=1
-┤ graph ├      occurrences=0 expected=0
-NAME           occurrences=1 expected=1
-aitop-canary   occurrences=1 expected=1
-verdict: table view unchanged by default, graph pane absent unless asked
+  ┤ agents ├     occurrences=1 expected=1
+  ┤ graph ├      occurrences=0 expected=0
+  NAME           occurrences=1 expected=1
+  aitop-canary   occurrences=1 expected=1
+  2 graph        occurrences=1 expected=1
+verdict: table view unchanged by default, graph pane absent unless asked,
+verdict: and the graph preset is on the key row at the house width.
+
+== footer key row packing, measured across widths ==
+width  2 graph    s sort     k kill     v mark     1 table  
+100    yes        no         yes        no         no       
+120    yes        no         yes        no         no       
+140    yes        no         yes        no         no       
+150    yes        yes        yes        no         no       
+160    yes        yes        yes        yes        no       
+165    yes        yes        yes        yes        yes      
+200    yes        yes        yes        yes        yes      
+note: the row packs from the head and drops from the tail. `2 graph` holds
+note: high priority so it survives everywhere; the accepted cost is that
+note: `s sort` now needs 150 (was 140) and `v mark` 160 (was 150).
+note: `1 table` keeps tail priority: in the table's own row it only says
+note: "you are already here". The way back is the pane's own key row,
+note: asserted present at 80x24.
 
 == Task 6 tests ==
 internal/ui/view_test.go   TestGraphPaneRendersSpawnForest
@@ -62,16 +81,12 @@ note: TrueColor. Without it the suite renders no colour at all and every
 note: dim assertion is vacuous; see SABOTAGE_LOG S-T6-30.
 
 == sabotage epoch (single run, single head) ==
-total=84 as_predicted=84 mismatches=0
-production_RED=44 predicted_GREEN=40
-restores confirmed in log=84 (porcelain clean + focused test green again)
-cycles per test: forest=17 marks=17 keys=15 msg=8 geom=7 cycle=7 order=6 empty=5 noact=2
-patch preflight: 80 distinct patch SETS, each applied exactly as its cycle
-  plants it, then vetted. Six build-breaks caught here, not in a run.
+total=86 as_predicted=86 mismatches=0
+production_RED=45 predicted_GREEN=41
+restores confirmed in log=86
+cycles per test: RendersSpawnForest=17 MarksGhostAndPartial=17 KeysToggle=17 CapsMessageEdgesAtThree=8 KeepsFrameGeometry=7 CycleSafe=7 OrdersRuntimeGroupsThenName=6 EmptyShowsCanary=5 SelectionCarriesNoActions=2
 log: tests/sabotage-native-task6/sabotage_runs_native_task6.log
 corrections: tests/sabotage-native-task6/sabotage_runs_native_task6_corrections.log
-  (the earlier spliced run carrying three corrected predictions, kept as
-   the record of what was wrong before the clean single-head re-run)
 driver: tests/sabotage-native-task6/sabotage_driver.py
 
 == live graph the pane would draw on this box ==

@@ -126,6 +126,12 @@ identical otherwise.
 The pane is read-only: a selection carries no actions in v1, so `f m c r k p b`
 do nothing there. Move with the usual keys, `1` or `⇥` to go back.
 
+`2 graph` sits at high priority in the table's key row, so it is on screen from
+100 columns up. That row packs from the head and drops from the tail, and it was
+already over budget: `s sort` needs 150 cells, `v mark` 160, `1 table` 165. The
+way back out of the pane never depends on that, because the graph's own key row
+is short enough to fit anywhere.
+
 **Local fanout.** `c` clones one llama-server / vLLM instance. `f` does the same
 once (fanout-1). Each clone picks a new port in 8180-8399 and a new
 `--slot-save-path`; the template argv and `-m` stay. Spawn is

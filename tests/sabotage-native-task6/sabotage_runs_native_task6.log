@@ -1,15 +1,15 @@
-head: 55742c8f434decbcfd3a6c1db77a06cfadbad505
+head: f50c7812265eee7314accc1f02f5426f4ae26212
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 tz_offset: -0700
-chunk: cycles [0:84) of 84
+chunk: cycles [0:86) of 86
 
 ===== S-T6-01-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
 --- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
-    view_test.go:997: graph-pane-indents-children-under-parents rule violated: "│ ● impl-t6?                                                 opus           aitop        thinking  │"
+    view_test.go:1004: graph-pane-indents-children-under-parents rule violated: "│ ● impl-t6?                                                 opus           aitop        thinking  │"
 FAIL
 FAIL	aitop/internal/ui	0.004s
 FAIL
@@ -30,7 +30,7 @@ S-T6-01-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -49,7 +49,7 @@ exit=1 wall=0.5s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-02-prod: AS-PREDICTED
 S-T6-02-prod: restored, porcelain clean, focused test green again
@@ -60,7 +60,7 @@ internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 6 +++---
  2 files changed, 4 insertions(+), 4 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.002s
+ok  	aitop/internal/ui	0.004s
 S-T6-02-weak: AS-PREDICTED
 S-T6-02-weak: restored, porcelain clean, focused test green again
 
@@ -70,9 +70,9 @@ internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.4s
 --- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
-    view_test.go:1000: graph-pane-roots-carry-no-rail rule violated: "│ └─● aegis-79                                               fable-5        aitop        active    │"
+    view_test.go:1007: graph-pane-roots-carry-no-rail rule violated: "│ └─● aegis-79                                               fable-5        aitop        active    │"
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-03-prod: AS-PREDICTED
 S-T6-03-prod: restored, porcelain clean, focused test green again
@@ -82,8 +82,8 @@ plant diffstat:
 internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
 S-T6-03-weak: AS-PREDICTED
 S-T6-03-weak: restored, porcelain clean, focused test green again
 
@@ -121,7 +121,7 @@ internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 6 +++---
  2 files changed, 4 insertions(+), 4 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.004s
+ok  	aitop/internal/ui	0.003s
 S-T6-04-weak: AS-PREDICTED
 S-T6-04-weak: restored, porcelain clean, focused test green again
 
@@ -131,9 +131,9 @@ internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.4s
 --- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
-    view_test.go:1006: graph-pane-falls-back-to-the-id-tail rule violated: "│ ○ ✝ grok:session:01a022e3                                  grok-4.6       aitop        completed │"
+    view_test.go:1013: graph-pane-falls-back-to-the-id-tail rule violated: "│ ○ ✝ grok:session:01a022e3                                  grok-4.6       aitop        completed │"
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-05-prod: AS-PREDICTED
 S-T6-05-prod: restored, porcelain clean, focused test green again
@@ -143,8 +143,8 @@ plant diffstat:
 internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
 S-T6-05-weak: AS-PREDICTED
 S-T6-05-weak: restored, porcelain clean, focused test green again
 
@@ -152,11 +152,11 @@ S-T6-05-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
 --- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
-    view_test.go:1012: graph-pane-header-names-itself rule violated: "╭─┤ forest ├──────────────────────────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮"
+    view_test.go:1019: graph-pane-header-names-itself rule violated: "╭─┤ forest ├──────────────────────────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮"
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-06-prod: AS-PREDICTED
 S-T6-06-prod: restored, porcelain clean, focused test green again
@@ -166,8 +166,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
 S-T6-06-weak: AS-PREDICTED
 S-T6-06-weak: restored, porcelain clean, focused test green again
 
@@ -175,9 +175,9 @@ S-T6-06-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
-    view_test.go:1015: graph-pane-header-counts-what-it-drew rule violated: "╭─┤ graph ├───────────────────────────────────────────────┤ 4 nodes · 4 edges · 1 gaps · topo r7 ├─╮"
+    view_test.go:1022: graph-pane-header-counts-what-it-drew rule violated: "╭─┤ graph ├───────────────────────────────────────────────┤ 4 nodes · 4 edges · 1 gaps · topo r7 ├─╮"
 FAIL
 FAIL	aitop/internal/ui	0.004s
 FAIL
@@ -189,7 +189,7 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.5s
+exit=0 wall=0.4s
 ok  	aitop/internal/ui	0.003s
 S-T6-07-weak: AS-PREDICTED
 S-T6-07-weak: restored, porcelain clean, focused test green again
@@ -198,7 +198,7 @@ S-T6-07-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -217,7 +217,7 @@ exit=1 wall=0.5s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.005s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-08-prod: AS-PREDICTED
 S-T6-08-prod: restored, porcelain clean, focused test green again
@@ -227,8 +227,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.005s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
 S-T6-08-weak: AS-PREDICTED
 S-T6-08-weak: restored, porcelain clean, focused test green again
 
@@ -236,11 +236,11 @@ S-T6-08-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 3 ---
  1 file changed, 3 deletions(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
-    view_test.go:1027: graph-pane-marks-ghosts-with-a-dagger rule violated: "│ ○ 01a022e3                                                 grok-4.6       aitop        completed │"
+    view_test.go:1034: graph-pane-marks-ghosts-with-a-dagger rule violated: "│ ○ 01a022e3                                                 grok-4.6       aitop        completed │"
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-09-prod: AS-PREDICTED
 S-T6-09-prod: restored, porcelain clean, focused test green again
@@ -250,8 +250,8 @@ plant diffstat:
 internal/ui/view.go      | 3 ---
  internal/ui/view_test.go | 2 +-
  2 files changed, 1 insertion(+), 4 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
 S-T6-09-weak: AS-PREDICTED
 S-T6-09-weak: restored, porcelain clean, focused test green again
 
@@ -259,11 +259,11 @@ S-T6-09-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
-    view_test.go:1037: graph-pane-marks-only-what-is-marked rule violated: "│ ● ✝ aegis-79                                               fable-5        aitop        active    │"
+    view_test.go:1044: graph-pane-marks-only-what-is-marked rule violated: "│ ● ✝ aegis-79                                               fable-5        aitop        active    │"
 FAIL
-FAIL	aitop/internal/ui	0.006s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-10-prod: AS-PREDICTED
 S-T6-10-prod: restored, porcelain clean, focused test green again
@@ -273,8 +273,8 @@ plant diffstat:
 internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.005s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
 S-T6-10-weak: AS-PREDICTED
 S-T6-10-weak: restored, porcelain clean, focused test green again
 
@@ -282,11 +282,11 @@ S-T6-10-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
-    view_test.go:1034: graph-pane-marks-partial-nodes rule violated: "│ └─● impl-t6                                                opus           aitop        thinking  │"
+    view_test.go:1041: graph-pane-marks-partial-nodes rule violated: "│ └─● impl-t6                                                opus           aitop        thinking  │"
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-11-prod: AS-PREDICTED
 S-T6-11-prod: restored, porcelain clean, focused test green again
@@ -296,8 +296,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.002s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
 S-T6-11-weak: AS-PREDICTED
 S-T6-11-weak: restored, porcelain clean, focused test green again
 
@@ -305,7 +305,7 @@ S-T6-11-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -336,7 +336,7 @@ internal/ui/view.go      | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=1 wall=0.5s
 --- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
-    view_test.go:1037: graph-pane-marks-only-what-is-marked rule violated: "│ ● aegis-79?                                                fable-5        aitop        active    │"
+    view_test.go:1044: graph-pane-marks-only-what-is-marked rule violated: "│ ● aegis-79?                                                fable-5        aitop        active    │"
 FAIL
 FAIL	aitop/internal/ui	0.004s
 FAIL
@@ -386,8 +386,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.003s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
 S-T6-13-weak: AS-PREDICTED
 S-T6-13-weak: restored, porcelain clean, focused test green again
 
@@ -414,7 +414,7 @@ exit=1 wall=0.5s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.002s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-14-prod: AS-PREDICTED
 S-T6-14-prod: restored, porcelain clean, focused test green again
@@ -425,7 +425,7 @@ internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.003s
+ok  	aitop/internal/ui	0.004s
 S-T6-14-weak: AS-PREDICTED
 S-T6-14-weak: restored, porcelain clean, focused test green again
 
@@ -433,7 +433,7 @@ S-T6-14-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -452,7 +452,7 @@ exit=1 wall=0.5s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────╯
 FAIL
-FAIL	aitop/internal/ui	0.002s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-15-prod: AS-PREDICTED
 S-T6-15-prod: restored, porcelain clean, focused test green again
@@ -462,7 +462,7 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.4s
+exit=0 wall=0.5s
 ok  	aitop/internal/ui	0.004s
 S-T6-15-weak: AS-PREDICTED
 S-T6-15-weak: restored, porcelain clean, focused test green again
@@ -490,7 +490,7 @@ exit=1 wall=0.5s
         │                                           aitop-canary                                           │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────╯
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-16-prod: AS-PREDICTED
 S-T6-16-prod: restored, porcelain clean, focused test green again
@@ -500,8 +500,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.003s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
 S-T6-16-weak: AS-PREDICTED
 S-T6-16-weak: restored, porcelain clean, focused test green again
 
@@ -511,7 +511,7 @@ internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.5s
 --- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
-    view_test.go:1218: graph-pane-fills-terminal-height rule violated at 80x24: got 25 lines
+    view_test.go:1226: graph-pane-fills-terminal-height rule violated at 80x24: got 25 lines
 FAIL
 FAIL	aitop/internal/ui	0.004s
 FAIL
@@ -524,7 +524,7 @@ internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.2s
 --- FAIL: TestGraphPaneEmptyShowsCanary (0.00s)
-    view_test.go:1064: graph-pane-empty-keeps-frame-height rule violated (no snapshot): 31 lines
+    view_test.go:1071: graph-pane-empty-keeps-frame-height rule violated (no snapshot): 31 lines
 FAIL
 FAIL	aitop/internal/ui	0.003s
 FAIL
@@ -547,9 +547,9 @@ internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.5s
 --- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
-    view_test.go:1218: graph-pane-fills-terminal-height rule violated at 80x24: got 10 lines
+    view_test.go:1226: graph-pane-fills-terminal-height rule violated at 80x24: got 10 lines
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-18-prod: AS-PREDICTED
 S-T6-18-prod: restored, porcelain clean, focused test green again
@@ -560,7 +560,7 @@ internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.005s
+ok  	aitop/internal/ui	0.008s
 S-T6-18-weak: AS-PREDICTED
 S-T6-18-weak: restored, porcelain clean, focused test green again
 
@@ -568,9 +568,9 @@ S-T6-18-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
 --- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
-    view_test.go:1222: graph-pane-line-is-terminal-width rule violated at 80x24 line 4: width 79:
+    view_test.go:1230: graph-pane-line-is-terminal-width rule violated at 80x24 line 4: width 79:
         ╭─┤ graph ├──────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮
 FAIL
 FAIL	aitop/internal/ui	0.004s
@@ -584,7 +584,7 @@ internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.006s
+ok  	aitop/internal/ui	0.007s
 S-T6-18b-weak: AS-PREDICTED
 S-T6-18b-weak: restored, porcelain clean, focused test green again
 
@@ -592,39 +592,39 @@ S-T6-18b-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 4 ----
  1 file changed, 4 deletions(-)
-exit=1 wall=0.7s
-mgc.go:1807 +0xeb fp=0x37f2c8e77fc8 sp=0x37f2c8e77f40 pc=0x43042b
+exit=1 wall=0.8s
+src/runtime/mgc.go:1807 +0xeb fp=0x3c4d820f9fc8 sp=0x3c4d820f9f40 pc=0x43042b
 runtime.gcBgMarkStartWorkers.gowrap1()
-	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x37f2c8e77fe0 sp=0x37f2c8e77fc8 pc=0x482697
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x3c4d820f9fe0 sp=0x3c4d820f9fc8 pc=0x482697
 runtime.goexit({})
-	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x37f2c8e77fe8 sp=0x37f2c8e77fe0 pc=0x492b41
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x3c4d820f9fe8 sp=0x3c4d820f9fe0 pc=0x492b41
 created by runtime.gcBgMarkStartWorkers in goroutine 9
 	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
 
-goroutine 33 gp=0x37f2c8e75a40 m=nil [GC worker (idle)]:
-runtime.gopark(0x6d2fbaad651b?, 0x1?, 0x28?, 0xec?, 0x0?)
-	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x37f2c8e78740 sp=0x37f2c8e78720 pc=0x48c2ca
-runtime.gcBgMarkWorker(0x37f2c8d8a3f0)
-	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x37f2c8e787c8 sp=0x37f2c8e78740 pc=0x43042b
+goroutine 33 gp=0x3c4d81d39680 m=nil [GC worker (idle)]:
+runtime.gopark(0x9f31a0?, 0x1?, 0x8d?, 0x5e?, 0x0?)
+	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x3c4d820fa740 sp=0x3c4d820fa720 pc=0x48c2ca
+runtime.gcBgMarkWorker(0x3c4d81c323f0)
+	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x3c4d820fa7c8 sp=0x3c4d820fa740 pc=0x43042b
 runtime.gcBgMarkStartWorkers.gowrap1()
-	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x37f2c8e787e0 sp=0x37f2c8e787c8 pc=0x482697
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x3c4d820fa7e0 sp=0x3c4d820fa7c8 pc=0x482697
 runtime.goexit({})
-	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x37f2c8e787e8 sp=0x37f2c8e787e0 pc=0x492b41
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x3c4d820fa7e8 sp=0x3c4d820fa7e0 pc=0x492b41
 created by runtime.gcBgMarkStartWorkers in goroutine 9
 	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
 
-goroutine 34 gp=0x37f2c8e75c20 m=nil [GC worker (idle)]:
-runtime.gopark(0x6d2fb9cc4889?, 0x1?, 0x4f?, 0x79?, 0x0?)
-	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x37f2c8e78f40 sp=0x37f2c8e78f20 pc=0x48c2ca
-runtime.gcBgMarkWorker(0x37f2c8d8a3f0)
-	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x37f2c8e78fc8 sp=0x37f2c8e78f40 pc=0x43042b
+goroutine 34 gp=0x3c4d81d39860 m=nil [GC worker (idle)]:
+runtime.gopark(0x9f31a0?, 0x1?, 0xd6?, 0xe4?, 0x0?)
+	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x3c4d820faf40 sp=0x3c4d820faf20 pc=0x48c2ca
+runtime.gcBgMarkWorker(0x3c4d81c323f0)
+	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x3c4d820fafc8 sp=0x3c4d820faf40 pc=0x43042b
 runtime.gcBgMarkStartWorkers.gowrap1()
-	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x37f2c8e78fe0 sp=0x37f2c8e78fc8 pc=0x482697
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x3c4d820fafe0 sp=0x3c4d820fafc8 pc=0x482697
 runtime.goexit({})
-	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x37f2c8e78fe8 sp=0x37f2c8e78fe0 pc=0x492b41
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x3c4d820fafe8 sp=0x3c4d820fafe0 pc=0x492b41
 created by runtime.gcBgMarkStartWorkers in goroutine 9
 	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
-FAIL	aitop/internal/ui	0.288s
+FAIL	aitop/internal/ui	0.324s
 FAIL
 S-T6-19-prod: AS-PREDICTED
 S-T6-19-prod: restored, porcelain clean, focused test green again
@@ -633,7 +633,7 @@ S-T6-19-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -652,7 +652,7 @@ exit=1 wall=0.4s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/5 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-20-prod: AS-PREDICTED
 S-T6-20-prod: restored, porcelain clean, focused test green again
@@ -662,7 +662,7 @@ plant diffstat:
 internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.4s
+exit=0 wall=0.5s
 ok  	aitop/internal/ui	0.004s
 S-T6-20-weak: AS-PREDICTED
 S-T6-20-weak: restored, porcelain clean, focused test green again
@@ -671,7 +671,7 @@ S-T6-20-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -700,8 +700,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
 S-T6-21-weak: AS-PREDICTED
 S-T6-21-weak: restored, porcelain clean, focused test green again
 
@@ -709,7 +709,7 @@ S-T6-21-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 4 +---
  1 file changed, 1 insertion(+), 3 deletions(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -739,7 +739,7 @@ internal/ui/graph.go     |  4 +---
  internal/ui/view_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 8 deletions(-)
 exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.003s
+ok  	aitop/internal/ui	0.002s
 S-T6-22-weak: AS-PREDICTED
 S-T6-22-weak: restored, porcelain clean, focused test green again
 
@@ -756,7 +756,7 @@ S-T6-22b-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 3 ---
  1 file changed, 3 deletions(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
                                                                                   │
         │                                                                                                                      │
         │                                                                                                                      │
@@ -782,7 +782,7 @@ plant diffstat:
 internal/ui/graph.go     | 3 ---
  internal/ui/view_test.go | 2 +-
  2 files changed, 1 insertion(+), 4 deletions(-)
-exit=0 wall=0.4s
+exit=0 wall=0.5s
 ok  	aitop/internal/ui	0.003s
 S-T6-23-weak: AS-PREDICTED
 S-T6-23-weak: restored, porcelain clean, focused test green again
@@ -861,8 +861,8 @@ S-T6-25-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.5s
-ok  	aitop/internal/ui	0.007s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.006s
 S-T6-26-prod: AS-PREDICTED
 S-T6-26-prod: restored, porcelain clean, focused test green again
 
@@ -870,7 +870,7 @@ S-T6-26-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.3s
+exit=0 wall=0.2s
 ok  	aitop/internal/ui	0.003s
 S-T6-26b-prod: AS-PREDICTED
 S-T6-26b-prod: restored, porcelain clean, focused test green again
@@ -879,7 +879,7 @@ S-T6-26b-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/graph.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.5s
+exit=1 wall=0.4s
                                                                                   │
         │                                                                                                                      │
         │                                                                                                                      │
@@ -906,7 +906,7 @@ internal/ui/graph.go     | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.003s
+ok  	aitop/internal/ui	0.004s
 S-T6-27-weak: AS-PREDICTED
 S-T6-27-weak: restored, porcelain clean, focused test green again
 
@@ -930,7 +930,7 @@ exit=1 wall=0.5s
         │                                                                                                                      │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/9 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-28-prod: AS-PREDICTED
 S-T6-28-prod: restored, porcelain clean, focused test green again
@@ -956,7 +956,7 @@ exit=1 wall=0.4s
         │                                                                                                                      │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/9 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.005s
+FAIL	aitop/internal/ui	0.003s
 FAIL
 S-T6-28-mid: AS-PREDICTED
 S-T6-28-mid: restored, porcelain clean, focused test green again
@@ -1001,11 +1001,11 @@ plant diffstat:
 internal/ui/graph.go     | 4 ++--
  internal/ui/view_test.go | 2 +-
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=1 wall=0.4s
+exit=1 wall=0.5s
 --- FAIL: TestGraphPaneCapsMessageEdgesAtThree (0.00s)
-    view_test.go:1284: graph-pane-message-edges-do-not-parent rule violated: "│ ├─● impl-t7                                                                    —              —            active    │"
+    view_test.go:1292: graph-pane-message-edges-do-not-parent rule violated: "│ ├─● impl-t7                                                                    —              —            active    │"
 FAIL
-FAIL	aitop/internal/ui	0.002s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-29-mid: AS-PREDICTED
 S-T6-29-mid: restored, porcelain clean, focused test green again
@@ -1015,8 +1015,8 @@ plant diffstat:
 internal/ui/graph.go     | 4 ++--
  internal/ui/view_test.go | 4 ++--
  2 files changed, 4 insertions(+), 4 deletions(-)
-exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.004s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
 S-T6-29-weak: AS-PREDICTED
 S-T6-29-weak: restored, porcelain clean, focused test green again
 
@@ -1043,7 +1043,7 @@ exit=1 wall=0.4s
         │                                                                                                  │
         ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-30-prod: AS-PREDICTED
 S-T6-30-prod: restored, porcelain clean, focused test green again
@@ -1054,24 +1054,27 @@ internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 5 +++--
  2 files changed, 4 insertions(+), 3 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/internal/ui	0.002s
+ok  	aitop/internal/ui	0.004s
 S-T6-30-weak: AS-PREDICTED
 S-T6-30-weak: restored, porcelain clean, focused test green again
 
 ===== S-T6-31-prod expect=RED run=^TestGraphPaneKeysToggle$
 plant diffstat:
-internal/ui/view.go | 2 --
- 1 file changed, 2 deletions(-)
-exit=1 wall=0.2s
-                                                                                       │
-        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                                                                                │
-        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                                                                                │
-        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                                                                         │
-        │ subagents1 running · 12 declared                                                                                                                                                                     │
-        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                                                                            │
-        │   ✓ done scout                               explore         10s 04:59:00                                                                                                                            │
-        │                                                                                                                                                                                                      │
-        ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+internal/ui/view.go | 6 ------
+ 1 file changed, 6 deletions(-)
+exit=1 wall=0.4s
+          │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├─┤ v mark ├─────────╯
+        ╭─┤ Grok · pid 2599958 ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+        │ title    aitop: house-wide agent occupancy TUI                                                                                                     │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                              │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                              │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                       │
+        │ subagents1 running · 12 declared                                                                                                                   │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                          │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                          │
+        │                                                                                                                                                    │
+        ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 FAIL
 FAIL	aitop/internal/ui	0.004s
 FAIL
@@ -1080,19 +1083,52 @@ S-T6-31-prod: restored, porcelain clean, focused test green again
 
 ===== S-T6-31-weak expect=GREEN run=^TestGraphPaneKeysToggle$
 plant diffstat:
-internal/ui/view.go      | 2 --
+internal/ui/view.go      | 6 ------
  internal/ui/view_test.go | 2 +-
- 2 files changed, 1 insertion(+), 3 deletions(-)
-exit=0 wall=0.3s
+ 2 files changed, 1 insertion(+), 7 deletions(-)
+exit=0 wall=0.4s
 ok  	aitop/internal/ui	0.007s
 S-T6-31-weak: AS-PREDICTED
 S-T6-31-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-31c-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 7 +------
+ 1 file changed, 1 insertion(+), 6 deletions(-)
+exit=1 wall=0.4s
+          │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├─┤ v mark ├─────────╯
+        ╭─┤ Grok · pid 2599958 ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+        │ title    aitop: house-wide agent occupancy TUI                                                                                                     │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                              │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                              │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                       │
+        │ subagents1 running · 12 declared                                                                                                                   │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                          │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                          │
+        │                                                                                                                                                    │
+        ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-31c-prod: AS-PREDICTED
+S-T6-31c-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-31c-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go      | 7 +------
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 7 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.007s
+S-T6-31c-weak: AS-PREDICTED
+S-T6-31c-weak: restored, porcelain clean, focused test green again
 
 ===== S-T6-31b-prod expect=RED run=^TestGraphPaneKeysToggle$
 plant diffstat:
 internal/ui/view.go | 1 -
  1 file changed, 1 deletion(-)
-exit=1 wall=0.3s
+exit=1 wall=0.4s
 ───────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮
         │ ● aegis-79                             fable-5        aitop        active    │
         │ └─● impl-t6?                           opus           aitop        thinking  │
@@ -1124,8 +1160,8 @@ plant diffstat:
 internal/ui/view.go      | 1 -
  internal/ui/view_test.go | 2 +-
  2 files changed, 1 insertion(+), 2 deletions(-)
-exit=0 wall=0.3s
-ok  	aitop/internal/ui	0.007s
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.005s
 S-T6-31b-weak: AS-PREDICTED
 S-T6-31b-weak: restored, porcelain clean, focused test green again
 
@@ -1133,11 +1169,11 @@ S-T6-31b-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/model.go | 1 -
  1 file changed, 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneKeysToggle (0.00s)
-    view_test.go:1110: graph-pane-keys-toggle rule violated: 2 did not open the graph
+    view_test.go:1118: graph-pane-keys-toggle rule violated: 2 did not open the graph
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.005s
 FAIL
 S-T6-32-prod: AS-PREDICTED
 S-T6-32-prod: restored, porcelain clean, focused test green again
@@ -1147,7 +1183,7 @@ plant diffstat:
 internal/ui/model.go     | 1 -
  internal/ui/view_test.go | 8 ++++----
  2 files changed, 4 insertions(+), 5 deletions(-)
-exit=0 wall=0.3s
+exit=0 wall=0.5s
 ok  	aitop/internal/ui	0.005s
 S-T6-32-weak: AS-PREDICTED
 S-T6-32-weak: restored, porcelain clean, focused test green again
@@ -1156,11 +1192,11 @@ S-T6-32-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/model.go | 1 -
  1 file changed, 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.5s
 --- FAIL: TestGraphPaneKeysToggle (0.00s)
-    view_test.go:1130: graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph
+    view_test.go:1138: graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph
 FAIL
-FAIL	aitop/internal/ui	0.007s
+FAIL	aitop/internal/ui	0.005s
 FAIL
 S-T6-33-prod: AS-PREDICTED
 S-T6-33-prod: restored, porcelain clean, focused test green again
@@ -1170,7 +1206,7 @@ plant diffstat:
 internal/ui/model.go     | 1 -
  internal/ui/view_test.go | 2 +-
  2 files changed, 1 insertion(+), 2 deletions(-)
-exit=0 wall=0.3s
+exit=0 wall=0.4s
 ok  	aitop/internal/ui	0.007s
 S-T6-33-weak: AS-PREDICTED
 S-T6-33-weak: restored, porcelain clean, focused test green again
@@ -1179,9 +1215,9 @@ S-T6-33-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/model.go | 1 -
  1 file changed, 1 deletion(-)
-exit=1 wall=0.3s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneKeysToggle (0.00s)
-    view_test.go:1122: graph-pane-keys-toggle rule violated: 1 did not return to the table
+    view_test.go:1130: graph-pane-keys-toggle rule violated: 1 did not return to the table
 FAIL
 FAIL	aitop/internal/ui	0.006s
 FAIL
@@ -1193,8 +1229,8 @@ plant diffstat:
 internal/ui/model.go     | 1 -
  internal/ui/view_test.go | 8 ++++----
  2 files changed, 4 insertions(+), 5 deletions(-)
-exit=0 wall=0.3s
-ok  	aitop/internal/ui	0.006s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
 S-T6-34-weak: AS-PREDICTED
 S-T6-34-weak: restored, porcelain clean, focused test green again
 
@@ -1202,11 +1238,11 @@ S-T6-34-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/model.go | 1 +
  1 file changed, 1 insertion(+)
-exit=1 wall=0.3s
+exit=1 wall=0.4s
 --- FAIL: TestGraphPaneKeysToggle (0.00s)
-    view_test.go:1089: graph-pane-keys-toggle rule violated: the table is not the default view
+    view_test.go:1096: graph-pane-keys-toggle rule violated: the table is not the default view
 FAIL
-FAIL	aitop/internal/ui	0.004s
+FAIL	aitop/internal/ui	0.002s
 FAIL
 S-T6-35-prod: AS-PREDICTED
 S-T6-35-prod: restored, porcelain clean, focused test green again
@@ -1216,7 +1252,7 @@ plant diffstat:
 internal/ui/model.go     |  1 +
  internal/ui/view_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 5 deletions(-)
-exit=0 wall=0.2s
+exit=0 wall=0.4s
 ok  	aitop/internal/ui	0.005s
 S-T6-35-weak: AS-PREDICTED
 S-T6-35-weak: restored, porcelain clean, focused test green again
@@ -1225,7 +1261,7 @@ S-T6-35-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.3s
+exit=1 wall=0.5s
 ├─┤ sort cpu rss tok age name cost ▼ ├──────────────────────┤ 1/5 ├─╮
         │ NAME                   PROJECT        CPU    RSS    AGE STAT   TITLE         │
         │ ▾○ Grok +1             aitop         12.1   1.3G  4d15h busy   aitop: house-…│
@@ -1245,9 +1281,9 @@ exit=1 wall=0.3s
         │                                                                              │
         │                                                                              │
         │                                                                              │
-        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├───────╯
+        ╰─┤ q quit ├─┤ 2 graph ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─────────╯
 FAIL
-FAIL	aitop/internal/ui	0.005s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-36-prod: AS-PREDICTED
 S-T6-36-prod: restored, porcelain clean, focused test green again
@@ -1257,18 +1293,21 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=1 wall=0.2s
-                                                                                       │
-        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                                                                                │
-        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                                                                                │
-        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                                                                         │
-        │ subagents1 running · 12 declared                                                                                                                                                                     │
-        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                                                                            │
-        │   ✓ done scout                               explore         10s 04:59:00                                                                                                                            │
-        │                                                                                                                                                                                                      │
-        ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+exit=1 wall=0.5s
+          │
+        ╰─┤ q quit ├─┤ 2 graph ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├─┤ b budget ├─┤ ⏎ log ├─┤ s sort ├────────╯
+        ╭─┤ Grok · pid 2599958 ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+        │ title    aitop: house-wide agent occupancy TUI                                                                                                     │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                              │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                              │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                       │
+        │ subagents1 running · 12 declared                                                                                                                   │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                          │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                          │
+        │                                                                                                                                                    │
+        ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 FAIL
-FAIL	aitop/internal/ui	0.006s
+FAIL	aitop/internal/ui	0.005s
 FAIL
 S-T6-36-mid: AS-PREDICTED
 S-T6-36-mid: restored, porcelain clean, focused test green again
@@ -1278,8 +1317,8 @@ plant diffstat:
 internal/ui/view.go      | 2 +-
  internal/ui/view_test.go | 6 +++---
  2 files changed, 4 insertions(+), 4 deletions(-)
-exit=0 wall=0.2s
-ok  	aitop/internal/ui	0.007s
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.006s
 S-T6-36-weak: AS-PREDICTED
 S-T6-36-weak: restored, porcelain clean, focused test green again
 
@@ -1287,7 +1326,7 @@ S-T6-36-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/view.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.3s
                │
         │                                                                                                  │
         │                                                                                                  │
@@ -1304,9 +1343,9 @@ exit=1 wall=0.2s
         │                                                                                                  │
         │                                                                                                  │
         │                                                                                                  │
-        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├────╯
+        ╰─┤ q quit ├─┤ 2 graph ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├────╯
 FAIL
-FAIL	aitop/internal/ui	0.003s
+FAIL	aitop/internal/ui	0.004s
 FAIL
 S-T6-36b-prod: AS-PREDICTED
 S-T6-36b-prod: restored, porcelain clean, focused test green again
@@ -1315,7 +1354,7 @@ S-T6-36b-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/ui/model.go | 3 ---
  1 file changed, 3 deletions(-)
-exit=1 wall=0.2s
+exit=1 wall=0.5s
 se ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0} Winner:{Key: Runtime: PID:0 StartTime:0 SessionID: Unit: CWD: Model: Worktree: Overlay:{SessionID: PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0} Loser:{Key: Runtime: PID:0 StartTime:0 SessionID: Unit: CWD: Model: Worktree: Overlay:{SessionID: PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0}}]
 FAIL
 FAIL	aitop/internal/ui	0.003s
@@ -1328,12 +1367,12 @@ plant diffstat:
 internal/ui/model.go     | 3 ---
  internal/ui/view_test.go | 8 ++++----
  2 files changed, 4 insertions(+), 7 deletions(-)
-exit=0 wall=0.3s
+exit=0 wall=0.5s
 ok  	aitop/internal/ui	0.004s
 S-T6-37-weak: AS-PREDICTED
 S-T6-37-weak: restored, porcelain clean, focused test green again
 
-===== SUMMARY for cycles [0:84)
+===== SUMMARY for cycles [0:86)
 S-T6-01-prod: AS-PREDICTED
 S-T6-01-weak: AS-PREDICTED
 S-T6-02-prod: AS-PREDICTED
@@ -1402,6 +1441,8 @@ S-T6-30-prod: AS-PREDICTED
 S-T6-30-weak: AS-PREDICTED
 S-T6-31-prod: AS-PREDICTED
 S-T6-31-weak: AS-PREDICTED
+S-T6-31c-prod: AS-PREDICTED
+S-T6-31c-weak: AS-PREDICTED
 S-T6-31b-prod: AS-PREDICTED
 S-T6-31b-weak: AS-PREDICTED
 S-T6-32-prod: AS-PREDICTED
@@ -1418,5 +1459,5 @@ S-T6-36-weak: AS-PREDICTED
 S-T6-36b-prod: AS-PREDICTED
 S-T6-37-prod: AS-PREDICTED
 S-T6-37-weak: AS-PREDICTED
-total=84 as_predicted=84
-production_RED=44 predicted_GREEN=40
+total=86 as_predicted=86
+production_RED=45 predicted_GREEN=41

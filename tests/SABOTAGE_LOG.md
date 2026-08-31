@@ -2660,3 +2660,53 @@ padding and every rendered line is still exactly terminal-width, because
 `boxLine` fits the whole line before it goes out. The geometry test therefore
 does not pin column alignment, and only a plant that moves a BORDER (S-T6-18b)
 can red the width rule at all.
+
+### Native provenance Task 6, footer amendment
+
+Controller ruling after the first report: `2 graph` moves to HIGH priority in
+the table's key row, immediately after `q quit`, and the tail dropping one item
+sooner is accepted. Re-run is a full 86-cycle epoch at head
+`f50c7812265eee7314accc1f02f5426f4ae26212`, all as predicted, 45 production REDs
+and 41 predicted GREENs, 86 confirmed restores. It supersedes the 84-cycle run
+recorded above; that log is in git history at `b5bc2d4`.
+
+**S-T6-31c is the ruling's own pair, and it is the interesting one.** The plant
+moves the tab BACK to tail priority. The tab still exists, still renders, and
+still appears from 165 columns up: nothing about the row's contents changes. It
+reds only because the assertion is now read at 150x42, the width the house
+actually runs. Asked at 200, where this assertion originally lived, the same
+plant is GREEN. That is the whole finding restated as an executable pair: the
+assertion was never wrong about WHAT to look for, only about WHERE, and a
+discoverability check is a function of the width you ask at. S-T6-31 keeps the
+blunter version (the tab deleted outright) so the two failures stay
+distinguishable.
+
+**One existing assertion had to be repaired, and it was repaired in the
+direction that keeps it strong.** `footer-btop-actions` asserts the idle row
+carries `k kill` and `s sort` and not the old `c r t a n` cluster. It read the
+live 140-cell frame, which worked only while the row happened to still reach
+`s sort` there; with the preset promoted, 140 no longer does. The rule names
+CONTENT, so it now reads a 170-cell frame where the whole row fits. The
+tempting repair was to drop `s sort` from the rule, which would have weakened
+an assertion that was right about a packing change it was never measuring.
+
+**What the trade actually costs, measured with `--screenshot` rather than
+reasoned about, and recorded in the tally:**
+
+| width | 2 graph | s sort | k kill | v mark | 1 table |
+|-------|---------|--------|--------|--------|---------|
+| 100   | yes     | no     | yes    | no     | no      |
+| 140   | yes     | no     | yes    | no     | no      |
+| 150   | yes     | yes    | yes    | no     | no      |
+| 160   | yes     | yes    | yes    | yes    | no      |
+| 165   | yes     | yes    | yes    | yes    | yes     |
+
+`s sort` moved from 140 to 150 and `v mark` from 150 to 160. `1 table` keeps
+tail priority deliberately: in the table's own row it only ever says "you are
+already here", and the way BACK is the pane's own short key row, which fits at
+every width and is pinned by S-T6-31b at 80x24.
+
+**None of this is asserted as an absence.** No test says `s sort` must be
+missing at 140. An absence assertion would red the day someone shortens the row
+and makes things better, which is the wrong direction for a gate to fail in.
+The cost lives in the tally, where a number belongs, not welded into a test.
