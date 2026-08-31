@@ -1,0 +1,77 @@
+aitop native provenance Task 6 tally (graph pane, post-sabotage-epoch)
+date: 2026-08-31T06:51:33-07:00
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
+branch: native-provenance
+head: df501f739f34e85d4acceb077abc14ac6d79dc6a
+epoch_head: f57560938722053b25549aa1dbf225ee17c0d8fb
+note: certifies the graph pane: flattenGraph, renderGraph, the 1/2/tab
+note: presets, and the read-only keymap. Measured after the sabotage
+note: epoch, before the SABOTAGE_LOG/tally commit.
+note: sources under test were byte-identical across every epoch chunk;
+note: only the driver moved, and it is excluded from the porcelain check.
+
+commands (exact, from worktree root):
+  gofmt -l internal/ cmd/
+  go vet ./...
+  go build ./...
+  go test ./... -count=1
+  go test -race ./internal/ui -count=1
+  go run ./cmd/aitop --screenshot 150x42
+
+== gofmt -l internal/ cmd/ ==
+(empty above = formatted)
+
+== go vet ./... ==
+vet_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+all_exit=0
+packages_ok=25
+non_ok_lines=0
+
+== go test -race ./internal/ui -count=1 ==
+race_exit=0
+ok  	aitop/internal/ui	1.324s
+
+== go run ./cmd/aitop --screenshot 150x42 (table view unchanged by default) ==
+screenshot_exit=0
+lines=41
+has_agents_tab=0
+has_column_header=1
+has_graph_tab=0   (0 = the graph is not the default)
+has_canary=1
+footer_presets=0
+
+== Task 6 tests ==
+internal/ui/view_test.go   TestGraphPaneRendersSpawnForest
+internal/ui/view_test.go   TestGraphPaneMarksGhostAndPartial
+internal/ui/view_test.go   TestGraphPaneEmptyShowsCanary
+internal/ui/view_test.go   TestGraphPaneKeysToggle
+internal/ui/view_test.go   TestGraphPaneCycleSafe
+internal/ui/view_test.go   TestGraphPaneSelectionCarriesNoActions
+internal/ui/view_test.go   TestGraphPaneKeepsFrameGeometry
+internal/ui/view_test.go   TestGraphPaneOrdersRuntimeGroupsThenName
+internal/ui/view_test.go   TestGraphPaneCapsMessageEdgesAtThree
+count=9
+
+== sabotage epoch (81 cycles, six bounded chunks, one frozen source head) ==
+total=81 as_predicted=81 mismatches_outstanding=0
+production_RED=42 predicted_GREEN=39
+patch preflight: 76 distinct patch SETS, each applied as the cycle plants
+  it and vetted; all build. Six build-breaks were caught here, not in a run.
+chunks: --range 0 20 / 20 45 / 45 65 / 65 81, plus two re-runs after a
+  corrected prediction (S-T6-12 at 22, S-T6-34-weak at 73)
+corrected after a recorded MISMATCH: S-T6-12-prod, S-T6-34-weak
+log: tests/sabotage-native-task6/sabotage_runs_native_task6.log
+driver: tests/sabotage-native-task6/sabotage_driver.py
+
+== live graph the pane would draw on this box ==
+command: go run ./cmd/aitop --json
+schema=2 nodes=31 edges=3 gaps=0 topo=34
+spawn_edges=3 native=3
+roots=28 ghosts=0 partial=0
+note: these are the counts the pane's border tab would print.
