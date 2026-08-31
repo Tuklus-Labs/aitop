@@ -171,10 +171,13 @@ P_LOCAL_ONLY = (COD,
                 "\t\tlocal, local.AddDate(0, 0, -1),\n\t\tnow.UTC(), now.UTC().AddDate(0, 0, -1),",
                 "\t\tlocal, local.AddDate(0, 0, -1),")
 
-# D3: walk only the UTC pair, which is where codex does NOT write.
+# D3: normalize the local pair to UTC, collapsing the set to the UTC pair --
+# which is not where codex writes. Deleting the local entries instead would leave
+# `local` declared and unused and fail the build, proving something about Go
+# rather than about the assertion.
 P_UTC_ONLY = (COD,
               "\t\tlocal, local.AddDate(0, 0, -1),\n\t\tnow.UTC(), now.UTC().AddDate(0, 0, -1),",
-              "\t\tnow.UTC(), now.UTC().AddDate(0, 0, -1),")
+              "\t\tlocal.UTC(), local.UTC().AddDate(0, 0, -1),\n\t\tnow.UTC(), now.UTC().AddDate(0, 0, -1),")
 
 # D4: drop the dedup, so the same directory is walked twice whenever the local
 # and UTC dates agree, which is most of the day in most zones.
