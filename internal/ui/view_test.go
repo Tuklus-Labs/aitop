@@ -1393,4 +1393,18 @@ func TestGraphPaneDuplicateSpawnEdgeDrawsOneChild(t *testing.T) {
 	if strings.Contains(out, "↩") {
 		t.Fatalf("graph-pane-invents-no-back-reference rule violated: a second observation of one spawn rendered as a second parent, which is what a real one looks like:\n%s", out)
 	}
+
+	// The other direction, and it is the half that proves the fix is a fix
+	// rather than a deletion: a child with two DIFFERENT parents is a real
+	// back reference. Suppressing that signal while removing the phantom would
+	// be the same lie told the other way round.
+	s.Graph.Edges = append(s.Graph.Edges, graph.Edge{
+		Key:    graph.RelationshipEdgeKey(graph.EdgeSpawn, graphGrokID, graphAgentID, "aimpl-t6"),
+		Source: graphGrokID, Target: graphAgentID, Type: graph.EdgeSpawn,
+		Provenance: graph.ProvenanceNative, Relationship: "aimpl-t6", Lifecycle: graph.LifecycleActive,
+	})
+	two := ansi.Strip(RenderGraph(s, theme.Nightfable(), 100, 30, now))
+	if !strings.Contains(two, "↩ impl-t6") {
+		t.Fatalf("graph-pane-keeps-a-real-second-parent rule violated: two different parents of one child must still draw a back reference:\n%s", two)
+	}
 }

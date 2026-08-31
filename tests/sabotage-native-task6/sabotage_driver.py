@@ -59,6 +59,8 @@ T_NOACT = "^TestGraphPaneSelectionCarriesNoActions$"
 T_GEOM = "^TestGraphPaneKeepsFrameGeometry$"
 T_ORDER = "^TestGraphPaneOrdersRuntimeGroupsThenName$"
 T_MSG = "^TestGraphPaneCapsMessageEdgesAtThree$"
+T_SCROLL = "^TestGraphPaneScrollsThroughTheForest$"
+T_DUP = "^TestGraphPaneDuplicateSpawnEdgeDrawsOneChild$"
 
 # --- the forest's shape -----------------------------------------------------
 
@@ -272,6 +274,41 @@ P_NO_COLOR_PIN = (TST,
                   "\tlipgloss.SetColorProfile(termenv.TrueColor)\n",
                   "\t_ = termenv.TrueColor\n\t_ = lipgloss.NewStyle\n")
 
+# --- fix round 1: the pane's cursor and scroll ------------------------------
+
+# The graph arm of clampCursor deleted, so the graph cursor is clamped to the
+# TABLE's row count. Nothing in the suite saw this before the scroll test: every
+# render test ran at cursor 0.
+P_CLAMP_ARM = (MOD,
+               "\tn := len(m.lines)\n\tif m.graphView {\n\t\tn = len(m.graphLines)\n\t}",
+               "\tn := len(m.lines)")
+# The pane's visible-row count set to a window the pane does not paint. The
+# cursor still reaches the last line; the last SCREEN is short, which is the
+# only thing that can see it.
+P_ROWS_ARM = (MOD,
+              "\t\tif n := m.height - headerH - 2; n > 1 {",
+              "\t\tif n := m.height - headerH - 5; n > 1 {")
+# The reset on switching presets dropped, so a table cursor is carried into a
+# list where its index means nothing.
+P_SETVIEW_RESET = (MOD,
+                   "\tm.graphView = on\n\tm.cursor, m.scroll = 0, 0\n\tm.clampCursor()",
+                   "\tm.graphView = on\n\tm.clampCursor()")
+
+# --- fix round 1: one spawn observed twice ----------------------------------
+
+# The dedupe removed: this is the defect the review found. The child draws once
+# and then again as a back reference, which is what a genuine second parent
+# looks like.
+P_DEDUPE_GONE = (GRA,
+                 "\t\t\tends := spawnEnds{e.Source, e.Target}\n\t\t\tif drawn[ends] {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tdrawn[ends] = true\n",
+                 "\t\t\tdrawn[spawnEnds{e.Source, e.Target}] = true\n")
+# The dedupe keyed on the CHILD alone, which is the over-correction: it also
+# swallows a genuine second parent. Only the negative half of the test can see
+# this, and it is why that half exists.
+P_DEDUPE_BY_TARGET = (GRA,
+                      "\t\t\tends := spawnEnds{e.Source, e.Target}",
+                      "\t\t\tends := spawnEnds{\"\", e.Target}")
+
 # --- weakenings -------------------------------------------------------------
 
 W_EVERY_NODE = (TST,
@@ -404,6 +441,30 @@ W_MSG_CAP = (TST,
 W_SVC_NAME = (TST,
               "\tif !strings.Contains(out, \"svc→ codex-worker\") {",
               "\tif false && !strings.Contains(out, \"svc→ codex-worker\") {")
+W_SCROLL_TOP = (TST,
+                "\tif !strings.Contains(top, \"node-00\") || !strings.Contains(top, \" 1/24 \") {",
+                "\tif false && (!strings.Contains(top, \"node-00\") || !strings.Contains(top, \" 1/24 \")) {")
+W_SCROLL_FOLLOWS = (TST,
+                    "\tif !strings.Contains(mid, \"node-12\") || !strings.Contains(mid, \" 13/24 \") {",
+                    "\tif false && (!strings.Contains(mid, \"node-12\") || !strings.Contains(mid, \" 13/24 \")) {")
+W_SCROLL_ADVANCED = (TST,
+                     "\tif strings.Contains(mid, \"node-00\") {",
+                     "\tif false && strings.Contains(mid, \"node-00\") {")
+W_SCROLL_END = (TST,
+                "\tif !strings.Contains(end, \"node-23\") || !strings.Contains(end, \" 24/24 \") {",
+                "\tif false && (!strings.Contains(end, \"node-23\") || !strings.Contains(end, \" 24/24 \")) {")
+W_SCROLL_WINDOW = (TST,
+                   "\tif !strings.Contains(end, \"node-16\") || strings.Contains(end, \"node-15\") {",
+                   "\tif false && (!strings.Contains(end, \"node-16\") || strings.Contains(end, \"node-15\")) {")
+W_DUP_ONCE = (TST,
+              "\tif n := strings.Count(out, \"impl-t6\"); n != 1 {",
+              "\tif n := strings.Count(out, \"impl-t6\"); false && n != 1 {")
+W_DUP_BACKREF = (TST,
+                 "\tif strings.Contains(out, \"↩\") {",
+                 "\tif false && strings.Contains(out, \"↩\") {")
+W_DUP_REAL = (TST,
+              "\tif !strings.Contains(two, \"↩ impl-t6\") {",
+              "\tif false && !strings.Contains(two, \"↩ impl-t6\") {")
 W_MSG_NO_PARENT = (TST,
                    "\tif strings.Contains(extraLine, \"└─\") || strings.Contains(extraLine, \"├─\") {",
                    "\tif false && (strings.Contains(extraLine, \"└─\") || strings.Contains(extraLine, \"├─\")) {")
@@ -438,6 +499,13 @@ R_ORDER = "graph-pane-orders-runtime-groups-then-name rule violated"
 R_MSG_CAP = "graph-pane-caps-message-lines-at-three rule violated"
 R_SVC = "graph-pane-names-a-service-edge-as-service rule violated"
 R_MSG_PARENT = "graph-pane-message-edges-do-not-parent rule violated"
+R_SCROLL_TOP = "graph-pane-opens-at-the-top rule violated"
+R_SCROLL_FOLLOWS = "graph-pane-window-follows-the-cursor rule violated"
+R_SCROLL_END = "graph-pane-last-line-is-reachable rule violated"
+R_SCROLL_WINDOW = "graph-pane-scroll-window-is-the-painted-window rule violated"
+R_DUP_ONCE = "graph-pane-draws-a-duplicate-edge-once rule violated"
+R_DUP_BACKREF = "graph-pane-invents-no-back-reference rule violated"
+R_DUP_REAL = "graph-pane-keeps-a-real-second-parent rule violated"
 
 CYCLES = [
     # --- the forest's shape -------------------------------------------------
@@ -542,6 +610,36 @@ CYCLES = [
     ("S-T6-29-prod", [P_MSG_PARENTS_A, P_MSG_PARENTS_B], T_MSG, "RED", R_MSG_CAP),
     ("S-T6-29-mid", [P_MSG_PARENTS_A, P_MSG_PARENTS_B, W_MSG_CAP], T_MSG, "RED", R_MSG_PARENT),
     ("S-T6-29-weak", [P_MSG_PARENTS_A, P_MSG_PARENTS_B, W_MSG_CAP, W_MSG_NO_PARENT], T_MSG, "GREEN", None),
+
+    # --- fix round 1: the pane's cursor and scroll --------------------------
+    # Every one of these three was invisible to the whole suite before the
+    # scroll test: verified by planting them against the 86-cycle epoch and
+    # watching `go test ./internal/ui` stay green.
+    ("S-T6-38-prod", [P_CLAMP_ARM], T_SCROLL, "RED", R_SCROLL_FOLLOWS),
+    ("S-T6-38-weak", [P_CLAMP_ARM, W_SCROLL_FOLLOWS, W_SCROLL_ADVANCED, W_SCROLL_END, W_SCROLL_WINDOW], T_SCROLL, "GREEN", None),
+    # The cursor still reaches the last line under this one; only the last
+    # SCREEN is short, so the window assertion is the sole witness.
+    ("S-T6-39-prod", [P_ROWS_ARM], T_SCROLL, "RED", R_SCROLL_WINDOW),
+    ("S-T6-39-weak", [P_ROWS_ARM, W_SCROLL_WINDOW], T_SCROLL, "GREEN", None),
+    ("S-T6-40-prod", [P_SETVIEW_RESET], T_SCROLL, "RED", R_SCROLL_TOP),
+    ("S-T6-40-weak", [P_SETVIEW_RESET, W_SCROLL_TOP, W_SCROLL_FOLLOWS], T_SCROLL, "GREEN", None),
+    # None of the three moves anything in the render tests, which is what made
+    # them invisible. Recorded so the narrowness is on the record, not assumed.
+    ("S-T6-38b-prod", [P_CLAMP_ARM], T_FOREST, "GREEN", None),
+    ("S-T6-39b-prod", [P_ROWS_ARM], T_GEOM, "GREEN", None),
+
+    # --- fix round 1: one spawn observed twice ------------------------------
+    ("S-T6-41-prod", [P_DEDUPE_GONE], T_DUP, "RED", R_DUP_ONCE),
+    ("S-T6-41-mid", [P_DEDUPE_GONE, W_DUP_ONCE], T_DUP, "RED", R_DUP_BACKREF),
+    ("S-T6-41-weak", [P_DEDUPE_GONE, W_DUP_ONCE, W_DUP_BACKREF], T_DUP, "GREEN", None),
+    # The over-correction. Deduping on the child alone also fixes the phantom,
+    # so the first two assertions stay green and only the negative half moves.
+    # This is the cycle that makes the fix a fix rather than a deletion.
+    ("S-T6-42-prod", [P_DEDUPE_BY_TARGET], T_DUP, "RED", R_DUP_REAL),
+    ("S-T6-42-weak", [P_DEDUPE_BY_TARGET, W_DUP_REAL], T_DUP, "GREEN", None),
+    # A cycle is not a duplicate: the dedupe must leave both back references.
+    ("S-T6-41b-prod", [P_DEDUPE_GONE], T_CYCLE, "GREEN", None),
+    ("S-T6-42b-prod", [P_DEDUPE_BY_TARGET], T_CYCLE, "GREEN", None),
 
     # --- the colour pin -----------------------------------------------------
     # The cycle this whole file exists for. The ghost-dimming plant is RED with
