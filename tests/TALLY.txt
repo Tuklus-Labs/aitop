@@ -347,3 +347,48 @@ re-run after writing this file and the README, before the evidence commit:
 
 HEAD recorded here: b3de48a7cf28500897ac1fbead8a43247cf2115b
 after the evidence commit, this file is one commit behind that SHA by design.
+
+---- post-commit verification of the evidence commit itself ----
+date: 2026-08-31
+tree: c4c3fe6ce1769227d3025eb8dca11fe0eda5b286 (the evidence commit above)
+reason: the block above certifies its parent b3de48a by design. The gate was
+re-run at the evidence commit to confirm the evidence commit itself is green.
+
+go test ./... -count=1        exit 0, 25 packages, 0 failed
+go vet ./...                  exit 0
+jsonschema absence x2         exit 0 (both)
+aegis-taste-check             exit 0 (same coverage caveat as above)
+git diff --check              exit 0
+
+go test -race ./... -count=1
+  first run exit: 1
+    failed package: aitop/internal/proc
+    failure: TestWalkRealProcFitsTickBudget
+      cpu_apply_test.go:95 walk-fits-tick-budget violated:
+      best of 3 = 27.286143ms > 25ms
+  this is the SAME pre-existing wall-clock flake recorded in the first block of
+  this file (which measured 25.474057ms against the same 25ms budget). It is
+  not attributable to this branch, and the reason is mechanical rather than
+  argued: `git diff <merge-base>..HEAD -- internal/proc` is EMPTY. The branch
+  changed zero lines in that package.
+  environment at the failing run: loadavg 17.11 on 24 cores, 781 pids in /proc.
+  The budget is a wall-clock assertion over a real /proc walk on a shared box,
+  so it is a function of what else is running.
+  retry: go test -race ./internal/proc -count=1  x3: all exit 0
+  rerun: go test -race ./... -count=1
+    exit: 0
+    packages: 25, failed 0
+    graph race:  ok aitop/internal/graph  18.939s
+    native race: ok aitop/internal/native  2.015s
+    cmd race:    ok aitop/cmd/aitop        6.583s
+    proc race:   ok aitop/internal/proc    1.123s
+    loadavg at the passing run: 15.75
+  final race result: PASS (exit 0)
+
+CARRIED CONCERN, not fixed here (out of this phase's source scope): a
+single-threshold wall-clock budget taken best-of-3 against the live /proc is
+flaky by construction on a busy machine, and the flake has now been recorded
+twice in this file with no owner. It reds on load rather than on a regression,
+which trains readers to retry a red instead of reading it. Worth either a
+scaled budget, an explicit skip under load, or deletion in favour of a
+complexity assertion.
