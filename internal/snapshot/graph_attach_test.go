@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -452,6 +453,10 @@ func TestAttachGraphResolvesRelativeHomes(t *testing.T) {
 type slowLane struct {
 	ready chan struct{}
 	nodes []graph.NodeID
+	// asked records that the wait reached this lane at all. It is the one
+	// witness of the budget rule that does not depend on how the machine was
+	// scheduled: a wait that has already spent its budget must never get here.
+	asked atomic.Bool
 }
 
 func newSlowLane(delay time.Duration) *slowLane {
@@ -463,7 +468,13 @@ func newSlowLane(delay time.Duration) *slowLane {
 	return lane
 }
 
-func (l *slowLane) FirstTick() <-chan struct{}     { return l.ready }
+func (l *slowLane) FirstTick() <-chan struct{} {
+	l.asked.Store(true)
+	return l.ready
+}
+
+func (l *slowLane) consulted() bool { return l.asked.Load() }
+
 func (l *slowLane) FirstTickNodes() []graph.NodeID { return l.nodes }
 
 // TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn covers the waiting half. The count
@@ -497,18 +508,52 @@ func TestWaitNativeEvidenceIsBoundedByItsBudget(t *testing.T) {
 	}
 }
 
-// TestWaitNativeEvidenceSharesOneBudgetAcrossLanes pins the budget to the CALL and
-// not to each lane. Per-lane budgets would let three slow homes cost a one-shot
-// three times the bound it was given, which is the shape of a "bounded" wait
-// that is not actually bounded.
+// TestWaitNativeEvidenceSharesOneBudgetAcrossLanes pins the budget to the CALL
+// and not to each lane. A budget per lane would let three slow homes cost a
+// one-shot three times the bound its caller asked for, which is the shape of a
+// "bounded" wait that is not bounded by anything the caller can name.
+//
+// The lanes have to come in one after another for this to mean anything. An
+// earlier version of this test used three lanes that all hung, and it could not
+// discriminate the rule it was named for: the wait gives up on the FIRST lane
+// whose bound expires, so a shared budget and a per-lane budget both returned
+// at one budget with nothing to tell them apart. That version passed against a
+// deliberately per-lane implementation. Here the first lane spends most of the
+// budget and the second cannot fit in what is left.
+//
+// Timings, and the slack in each direction, because a reader will want to check
+// them rather than trust them: the budget is 400ms, the first lane comes in at
+// 250ms (150ms of room) and the second at 500ms, which is 100ms PAST the shared
+// budget. Every margin is one-directional -- a loaded machine only makes a lane
+// later, never earlier -- so load can only push this toward reporting fewer
+// lanes, never toward reporting the per-lane behaviour it exists to catch.
 func TestWaitNativeEvidenceSharesOneBudgetAcrossLanes(t *testing.T) {
-	lanes := NativeLanes{newSlowLane(time.Hour), newSlowLane(time.Hour), newSlowLane(time.Hour)}
+	const budget = 400 * time.Millisecond
+	first := newSlowLane(250 * time.Millisecond)
+	second := newSlowLane(500 * time.Millisecond)
+	third := newSlowLane(time.Hour)
+	lanes := NativeLanes{first, second, third}
+
 	started := time.Now()
-	if ready := lanes.WaitNativeEvidence(nil, 120*time.Millisecond); ready != 0 {
-		t.Fatalf("wait-native-evidence-reports-only-the-lanes-that-came-in rule violated: ready=%d want=0", ready)
+	ready := lanes.WaitNativeEvidence(nil, budget)
+	elapsed := time.Since(started)
+
+	// Asserted first because it is the only witness here that is a fact rather
+	// than a measurement: reaching the third lane at all means the budget was
+	// not shared, however the machine was scheduled.
+	if third.consulted() {
+		t.Fatalf("wait-native-evidence-shares-one-budget-across-lanes rule violated: the third lane was consulted after %s on a %s budget", elapsed, budget)
 	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("wait-native-evidence-shares-one-budget-across-lanes rule violated: elapsed=%s for 3 lanes on a 120ms budget", elapsed)
+	if ready > 1 {
+		t.Fatalf("wait-native-evidence-shares-one-budget-across-lanes rule violated: ready=%d on a %s budget whose first two lanes need 250ms and 500ms", ready, budget)
+	}
+	if elapsed > 2*budget {
+		t.Fatalf("wait-native-evidence-is-bounded rule violated: elapsed=%s budget=%s", elapsed, budget)
+	}
+	// The first lane must actually have been reached, or the two assertions
+	// above are satisfied by a wait that did nothing at all.
+	if !first.consulted() {
+		t.Fatalf("wait-native-evidence-consults-its-first-lane rule violated: elapsed=%s ready=%d", elapsed, ready)
 	}
 }
 
