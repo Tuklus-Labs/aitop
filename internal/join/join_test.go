@@ -261,3 +261,33 @@ func TestForkChildRowCarriesSubagentRole(t *testing.T) {
 		t.Fatalf("fork-child-row-invents-no-process rule violated: %+v", byID["C"].Process)
 	}
 }
+
+// TestDarkLocalUnitNeedsNoSpine is the portability evidence behind the
+// collector-ordering test in cmd/aitop. That test needs the engine to hold at
+// least one row on any machine, and Join emits a row for a CLASSIFIED agent
+// process, which a bare test binary is not: on a box with nothing agent-shaped
+// running the spine is empty and every row would have to come from an overlay.
+//
+// A dark local unit is the one overlay shape that becomes a row with no process
+// behind it. This asserts that directly, against an EMPTY spine, because that
+// is the condition the other test cannot reproduce on a box that happens to be
+// running agents.
+func TestDarkLocalUnitNeedsNoSpine(t *testing.T) {
+	rows := Join(nil, []types.Overlay{{
+		Runtime:     types.RuntimeLocal,
+		SessionName: "aitop-test-dark-unit",
+		Status:      "off",
+	}})
+	if len(rows) != 1 {
+		t.Fatalf("dark-local-unit-needs-no-spine rule violated: rows=%d want=1 with an empty spine", len(rows))
+	}
+	row := rows[0]
+	if !row.OverlayOnly || !row.Overlay.Dark || row.Process.PID != 0 {
+		t.Fatalf("dark-local-unit-is-a-processless-row rule violated: overlayOnly=%t dark=%t pid=%d", row.OverlayOnly, row.Overlay.Dark, row.Process.PID)
+	}
+	// A unit with no name is not a dark candidate, so the row above is earned by
+	// the SessionName and not by every local overlay reaching the roster.
+	if rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeLocal}}); len(rows) != 0 {
+		t.Fatalf("unnamed-local-unit-is-not-a-dark-row rule violated: rows=%d want=0", len(rows))
+	}
+}

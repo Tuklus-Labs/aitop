@@ -1,4 +1,4 @@
-head: cac6e25f0ac25b12673a2ea5e89d4d36392870d2
+head: 3b56db40edde7d5b19b575c83b6a45085e694014
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 tz_offset: -0700
 
@@ -6,11 +6,11 @@ tz_offset: -0700
 plant diffstat:
 internal/native/claude.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.4s
 --- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
     claude_test.go:698: claude-live-session-is-inside-horizon rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 absent sidecarAge=3h0m0s liveSet=[84a06b9a-0873-4655-9eb9-d7cf99554b05] nodes=0
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-01-prod: AS-PREDICTED
 S-T5-01-prod: restored, porcelain clean, focused test green again
@@ -20,8 +20,8 @@ plant diffstat:
 internal/native/claude.go      | 2 +-
  internal/native/claude_test.go | 6 +++---
  2 files changed, 4 insertions(+), 4 deletions(-)
-exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.4s
+ok  	aitop/internal/native	0.002s
 S-T5-01-weak: AS-PREDICTED
 S-T5-01-weak: restored, porcelain clean, focused test green again
 
@@ -29,11 +29,11 @@ S-T5-01-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/claude.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.5s
 --- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
     claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-02-prod: AS-PREDICTED
 S-T5-02-prod: restored, porcelain clean, focused test green again
@@ -43,8 +43,8 @@ plant diffstat:
 internal/native/claude.go      | 2 +-
  internal/native/claude_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.4s
+ok  	aitop/internal/native	0.002s
 S-T5-02-weak: AS-PREDICTED
 S-T5-02-weak: restored, porcelain clean, focused test green again
 
@@ -52,11 +52,11 @@ S-T5-02-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/claude.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.4s
 --- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
     claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-03-prod: AS-PREDICTED
 S-T5-03-prod: restored, porcelain clean, focused test green again
@@ -66,8 +66,8 @@ plant diffstat:
 internal/native/claude.go      | 2 +-
  internal/native/claude_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.4s
+ok  	aitop/internal/native	0.002s
 S-T5-03-weak: AS-PREDICTED
 S-T5-03-weak: restored, porcelain clean, focused test green again
 
@@ -75,11 +75,11 @@ S-T5-03-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.4s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:816: codex-live-thread-is-inside-horizon rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 absent rolloutAge=3h0m0s liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2] nodes=0
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-04-prod: AS-PREDICTED
 S-T5-04-prod: restored, porcelain clean, focused test green again
@@ -89,7 +89,7 @@ plant diffstat:
 internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 6 +++---
  2 files changed, 4 insertions(+), 4 deletions(-)
-exit=0 wall=0.1s
+exit=0 wall=0.4s
 ok  	aitop/internal/native	0.002s
 S-T5-04-weak: AS-PREDICTED
 S-T5-04-weak: restored, porcelain clean, focused test green again
@@ -98,7 +98,7 @@ S-T5-04-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.3s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:810: codex-cold-thread-with-no-process-is-not-observed rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 rolloutAge=3h0m0s horizon=1h0m0s nodes=2
 FAIL
@@ -112,7 +112,7 @@ plant diffstat:
 internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.1s
+exit=0 wall=0.4s
 ok  	aitop/internal/native	0.002s
 S-T5-05-weak: AS-PREDICTED
 S-T5-05-weak: restored, porcelain clean, focused test green again
@@ -121,7 +121,7 @@ S-T5-05-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.3s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:819: codex-live-lift-admits-only-the-live-thread rule violated: id=codex:thread:01a0537d-2b5d-7c60-9b8c-99ff4cecb7ea admitted while absent from liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2]
 FAIL
@@ -135,7 +135,7 @@ plant diffstat:
 internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.1s
+exit=0 wall=0.3s
 ok  	aitop/internal/native	0.002s
 S-T5-06-weak: AS-PREDICTED
 S-T5-06-weak: restored, porcelain clean, focused test green again
@@ -144,8 +144,8 @@ S-T5-06-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
 S-T5-07-prod: AS-PREDICTED
 S-T5-07-prod: restored, porcelain clean, focused test green again
 
@@ -153,11 +153,11 @@ S-T5-07-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.3s
 --- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
     grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
 FAIL
-FAIL	aitop/internal/native	0.002s
+FAIL	aitop/internal/native	0.001s
 FAIL
 S-T5-08-prod: AS-PREDICTED
 S-T5-08-prod: restored, porcelain clean, focused test green again
@@ -167,7 +167,7 @@ plant diffstat:
 internal/native/grok.go      |  2 +-
  internal/native/grok_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 6 deletions(-)
-exit=0 wall=0.1s
+exit=0 wall=0.3s
 ok  	aitop/internal/native	0.001s
 S-T5-08-weak: AS-PREDICTED
 S-T5-08-weak: restored, porcelain clean, focused test green again
@@ -176,11 +176,11 @@ S-T5-08-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.1s
+exit=1 wall=0.3s
 --- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
     grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-09-prod: AS-PREDICTED
 S-T5-09-prod: restored, porcelain clean, focused test green again
@@ -190,8 +190,8 @@ plant diffstat:
 internal/native/grok.go      |  2 +-
  internal/native/grok_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 6 deletions(-)
-exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
 S-T5-09-weak: AS-PREDICTED
 S-T5-09-weak: restored, porcelain clean, focused test green again
 
@@ -199,7 +199,7 @@ S-T5-09-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.1s
+exit=0 wall=0.3s
 ok  	aitop/internal/native	0.001s
 S-T5-10a-prod: AS-PREDICTED
 S-T5-10a-prod: restored, porcelain clean, focused test green again
@@ -208,7 +208,7 @@ S-T5-10a-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.1s
+exit=0 wall=0.3s
 ok  	aitop/internal/native	0.002s
 S-T5-10b-prod: AS-PREDICTED
 S-T5-10b-prod: restored, porcelain clean, focused test green again
@@ -217,7 +217,7 @@ S-T5-10b-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
-exit=1 wall=0.1s
+exit=1 wall=0.3s
 --- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
     grok_test.go:1361: grok-cold-session-with-no-process-is-not-observed rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b summaryAge=3h0m0s horizon=1h0m0s nodes=1
 FAIL
@@ -231,7 +231,7 @@ plant diffstat:
 internal/native/grok.go      | 4 ++--
  internal/native/grok_test.go | 2 +-
  2 files changed, 3 insertions(+), 3 deletions(-)
-exit=0 wall=0.1s
+exit=0 wall=0.3s
 ok  	aitop/internal/native	0.001s
 S-T5-10-weak: AS-PREDICTED
 S-T5-10-weak: restored, porcelain clean, focused test green again
@@ -322,7 +322,7 @@ exit=1 wall=0.1s
 --- FAIL: TestForksOverlayReadsRuntime (0.00s)
     forks_test.go:98: fork-overlay-carries-the-sidecar-runtime rule violated: runtime="" want="claude" overlay={SessionID:06e524ab-4afa-4a36-a578-1a629d4853c3 PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession:84a06b9a-0873-4655-9eb9-d7cf99554b05 SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf:84a06b9a-0873-4655-9eb9-d7cf99554b05 CapsuleID:01k9 Worktree:/home/aegis/Projects/aitop Kind:fork TokPerSec:<nil> SlotIndex:<nil> Dark:false}
 FAIL
-FAIL	aitop/internal/overlay/forks	0.001s
+FAIL	aitop/internal/overlay/forks	0.002s
 FAIL
 S-T5-14-prod: AS-PREDICTED
 S-T5-14-prod: restored, porcelain clean, focused test green again
@@ -479,11 +479,11 @@ S-T5-20-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/graph_attach.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=2.2s
+exit=1 wall=2.3s
 --- FAIL: TestAttachGraphRegistersNativeCollectors (2.00s)
     graph_attach_test.go:195: attach-graph-registers-native-collectors rule violated: no claude:session: node within 2s, nodes=[]
 FAIL
-FAIL	aitop/internal/snapshot	2.007s
+FAIL	aitop/internal/snapshot	2.006s
 FAIL
 S-T5-21-prod: AS-PREDICTED
 S-T5-21-prod: restored, porcelain clean, focused test green again
@@ -493,31 +493,31 @@ plant diffstat:
 internal/snapshot/graph_attach.go      | 2 +-
  internal/snapshot/graph_attach_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=2.2s
-ok  	aitop/internal/snapshot	2.008s
+exit=0 wall=2.3s
+ok  	aitop/internal/snapshot	2.006s
 S-T5-21-weak: AS-PREDICTED
 S-T5-21-weak: restored, porcelain clean, focused test green again
 
 ===== S-T5-22-prod expect=RED pkg=./internal/snapshot run=^TestAttachGraphRegistersNativeCollectors$
 plant diffstat:
-internal/snapshot/graph_attach.go | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=2.2s
+internal/snapshot/graph_attach.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=2.3s
 --- FAIL: TestAttachGraphRegistersNativeCollectors (2.00s)
     graph_attach_test.go:195: attach-graph-registers-native-collectors rule violated: no claude:session: node within 2s, nodes=[]
 FAIL
-FAIL	aitop/internal/snapshot	2.009s
+FAIL	aitop/internal/snapshot	2.006s
 FAIL
 S-T5-22-prod: AS-PREDICTED
 S-T5-22-prod: restored, porcelain clean, focused test green again
 
 ===== S-T5-22-weak expect=GREEN pkg=./internal/snapshot run=^TestAttachGraphRegistersNativeCollectors$
 plant diffstat:
-internal/snapshot/graph_attach.go      | 2 +-
+internal/snapshot/graph_attach.go      | 1 -
  internal/snapshot/graph_attach_test.go | 2 +-
- 2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=2.2s
-ok  	aitop/internal/snapshot	2.009s
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=2.3s
+ok  	aitop/internal/snapshot	2.005s
 S-T5-22-weak: AS-PREDICTED
 S-T5-22-weak: restored, porcelain clean, focused test green again
 
@@ -525,11 +525,11 @@ S-T5-22-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/graph_attach.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.3s
+exit=1 wall=0.4s
 --- FAIL: TestAttachGraphEmptyHomesIsOccupancyOnly (0.11s)
     graph_attach_test.go:224: attach-graph-empty-homes-is-occupancy-only rule violated: nodes=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05]
 FAIL
-FAIL	aitop/internal/snapshot	0.110s
+FAIL	aitop/internal/snapshot	0.109s
 FAIL
 S-T5-23-prod: AS-PREDICTED
 S-T5-23-prod: restored, porcelain clean, focused test green again
@@ -539,8 +539,8 @@ plant diffstat:
 internal/snapshot/graph_attach.go      | 2 +-
  internal/snapshot/graph_attach_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=1.0s
-ok  	aitop/internal/snapshot	0.759s
+exit=0 wall=1.1s
+ok  	aitop/internal/snapshot	0.756s
 S-T5-23-weak: AS-PREDICTED
 S-T5-23-weak: restored, porcelain clean, focused test green again
 
@@ -548,11 +548,11 @@ S-T5-23-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/graph_attach.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=3.2s
+exit=1 wall=3.3s
 --- FAIL: TestAttachGraphBindsNativeNodesToLiveProcesses (3.00s)
     graph_attach_test.go:309: attach-graph-native-spawn-edge-survives-admission rule violated: no spawn edge claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 -> claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:alane1r-architect-b8b06ac8c091add8, edges=0 nodes=[claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:alane1r-architect-b8b06ac8c091add8 claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05]
 FAIL
-FAIL	aitop/internal/snapshot	3.008s
+FAIL	aitop/internal/snapshot	3.004s
 FAIL
 S-T5-24-prod: AS-PREDICTED
 S-T5-24-prod: restored, porcelain clean, focused test green again
@@ -562,8 +562,8 @@ plant diffstat:
 internal/snapshot/graph_attach.go      | 2 +-
  internal/snapshot/graph_attach_test.go | 7 +++++--
  2 files changed, 6 insertions(+), 3 deletions(-)
-exit=0 wall=3.2s
-ok  	aitop/internal/snapshot	3.010s
+exit=0 wall=3.3s
+ok  	aitop/internal/snapshot	3.009s
 S-T5-24-weak: AS-PREDICTED
 S-T5-24-weak: restored, porcelain clean, focused test green again
 
@@ -571,7 +571,7 @@ S-T5-24-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/graph_attach.go | 6 +-----
  1 file changed, 1 insertion(+), 5 deletions(-)
-exit=1 wall=0.2s
+exit=1 wall=0.3s
 --- FAIL: TestAttachGraphResolvesRelativeHomes (0.00s)
     graph_attach_test.go:434: attach-home-is-absolute rule violated: home=".claude/sessions"
 FAIL
@@ -585,7 +585,7 @@ plant diffstat:
 internal/snapshot/graph_attach.go      | 6 +-----
  internal/snapshot/graph_attach_test.go | 2 +-
  2 files changed, 2 insertions(+), 6 deletions(-)
-exit=0 wall=0.2s
+exit=0 wall=0.3s
 ok  	aitop/internal/snapshot	0.004s
 S-T5-25-weak: AS-PREDICTED
 S-T5-25-weak: restored, porcelain clean, focused test green again
@@ -603,7 +603,7 @@ S-T5-25b-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/graph_attach.go | 3 ---
  1 file changed, 3 deletions(-)
-exit=1 wall=0.2s
+exit=1 wall=0.3s
 --- FAIL: TestAttachGraphResolvesRelativeHomes (0.00s)
     graph_attach_test.go:446: attach-empty-home-stays-empty rule violated: home="/home/aegis/Projects/aitop/.worktrees/native-provenance/internal/snapshot" err=<nil>
 FAIL
@@ -616,11 +616,11 @@ S-T5-25c-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/snapshot/json_v2.go | 1 -
  1 file changed, 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.3s
 --- FAIL: TestSchema2WritesUnclaimedStateAsUnknown (0.00s)
     graph_attach_test.go:383: schema-2-writes-an-unclaimed-state rule violated: err=schema-2-state rule violated: field=state.value class=unsupported
 FAIL
-FAIL	aitop/internal/snapshot	0.004s
+FAIL	aitop/internal/snapshot	0.003s
 FAIL
 S-T5-26-prod: AS-PREDICTED
 S-T5-26-prod: restored, porcelain clean, focused test green again
@@ -640,7 +640,7 @@ plant diffstat:
 internal/snapshot/json_v2.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=0 wall=0.3s
-ok  	aitop/internal/snapshot	0.004s
+ok  	aitop/internal/snapshot	0.003s
 S-T5-27-prod: AS-PREDICTED
 S-T5-27-prod: restored, porcelain clean, focused test green again
 
@@ -652,7 +652,7 @@ exit=1 wall=0.3s
 --- FAIL: TestSchema2WritesUnclaimedStateAsUnknown (0.00s)
     graph_attach_test.go:383: schema-2-writes-an-unclaimed-state rule violated: err=schema-2-state-pair rule violated: field=state class=pair
 FAIL
-FAIL	aitop/internal/snapshot	0.004s
+FAIL	aitop/internal/snapshot	0.003s
 FAIL
 S-T5-27b-prod: AS-PREDICTED
 S-T5-27b-prod: restored, porcelain clean, focused test green again
@@ -663,7 +663,7 @@ internal/snapshot/graph_attach_test.go | 9 ++++++---
  internal/snapshot/json_v2.go           | 1 +
  2 files changed, 7 insertions(+), 3 deletions(-)
 exit=0 wall=0.3s
-ok  	aitop/internal/snapshot	0.003s
+ok  	aitop/internal/snapshot	0.004s
 S-T5-27b-weak: AS-PREDICTED
 S-T5-27b-weak: restored, porcelain clean, focused test green again
 
@@ -673,9 +673,9 @@ cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.4s
 --- FAIL: TestProductionCaptureOncePassesEngineHomes (0.13s)
-    main_test.go:920: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude: Codex: Grok:} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes1466550802/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes1466550802/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes1466550802/001/.grok}
+    main_test.go:921: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude: Codex: Grok:} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes197896636/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes197896636/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes197896636/001/.grok}
 FAIL
-FAIL	aitop/cmd/aitop	0.136s
+FAIL	aitop/cmd/aitop	0.129s
 FAIL
 S-T5-28-prod: AS-PREDICTED
 S-T5-28-prod: restored, porcelain clean, focused test green again
@@ -686,7 +686,7 @@ cmd/aitop/main.go      | 2 +-
  cmd/aitop/main_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/cmd/aitop	0.134s
+ok  	aitop/cmd/aitop	0.138s
 S-T5-28-weak: AS-PREDICTED
 S-T5-28-weak: restored, porcelain clean, focused test green again
 
@@ -705,7 +705,7 @@ cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.3s
 --- FAIL: TestProductionRunInteractivePassesEngineHomes (0.00s)
-    main_test.go:945: production-passes-engine-homes-to-the-graph rule violated: path=runInteractive got={Claude: Codex: Grok:} want={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes3933455303/001/.claude Codex:/tmp/TestProductionRunInteractivePassesEngineHomes3933455303/001/.codex Grok:/tmp/TestProductionRunInteractivePassesEngineHomes3933455303/001/.grok}
+    main_test.go:946: production-passes-engine-homes-to-the-graph rule violated: path=runInteractive got={Claude: Codex: Grok:} want={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes447308012/001/.claude Codex:/tmp/TestProductionRunInteractivePassesEngineHomes447308012/001/.codex Grok:/tmp/TestProductionRunInteractivePassesEngineHomes447308012/001/.grok}
 FAIL
 FAIL	aitop/cmd/aitop	0.002s
 FAIL
@@ -727,7 +727,7 @@ plant diffstat:
 cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=0 wall=0.3s
-ok  	aitop/cmd/aitop	0.137s
+ok  	aitop/cmd/aitop	0.130s
 S-T5-29b-prod: AS-PREDICTED
 S-T5-29b-prod: restored, porcelain clean, focused test green again
 
@@ -737,9 +737,9 @@ cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.4s
 --- FAIL: TestProductionCaptureOncePassesEngineHomes (0.13s)
-    main_test.go:920: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes26951100/001/.claude Codex: Grok:/tmp/TestProductionCaptureOncePassesEngineHomes26951100/001/.grok} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes26951100/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes26951100/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes26951100/001/.grok}
+    main_test.go:921: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes3688947075/001/.claude Codex: Grok:/tmp/TestProductionCaptureOncePassesEngineHomes3688947075/001/.grok} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes3688947075/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes3688947075/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes3688947075/001/.grok}
 FAIL
-FAIL	aitop/cmd/aitop	0.136s
+FAIL	aitop/cmd/aitop	0.134s
 FAIL
 S-T5-30-prod: AS-PREDICTED
 S-T5-30-prod: restored, porcelain clean, focused test green again
@@ -750,7 +750,7 @@ cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.2s
 --- FAIL: TestProductionRunInteractivePassesEngineHomes (0.00s)
-    main_test.go:945: production-passes-engine-homes-to-the-graph rule violated: path=runInteractive got={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes2844951504/001/.claude Codex: Grok:/tmp/TestProductionRunInteractivePassesEngineHomes2844951504/001/.grok} want={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes2844951504/001/.claude Codex:/tmp/TestProductionRunInteractivePassesEngineHomes2844951504/001/.codex Grok:/tmp/TestProductionRunInteractivePassesEngineHomes2844951504/001/.grok}
+    main_test.go:946: production-passes-engine-homes-to-the-graph rule violated: path=runInteractive got={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes840057260/001/.claude Codex: Grok:/tmp/TestProductionRunInteractivePassesEngineHomes840057260/001/.grok} want={Claude:/tmp/TestProductionRunInteractivePassesEngineHomes840057260/001/.claude Codex:/tmp/TestProductionRunInteractivePassesEngineHomes840057260/001/.codex Grok:/tmp/TestProductionRunInteractivePassesEngineHomes840057260/001/.grok}
 FAIL
 FAIL	aitop/cmd/aitop	0.002s
 FAIL
@@ -773,9 +773,9 @@ cmd/aitop/main.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 exit=1 wall=0.4s
 --- FAIL: TestProductionCaptureOncePassesEngineHomes (0.13s)
-    main_test.go:920: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.claude} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes1712731745/001/.grok}
+    main_test.go:921: production-passes-engine-homes-to-the-graph rule violated: path=captureOnce got={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.claude} want={Claude:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.claude Codex:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.codex Grok:/tmp/TestProductionCaptureOncePassesEngineHomes3046208622/001/.grok}
 FAIL
-FAIL	aitop/cmd/aitop	0.135s
+FAIL	aitop/cmd/aitop	0.133s
 FAIL
 S-T5-31-prod: AS-PREDICTED
 S-T5-31-prod: restored, porcelain clean, focused test green again
@@ -786,7 +786,7 @@ cmd/aitop/main.go      | 2 +-
  cmd/aitop/main_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/cmd/aitop	0.136s
+ok  	aitop/cmd/aitop	0.133s
 S-T5-31-weak: AS-PREDICTED
 S-T5-31-weak: restored, porcelain clean, focused test green again
 
@@ -795,10 +795,10 @@ plant diffstat:
 cmd/aitop/main.go | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 exit=1 wall=0.4s
---- FAIL: TestProductionCaptureOnceFillsRowsBeforeRunningCollectors (0.14s)
-    main_test.go:1014: capture-once-fills-rows-before-running-collectors rule violated: collectors ran against an engine holding 29 rows
+--- FAIL: TestProductionCaptureOnceFillsRowsBeforeRunningCollectors (0.11s)
+    main_test.go:1039: capture-once-fills-rows-before-running-collectors rule violated: the collectors ran against an engine holding 0 rows, and the capture that followed them produced 29
 FAIL
-FAIL	aitop/cmd/aitop	0.138s
+FAIL	aitop/cmd/aitop	0.114s
 FAIL
 S-T5-32-prod: AS-PREDICTED
 S-T5-32-prod: restored, porcelain clean, focused test green again
@@ -809,82 +809,34 @@ cmd/aitop/main.go      | 4 ++--
  cmd/aitop/main_test.go | 2 +-
  2 files changed, 3 insertions(+), 3 deletions(-)
 exit=0 wall=0.4s
-ok  	aitop/cmd/aitop	0.138s
+ok  	aitop/cmd/aitop	0.116s
 S-T5-32-weak: AS-PREDICTED
 S-T5-32-weak: restored, porcelain clean, focused test green again
 
-===== SUMMARY
-S-T5-01-prod: AS-PREDICTED
-S-T5-01-weak: AS-PREDICTED
-S-T5-02-prod: AS-PREDICTED
-S-T5-02-weak: AS-PREDICTED
-S-T5-03-prod: AS-PREDICTED
-S-T5-03-weak: AS-PREDICTED
-S-T5-04-prod: AS-PREDICTED
-S-T5-04-weak: AS-PREDICTED
-S-T5-05-prod: AS-PREDICTED
-S-T5-05-weak: AS-PREDICTED
-S-T5-06-prod: AS-PREDICTED
-S-T5-06-weak: AS-PREDICTED
-S-T5-07-prod: AS-PREDICTED
-S-T5-08-prod: AS-PREDICTED
-S-T5-08-weak: AS-PREDICTED
-S-T5-09-prod: AS-PREDICTED
-S-T5-09-weak: AS-PREDICTED
-S-T5-10a-prod: AS-PREDICTED
-S-T5-10b-prod: AS-PREDICTED
-S-T5-10-prod: AS-PREDICTED
-S-T5-10-weak: AS-PREDICTED
-S-T5-11-prod: AS-PREDICTED
-S-T5-11-weak: AS-PREDICTED
-S-T5-12-prod: AS-PREDICTED
-S-T5-12b-prod: AS-PREDICTED
-S-T5-12b-weak: AS-PREDICTED
-S-T5-13-prod: AS-PREDICTED
-S-T5-13-weak: AS-PREDICTED
-S-T5-14-prod: AS-PREDICTED
-S-T5-14-weak: AS-PREDICTED
-S-T5-15-prod: AS-PREDICTED
-S-T5-15-weak: AS-PREDICTED
-S-T5-16-prod: AS-PREDICTED
-S-T5-16-weak: AS-PREDICTED
-S-T5-17-prod: AS-PREDICTED
-S-T5-17-weak: AS-PREDICTED
-S-T5-18-prod: AS-PREDICTED
-S-T5-18-weak: AS-PREDICTED
-S-T5-19-prod: AS-PREDICTED
-S-T5-19-weak: AS-PREDICTED
-S-T5-20-prod: AS-PREDICTED
-S-T5-20-weak: AS-PREDICTED
-S-T5-21-prod: AS-PREDICTED
-S-T5-21-weak: AS-PREDICTED
-S-T5-22-prod: AS-PREDICTED
-S-T5-22-weak: AS-PREDICTED
-S-T5-23-prod: AS-PREDICTED
-S-T5-23-weak: AS-PREDICTED
-S-T5-24-prod: AS-PREDICTED
-S-T5-24-weak: AS-PREDICTED
-S-T5-25-prod: AS-PREDICTED
-S-T5-25-weak: AS-PREDICTED
-S-T5-25b-prod: AS-PREDICTED
-S-T5-25c-prod: AS-PREDICTED
-S-T5-26-prod: AS-PREDICTED
-S-T5-26-weak: AS-PREDICTED
-S-T5-27-prod: AS-PREDICTED
-S-T5-27b-prod: AS-PREDICTED
-S-T5-27b-weak: AS-PREDICTED
-S-T5-28-prod: AS-PREDICTED
-S-T5-28-weak: AS-PREDICTED
-S-T5-28b-prod: AS-PREDICTED
-S-T5-29-prod: AS-PREDICTED
-S-T5-29-weak: AS-PREDICTED
-S-T5-29b-prod: AS-PREDICTED
-S-T5-30-prod: AS-PREDICTED
-S-T5-30b-prod: AS-PREDICTED
-S-T5-30-weak: AS-PREDICTED
-S-T5-31-prod: AS-PREDICTED
-S-T5-31-weak: AS-PREDICTED
-S-T5-32-prod: AS-PREDICTED
-S-T5-32-weak: AS-PREDICTED
-total=72 as_predicted=72
-production_RED=33 predicted_GREEN=39
+===== S-T5-33-prod expect=RED pkg=./internal/native run=^TestCollectorSignalsItsFirstTickAfterItFinishes$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestCollectorSignalsItsFirstTickAfterItFinishes (0.00s)
+    native_test.go:813: native-first-tick-closes-only-when-the-tick-finishes rule violated: signal closed while scan was still running
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-33-prod: AS-PREDICTED
+S-T5-33-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-33-weak expect=GREEN pkg=./internal/native run=^TestCollectorSignalsItsFirstTickAfterItFinishes$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCollectorSignalsItsFirstTickAfterItFinishes (0.00s)
+    native_test.go:825: native-first-tick-closes-after-publishing rule violated: signal closed with events=0
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-33-weak: MISMATCH
+S-T5-33-weak: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection

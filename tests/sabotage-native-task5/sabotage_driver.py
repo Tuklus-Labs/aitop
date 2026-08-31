@@ -87,6 +87,7 @@ T_LANES = "^TestAttachGraphReturnsOneLanePerHome$"
 T_CAP_UNDER = "^TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap$"
 T_CAP_OVER = "^TestProductionCaptureOnceReturnsAtTheCapForASlowerLane$"
 T_BUDGET = "^TestNativeFirstTickBudgetIsTwoSeconds$"
+T_DARK = "^TestDarkLocalUnitNeedsNoSpine$"
 
 # --- fix round 1: the first-tick signal -----------------------------------
 
@@ -170,6 +171,17 @@ P_MAI_HUGE_BUDGET = (MAI,
 P_ORDER_NO_INJECT = (MAIT,
                      "\t\teng.Overlay = func() ([]types.Overlay, error) {\n\t\t\treturn []types.Overlay{{\n\t\t\t\tRuntime:     types.RuntimeLocal,\n\t\t\t\tSessionName: \"aitop-test-dark-unit\",\n\t\t\t\tStatus:      \"off\",\n\t\t\t}}, nil\n\t\t}\n",
                      "\t\teng.Overlay = func() ([]types.Overlay, error) { return nil, nil }\n")
+
+# The dark-roster path removed, so a local unit with no pid never becomes a row
+# and the ordering test's fixture has nothing to stand on.
+P_JOIN_NO_DARK = (JOI,
+                  '\t\tif o.Runtime == types.RuntimeLocal && o.SessionName != "" {',
+                  "\t\tif false {")
+# Every local overlay admitted to the dark roster, named or not, which puts an
+# unnameable row in the graph's local-unit lane.
+P_JOIN_DARK_ANY_LOCAL = (JOI,
+                         '\t\tif o.Runtime == types.RuntimeLocal && o.SessionName != "" {',
+                         "\t\tif o.Runtime == types.RuntimeLocal {")
 
 # --- the horizon rule's live-process clause -------------------------------
 
@@ -470,6 +482,13 @@ W_TICK_AFTER_OPEN = (NATT,
 W_TICK_AFTER_MID = (NATT,
                     "\t\tt.Fatalf(\"native-first-tick-closes-only-when-the-tick-finishes rule violated: signal closed while scan was still running\")",
                     "\t\t_ = t")
+# The mid-scan assertion is not the only witness: a signal that closes on entry
+# also closes before anything is published, and the publishing assertion catches
+# it independently. Two witnesses of one rule, both relaxed here.
+W_TICK_AFTER_PUBLISHED = (NATT,
+                          "\tif n := sink.count(); n == 0 {",
+                          "\tif n := sink.count(); false && n == 0 {")
+
 W_TICK_ERR = (NATT,
               "\t\tt.Fatalf(\"native-first-tick-closes-on-a-failed-scan rule violated: signal still open 3s after a scan error\")",
               "\t\t_ = t")
@@ -498,6 +517,13 @@ W_EV_BOUND = (ATTT,
 W_EV_SHARED = (ATTT,
                "\tif elapsed := time.Since(started); elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes",
                "\tif elapsed := time.Since(started); false && elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes")
+W_DARK_ROWS = (JOIT,
+               "\tif len(rows) != 1 {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine",
+               "\tif len(rows) != 1 {\n\t\treturn\n\t}\n\tif false {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine")
+W_DARK_UNNAMED = (JOIT,
+                  "\tif rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeLocal}}); len(rows) != 0 {",
+                  "\tif rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeLocal}}); false && len(rows) != 0 {")
+
 W_LANES_COUNT = (ATTT,
                  "\t\tif len(lanes) != tc.want {",
                  "\t\tif false && len(lanes) != tc.want {")
@@ -636,7 +662,7 @@ CYCLES = [
 
     # --- fix round 1: the first-tick signal ------------------------------
     ("S-T5-33-prod", [P_TICK_ON_ENTRY], P_NATIVE, T_TICK_AFTER, "RED", "native-first-tick-closes-only-when-the-tick-finishes rule violated"),
-    ("S-T5-33-weak", [P_TICK_ON_ENTRY, W_TICK_AFTER_MID], P_NATIVE, T_TICK_AFTER, "GREEN", None),
+    ("S-T5-33-weak", [P_TICK_ON_ENTRY, W_TICK_AFTER_MID, W_TICK_AFTER_PUBLISHED], P_NATIVE, T_TICK_AFTER, "GREEN", None),
     ("S-T5-34-prod", [P_TICK_NOT_ON_ERROR], P_NATIVE, T_TICK_ERR, "RED", "native-first-tick-closes-on-a-failed-scan rule violated"),
     ("S-T5-34-weak", [P_TICK_NOT_ON_ERROR, W_TICK_ERR], P_NATIVE, T_TICK_ERR, "GREEN", None),
     ("S-T5-35-prod", [P_TICK_NO_ONCE], P_NATIVE, T_TICK_STAYS, "RED", "panic"),
@@ -664,12 +690,73 @@ CYCLES = [
     ("S-T5-44-weak", [P_MAI_HUGE_BUDGET, W_BUDGET], P_MAIN, T_BUDGET, "GREEN", None),
 
     # --- fix round 1: the portable ordering test --------------------------
-    ("S-T5-45-prod", [P_ORDER_NO_INJECT], P_MAIN, T_ORDER, "RED", "capture-once-fixture-produces-a-row rule violated"),
-    ("S-T5-45-weak", [P_ORDER_NO_INJECT, W_ORDER_CANARY], P_MAIN, T_ORDER, "GREEN", None),
+    # Removing the injection CANNOT red the ordering test on this box, and that
+    # is the finding rather than a gap: /proc here really does hold classified
+    # agent processes, so the engine has rows either way. The recorded GREEN is
+    # the honest statement of it.
+    ("S-T5-45a-prod", [P_ORDER_NO_INJECT], P_MAIN, T_ORDER, "GREEN", None),
+    # The portability property is asserted where it can be reproduced: against
+    # an EMPTY spine, in the joiner.
+    ("S-T5-45-prod", [P_JOIN_NO_DARK], P_JOIN, T_DARK, "RED", "dark-local-unit-needs-no-spine rule violated"),
+    ("S-T5-45-weak", [P_JOIN_NO_DARK, W_DARK_ROWS], P_JOIN, T_DARK, "GREEN", None),
+    ("S-T5-46-prod", [P_JOIN_DARK_ANY_LOCAL], P_JOIN, T_DARK, "RED", "unnamed-local-unit-is-not-a-dark-row rule violated"),
+    ("S-T5-46-weak", [P_JOIN_DARK_ANY_LOCAL, W_DARK_UNNAMED], P_JOIN, T_DARK, "GREEN", None),
 ]
 
 
+def preflight():
+    """Apply every distinct patch alone and vet its package.
+
+    A cycle whose plant does not COMPILE measures the compiler, not the rule,
+    and each one costs a whole epoch run to find. This finds them all in one
+    pass.
+
+    It refuses a dirty tree for the same reason the epoch does, and the reason
+    is not tidiness: the restore between patches is `git checkout --`, which
+    discards uncommitted work in the files it touches. Running this over
+    unstaged edits destroys them silently, and the run afterwards looks
+    completely normal.
+    """
+    import subprocess as sp
+
+    def sh(args):
+        return sp.run(args, cwd=REPO, capture_output=True, text=True)
+
+    dirty = sh(["git", "status", "--porcelain"]).stdout.strip().splitlines()
+    dirty = [l for l in dirty if "tests/sabotage-native-task5/" not in l]
+    if dirty:
+        print("ABORT: tree not clean; the restore between patches would discard:")
+        for line in dirty:
+            print("   ", line)
+        return 1
+
+    seen, bad = set(), []
+    for cid, patches, pkg, _rx, _expect, _phrase in CYCLES:
+        for patch in patches:
+            key = (patch[0], patch[1], patch[2], pkg)
+            if key in seen:
+                continue
+            seen.add(key)
+            full = os.path.join(REPO, patch[0])
+            src = open(full).read()
+            if src.count(patch[1]) != 1:
+                bad.append((cid, patch[0], "old-string count=%d" % src.count(patch[1])))
+                continue
+            open(full, "w").write(src.replace(patch[1], patch[2], 1))
+            r = sh(["go", "vet", pkg])
+            sh(["git", "checkout", "--"] + SOURCES)
+            if r.returncode != 0:
+                bad.append((cid, patch[0], r.stderr.strip().splitlines()[-1][:140]))
+    print("patches checked:", len(seen))
+    for entry in bad:
+        print("  BUILD-BREAK", entry)
+    print("clean" if not bad else "FIX THESE")
+    return 0 if not bad else 1
+
+
 def main():
+    if "--preflight" in sys.argv:
+        sys.exit(preflight())
     logf = open(LOG, "w")
 
     def emit(msg):
