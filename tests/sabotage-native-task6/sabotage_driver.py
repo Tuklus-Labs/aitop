@@ -452,8 +452,15 @@ CYCLES = [
     ("S-T6-10-weak", [P_GHOST_ALWAYS, W_ONLY_MARKED, W_FRESH_NOT_DIM], T_MARKS, "GREEN", None),
     ("S-T6-11-prod", [P_NO_PARTIAL], T_MARKS, "RED", R_PARTIAL),
     ("S-T6-11-weak", [P_NO_PARTIAL, W_PARTIAL], T_MARKS, "GREEN", None),
-    ("S-T6-12-prod", [P_PARTIAL_ALWAYS], T_MARKS, "RED", R_ONLY_MARKED),
-    ("S-T6-12-weak", [P_PARTIAL_ALWAYS, W_ONLY_MARKED], T_MARKS, "GREEN", None),
+    # Predicted R_ONLY_MARKED and measured R_GHOST_DIM. Marking every node
+    # partial renames the ghost to "01a022e3?", and the ghost-dim witness looks
+    # for the exact styled run Dim.Render("01a022e3"), which a suffixed name no
+    # longer contains. The witness is right about the row and wrong about the
+    # reason, so it is recorded where it actually fires and the assertion this
+    # plant was aimed at is exposed one layer down.
+    ("S-T6-12-prod", [P_PARTIAL_ALWAYS], T_MARKS, "RED", R_GHOST_DIM),
+    ("S-T6-12-mid", [P_PARTIAL_ALWAYS, W_GHOST_DIM], T_MARKS, "RED", R_ONLY_MARKED),
+    ("S-T6-12-weak", [P_PARTIAL_ALWAYS, W_GHOST_DIM, W_ONLY_MARKED], T_MARKS, "GREEN", None),
     ("S-T6-13-prod", [P_NO_STALE_DIM], T_MARKS, "RED", R_STALE),
     ("S-T6-13-weak", [P_NO_STALE_DIM, W_STALE_DIM], T_MARKS, "GREEN", None),
     # The other direction of the same rule: dimming everything is as wrong as
@@ -535,7 +542,12 @@ CYCLES = [
     ("S-T6-33-prod", [P_KEY_TAB_DEAD], T_KEYS, "RED", R_TAB_FLIP),
     ("S-T6-33-weak", [P_KEY_TAB_DEAD, W_TAB_OPENS], T_KEYS, "GREEN", None),
     ("S-T6-34-prod", [P_KEY_ONE_DEAD_IN_PANE], T_KEYS, "RED", R_TOGGLE),
-    ("S-T6-34-weak", [P_KEY_ONE_DEAD_IN_PANE, W_ONE_RETURNS, W_ONE_SHOWS_TABLE], T_KEYS, "GREEN", None),
+    # A third and fourth witness, and they are named for a different rule on
+    # purpose: `1` staying inert leaves the view in the graph, so the tab that
+    # follows runs graph-to-table instead of table-to-graph and BOTH tab
+    # assertions move. Found by running the weakened cycle, which reddened on
+    # them after the two named for the preset were relaxed.
+    ("S-T6-34-weak", [P_KEY_ONE_DEAD_IN_PANE, W_ONE_RETURNS, W_ONE_SHOWS_TABLE, W_TAB_OPENS, W_TAB_CLOSES], T_KEYS, "GREEN", None),
     ("S-T6-35-prod", [P_DEFAULT_GRAPH], T_KEYS, "RED", R_TOGGLE),
     ("S-T6-35-weak", [P_DEFAULT_GRAPH, W_DEFAULT_TABLE, W_FOOTER_PRESETS, W_TWO_SHOWS, W_TWO_REPLACES, W_ONE_SHOWS_TABLE], T_KEYS, "GREEN", None),
     ("S-T6-36-prod", [P_GRAPH_NOT_PAINTED], T_KEYS, "RED", R_TWO_SHOWS),

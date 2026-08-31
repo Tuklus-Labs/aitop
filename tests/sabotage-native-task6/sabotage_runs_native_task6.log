@@ -1,0 +1,1412 @@
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [0:20) of 80
+
+===== S-T6-01-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
+    view_test.go:997: graph-pane-indents-children-under-parents rule violated: "│ ● impl-t6?                                                 opus           aitop        thinking  │"
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-01-prod: AS-PREDICTED
+S-T6-01-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-01-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-01-weak: AS-PREDICTED
+S-T6-01-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-02-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-02-prod: AS-PREDICTED
+S-T6-02-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-02-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-02-weak: AS-PREDICTED
+S-T6-02-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-03-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
+    view_test.go:1000: graph-pane-roots-carry-no-rail rule violated: "│ └─● aegis-79                                               fable-5        aitop        active    │"
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-03-prod: AS-PREDICTED
+S-T6-03-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-03-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
+S-T6-03-weak: AS-PREDICTED
+S-T6-03-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-04-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-04-prod: AS-PREDICTED
+S-T6-04-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-04-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-04-weak: AS-PREDICTED
+S-T6-04-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-05-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
+    view_test.go:1006: graph-pane-falls-back-to-the-id-tail rule violated: "│ ○ ✝ grok:session:01a022e3                                  grok-4.6       aitop        completed │"
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-05-prod: AS-PREDICTED
+S-T6-05-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-05-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-05-weak: AS-PREDICTED
+S-T6-05-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-06-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
+    view_test.go:1012: graph-pane-header-names-itself rule violated: "╭─┤ forest ├──────────────────────────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮"
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-06-prod: AS-PREDICTED
+S-T6-06-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-06-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-06-weak: AS-PREDICTED
+S-T6-06-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-07-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneRendersSpawnForest (0.00s)
+    view_test.go:1015: graph-pane-header-counts-what-it-drew rule violated: "╭─┤ graph ├───────────────────────────────────────────────┤ 4 nodes · 4 edges · 1 gaps · topo r7 ├─╮"
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-07-prod: AS-PREDICTED
+S-T6-07-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-07-weak expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.005s
+S-T6-07-weak: AS-PREDICTED
+S-T6-07-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-08-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-08-prod: AS-PREDICTED
+S-T6-08-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-08-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-08-weak: AS-PREDICTED
+S-T6-08-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-09-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
+    view_test.go:1027: graph-pane-marks-ghosts-with-a-dagger rule violated: "│ ○ 01a022e3                                                 grok-4.6       aitop        completed │"
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-09-prod: AS-PREDICTED
+S-T6-09-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-09-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 3 ---
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-09-weak: AS-PREDICTED
+S-T6-09-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-10-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
+    view_test.go:1037: graph-pane-marks-only-what-is-marked rule violated: "│ ● ✝ aegis-79                                               fable-5        aitop        active    │"
+FAIL
+FAIL	aitop/internal/ui	0.002s
+FAIL
+S-T6-10-prod: AS-PREDICTED
+S-T6-10-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-10-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-10-weak: AS-PREDICTED
+S-T6-10-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [0:20)
+S-T6-01-prod: AS-PREDICTED
+S-T6-01-weak: AS-PREDICTED
+S-T6-02-prod: AS-PREDICTED
+S-T6-02-weak: AS-PREDICTED
+S-T6-03-prod: AS-PREDICTED
+S-T6-03-weak: AS-PREDICTED
+S-T6-04-prod: AS-PREDICTED
+S-T6-04-weak: AS-PREDICTED
+S-T6-05-prod: AS-PREDICTED
+S-T6-05-weak: AS-PREDICTED
+S-T6-06-prod: AS-PREDICTED
+S-T6-06-weak: AS-PREDICTED
+S-T6-07-prod: AS-PREDICTED
+S-T6-07-weak: AS-PREDICTED
+S-T6-08-prod: AS-PREDICTED
+S-T6-08-weak: AS-PREDICTED
+S-T6-09-prod: AS-PREDICTED
+S-T6-09-weak: AS-PREDICTED
+S-T6-10-prod: AS-PREDICTED
+S-T6-10-weak: AS-PREDICTED
+total=20 as_predicted=20
+production_RED=41 predicted_GREEN=39
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [20:40) of 80
+
+===== S-T6-11-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
+    view_test.go:1034: graph-pane-marks-partial-nodes rule violated: "│ └─● impl-t6                                                opus           aitop        thinking  │"
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-11-prod: AS-PREDICTED
+S-T6-11-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-11-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-11-weak: AS-PREDICTED
+S-T6-11-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-12-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-12-prod: MISMATCH
+S-T6-12-prod: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [22:45) of 81
+
+===== S-T6-12-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-12-prod: AS-PREDICTED
+S-T6-12-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-12-mid expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneMarksGhostAndPartial (0.00s)
+    view_test.go:1037: graph-pane-marks-only-what-is-marked rule violated: "│ ● aegis-79?                                                fable-5        aitop        active    │"
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-12-mid: AS-PREDICTED
+S-T6-12-mid: restored, porcelain clean, focused test green again
+
+===== S-T6-12-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-12-weak: AS-PREDICTED
+S-T6-12-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-13-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-13-prod: AS-PREDICTED
+S-T6-13-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-13-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-13-weak: AS-PREDICTED
+S-T6-13-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-14-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-14-prod: AS-PREDICTED
+S-T6-14-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-14-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-14-weak: AS-PREDICTED
+S-T6-14-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-15-prod expect=RED run=^TestGraphPaneEmptyShowsCanary$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.002s
+FAIL
+S-T6-15-prod: AS-PREDICTED
+S-T6-15-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-15-weak expect=GREEN run=^TestGraphPaneEmptyShowsCanary$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-15-weak: AS-PREDICTED
+S-T6-15-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-16-prod expect=RED run=^TestGraphPaneEmptyShowsCanary$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        │                                           aitop-canary                                           │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-16-prod: AS-PREDICTED
+S-T6-16-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-16-weak expect=GREEN run=^TestGraphPaneEmptyShowsCanary$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.005s
+S-T6-16-weak: AS-PREDICTED
+S-T6-16-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-17-prod expect=RED run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
+    view_test.go:1206: graph-pane-fills-terminal-height rule violated at 80x24: got 25 lines
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-17-prod: AS-PREDICTED
+S-T6-17-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-17b-prod expect=RED run=^TestGraphPaneEmptyShowsCanary$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestGraphPaneEmptyShowsCanary (0.00s)
+    view_test.go:1064: graph-pane-empty-keeps-frame-height rule violated (no snapshot): 31 lines
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-17b-prod: AS-PREDICTED
+S-T6-17b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-17-weak expect=GREEN run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.005s
+S-T6-17-weak: AS-PREDICTED
+S-T6-17-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-18-prod expect=RED run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
+    view_test.go:1206: graph-pane-fills-terminal-height rule violated at 80x24: got 10 lines
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-18-prod: AS-PREDICTED
+S-T6-18-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-18-weak expect=GREEN run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.007s
+S-T6-18-weak: AS-PREDICTED
+S-T6-18-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-18b-prod expect=RED run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeepsFrameGeometry (0.00s)
+    view_test.go:1210: graph-pane-line-is-terminal-width rule violated at 80x24 line 4: width 79:
+        ╭─┤ graph ├──────────────────────────┤ 4 nodes · 2 edges · 1 gaps · topo r7 ├─╮
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-18b-prod: AS-PREDICTED
+S-T6-18b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-18b-weak expect=GREEN run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.004s
+S-T6-18b-weak: AS-PREDICTED
+S-T6-18b-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-19-prod expect=RED run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/graph.go | 4 ----
+ 1 file changed, 4 deletions(-)
+exit=1 wall=0.8s
+ntime/mgc.go:1807 +0xeb fp=0x192f2aa57fc8 sp=0x192f2aa57f40 pc=0x43042b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x192f2aa57fe0 sp=0x192f2aa57fc8 pc=0x482697
+runtime.goexit({})
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x192f2aa57fe8 sp=0x192f2aa57fe0 pc=0x492b41
+created by runtime.gcBgMarkStartWorkers in goroutine 9
+	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 33 gp=0x192f2aa55680 m=nil [GC worker (idle)]:
+runtime.gopark(0x6cccd8257b29?, 0x3?, 0xba?, 0x55?, 0x0?)
+	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x192f2aa58740 sp=0x192f2aa58720 pc=0x48c2ca
+runtime.gcBgMarkWorker(0x192f2a8da3f0)
+	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x192f2aa587c8 sp=0x192f2aa58740 pc=0x43042b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x192f2aa587e0 sp=0x192f2aa587c8 pc=0x482697
+runtime.goexit({})
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x192f2aa587e8 sp=0x192f2aa587e0 pc=0x492b41
+created by runtime.gcBgMarkStartWorkers in goroutine 9
+	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
+
+goroutine 34 gp=0x192f2aa55860 m=nil [GC worker (idle)]:
+runtime.gopark(0x9f31a0?, 0x1?, 0x32?, 0x33?, 0x0?)
+	/usr/lib/go/src/runtime/proc.go:474 +0xca fp=0x192f2aa58f40 sp=0x192f2aa58f20 pc=0x48c2ca
+runtime.gcBgMarkWorker(0x192f2a8da3f0)
+	/usr/lib/go/src/runtime/mgc.go:1807 +0xeb fp=0x192f2aa58fc8 sp=0x192f2aa58f40 pc=0x43042b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/usr/lib/go/src/runtime/mgc.go:1711 +0x17 fp=0x192f2aa58fe0 sp=0x192f2aa58fc8 pc=0x482697
+runtime.goexit({})
+	/usr/lib/go/src/runtime/asm_amd64.s:1264 +0x1 fp=0x192f2aa58fe8 sp=0x192f2aa58fe0 pc=0x492b41
+created by runtime.gcBgMarkStartWorkers in goroutine 9
+	/usr/lib/go/src/runtime/mgc.go:1711 +0xfc
+FAIL	aitop/internal/ui	0.324s
+FAIL
+S-T6-19-prod: AS-PREDICTED
+S-T6-19-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-20-prod expect=RED run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/5 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-20-prod: AS-PREDICTED
+S-T6-20-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-20-weak expect=GREEN run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-20-weak: AS-PREDICTED
+S-T6-20-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-21-prod expect=RED run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/5 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.002s
+FAIL
+S-T6-21-prod: AS-PREDICTED
+S-T6-21-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-21-weak expect=GREEN run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.003s
+S-T6-21-weak: AS-PREDICTED
+S-T6-21-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [22:45)
+S-T6-12-prod: AS-PREDICTED
+S-T6-12-mid: AS-PREDICTED
+S-T6-12-weak: AS-PREDICTED
+S-T6-13-prod: AS-PREDICTED
+S-T6-13-weak: AS-PREDICTED
+S-T6-14-prod: AS-PREDICTED
+S-T6-14-weak: AS-PREDICTED
+S-T6-15-prod: AS-PREDICTED
+S-T6-15-weak: AS-PREDICTED
+S-T6-16-prod: AS-PREDICTED
+S-T6-16-weak: AS-PREDICTED
+S-T6-17-prod: AS-PREDICTED
+S-T6-17b-prod: AS-PREDICTED
+S-T6-17-weak: AS-PREDICTED
+S-T6-18-prod: AS-PREDICTED
+S-T6-18-weak: AS-PREDICTED
+S-T6-18b-prod: AS-PREDICTED
+S-T6-18b-weak: AS-PREDICTED
+S-T6-19-prod: AS-PREDICTED
+S-T6-20-prod: AS-PREDICTED
+S-T6-20-weak: AS-PREDICTED
+S-T6-21-prod: AS-PREDICTED
+S-T6-21-weak: AS-PREDICTED
+total=23 as_predicted=23
+production_RED=42 predicted_GREEN=39
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [45:65) of 81
+
+===== S-T6-22-prod expect=RED run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/graph.go | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+exit=1 wall=0.4s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                           aitop-canary                                           │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-22-prod: AS-PREDICTED
+S-T6-22-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-22-weak expect=GREEN run=^TestGraphPaneCycleSafe$
+plant diffstat:
+internal/ui/graph.go     |  4 +---
+ internal/ui/view_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 8 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.002s
+S-T6-22-weak: AS-PREDICTED
+S-T6-22-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-22b-prod expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/graph.go | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/ui	0.004s
+S-T6-22b-prod: AS-PREDICTED
+S-T6-22b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-23-prod expect=RED run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.4s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/6 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-23-prod: AS-PREDICTED
+S-T6-23-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-23-weak expect=GREEN run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go     | 3 ---
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
+S-T6-23-weak: AS-PREDICTED
+S-T6-23-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-24-prod expect=RED run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.5s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/6 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-24-prod: AS-PREDICTED
+S-T6-24-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-24-weak expect=GREEN run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go     | 3 ---
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.005s
+S-T6-24-weak: AS-PREDICTED
+S-T6-24-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-25-prod expect=RED run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.5s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/6 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-25-prod: AS-PREDICTED
+S-T6-25-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-25-weak expect=GREEN run=^TestGraphPaneOrdersRuntimeGroupsThenName$
+plant diffstat:
+internal/ui/graph.go     | 4 ++--
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
+S-T6-25-weak: AS-PREDICTED
+S-T6-25-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-26-prod expect=GREEN run=^TestGraphPaneKeepsFrameGeometry$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.005s
+S-T6-26-prod: AS-PREDICTED
+S-T6-26-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-26b-prod expect=GREEN run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/ui	0.006s
+S-T6-26b-prod: AS-PREDICTED
+S-T6-26b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-27-prod expect=RED run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.4s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├─────────────────────────────────────────────────────────────┤ 1/10 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-27-prod: AS-PREDICTED
+S-T6-27-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-27-weak expect=GREEN run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
+S-T6-27-weak: AS-PREDICTED
+S-T6-27-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-28-prod expect=RED run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/9 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-28-prod: AS-PREDICTED
+S-T6-28-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-28-mid expect=RED run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.5s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/9 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-28-mid: AS-PREDICTED
+S-T6-28-mid: restored, porcelain clean, focused test green again
+
+===== S-T6-28-weak expect=GREEN run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go     | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
+S-T6-28-weak: AS-PREDICTED
+S-T6-28-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-29-prod expect=RED run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.5s
+                                                                                  │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        │                                                                                                                      │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────────────────────────┤ 1/8 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-29-prod: AS-PREDICTED
+S-T6-29-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-29-mid expect=RED run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go     | 4 ++--
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneCapsMessageEdgesAtThree (0.00s)
+    view_test.go:1272: graph-pane-message-edges-do-not-parent rule violated: "│ ├─● impl-t7                                                                    —              —            active    │"
+FAIL
+FAIL	aitop/internal/ui	0.003s
+FAIL
+S-T6-29-mid: AS-PREDICTED
+S-T6-29-mid: restored, porcelain clean, focused test green again
+
+===== S-T6-29-weak expect=GREEN run=^TestGraphPaneCapsMessageEdgesAtThree$
+plant diffstat:
+internal/ui/graph.go     | 4 ++--
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
+S-T6-29-weak: AS-PREDICTED
+S-T6-29-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-30-prod expect=RED run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view_test.go | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+exit=1 wall=0.5s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ 1 table ├─┤ 2 graph ├──────────────────────────────────────────┤ 1/4 ├─╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-30-prod: AS-PREDICTED
+S-T6-30-prod: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [45:65)
+S-T6-22-prod: AS-PREDICTED
+S-T6-22-weak: AS-PREDICTED
+S-T6-22b-prod: AS-PREDICTED
+S-T6-23-prod: AS-PREDICTED
+S-T6-23-weak: AS-PREDICTED
+S-T6-24-prod: AS-PREDICTED
+S-T6-24-weak: AS-PREDICTED
+S-T6-25-prod: AS-PREDICTED
+S-T6-25-weak: AS-PREDICTED
+S-T6-26-prod: AS-PREDICTED
+S-T6-26b-prod: AS-PREDICTED
+S-T6-27-prod: AS-PREDICTED
+S-T6-27-weak: AS-PREDICTED
+S-T6-28-prod: AS-PREDICTED
+S-T6-28-mid: AS-PREDICTED
+S-T6-28-weak: AS-PREDICTED
+S-T6-29-prod: AS-PREDICTED
+S-T6-29-mid: AS-PREDICTED
+S-T6-29-weak: AS-PREDICTED
+S-T6-30-prod: AS-PREDICTED
+total=20 as_predicted=20
+production_RED=42 predicted_GREEN=39
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [65:81) of 81
+
+===== S-T6-30-weak expect=GREEN run=^TestGraphPaneMarksGhostAndPartial$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 5 +++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
+S-T6-30-weak: AS-PREDICTED
+S-T6-30-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-31-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 2 --
+ 1 file changed, 2 deletions(-)
+exit=1 wall=0.5s
+                                                                                       │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                                                                                │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                                                                                │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                                                                         │
+        │ subagents1 running · 12 declared                                                                                                                                                                     │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                                                                            │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                                                                            │
+        │                                                                                                                                                                                                      │
+        ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.005s
+FAIL
+S-T6-31-prod: AS-PREDICTED
+S-T6-31-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-31-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go      | 2 --
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+exit=0 wall=0.4s
+ok  	aitop/internal/ui	0.006s
+S-T6-31-weak: AS-PREDICTED
+S-T6-31-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-32-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1098: graph-pane-keys-toggle rule violated: 2 did not open the graph
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-32-prod: AS-PREDICTED
+S-T6-32-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-32-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 8 ++++----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.006s
+S-T6-32-weak: AS-PREDICTED
+S-T6-32-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-33-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1118: graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph
+FAIL
+FAIL	aitop/internal/ui	0.007s
+FAIL
+S-T6-33-prod: AS-PREDICTED
+S-T6-33-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-33-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.007s
+S-T6-33-weak: AS-PREDICTED
+S-T6-33-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-34-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1110: graph-pane-keys-toggle rule violated: 1 did not return to the table
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-34-prod: AS-PREDICTED
+S-T6-34-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-34-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+exit=1 wall=0.5s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1118: graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-34-weak: MISMATCH
+S-T6-34-weak: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection
+head: f57560938722053b25549aa1dbf225ee17c0d8fb
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+chunk: cycles [73:81) of 81
+
+===== S-T6-34-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     | 1 -
+ internal/ui/view_test.go | 8 ++++----
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.004s
+S-T6-34-weak: AS-PREDICTED
+S-T6-34-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-35-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go | 1 +
+ 1 file changed, 1 insertion(+)
+exit=1 wall=0.4s
+--- FAIL: TestGraphPaneKeysToggle (0.00s)
+    view_test.go:1089: graph-pane-keys-toggle rule violated: the table is not the default view
+FAIL
+FAIL	aitop/internal/ui	0.002s
+FAIL
+S-T6-35-prod: AS-PREDICTED
+S-T6-35-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-35-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/model.go     |  1 +
+ internal/ui/view_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.005s
+S-T6-35-weak: AS-PREDICTED
+S-T6-35-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-36-prod expect=RED run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.5s
+                                                                                       │
+        │ session  01a022e3   name     —   via      —   branch   —   effort   —                                                                                                                                │
+        │ cwd      —   age      4d15h   state    S   ppid     1                                                                                                                                                │
+        │ tokens   301k / 500k   ■■■■■■■■■■■■■■■■ 60%   cost     —   model    grok-4.6                                                                                                                         │
+        │ subagents1 running · 12 declared                                                                                                                                                                     │
+        │   ● Scout Grok overlay join                  explore         10s 04:59:50                                                                                                                            │
+        │   ✓ done scout                               explore         10s 04:59:00                                                                                                                            │
+        │                                                                                                                                                                                                      │
+        ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+FAIL
+FAIL	aitop/internal/ui	0.006s
+FAIL
+S-T6-36-prod: AS-PREDICTED
+S-T6-36-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-36-weak expect=GREEN run=^TestGraphPaneKeysToggle$
+plant diffstat:
+internal/ui/view.go      | 2 +-
+ internal/ui/view_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.005s
+S-T6-36-weak: AS-PREDICTED
+S-T6-36-weak: restored, porcelain clean, focused test green again
+
+===== S-T6-36b-prod expect=RED run=^TestGraphPaneRendersSpawnForest$
+plant diffstat:
+internal/ui/view.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+               │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        │                                                                                                  │
+        ╰─┤ q quit ├─┤ ↑↓j move ├─┤ f fork ├─┤ m msg ├─┤ c clone ├─┤ r restart ├─┤ k kill ├─┤ p promo ├────╯
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-36b-prod: AS-PREDICTED
+S-T6-36b-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-37-prod expect=RED run=^TestGraphPaneSelectionCarriesNoActions$
+plant diffstat:
+internal/ui/model.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.5s
+se ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0} Winner:{Key: Runtime: PID:0 StartTime:0 SessionID: Unit: CWD: Model: Worktree: Overlay:{SessionID: PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0} Loser:{Key: Runtime: PID:0 StartTime:0 SessionID: Unit: CWD: Model: Worktree: Overlay:{SessionID: PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession: SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf: CapsuleID: Worktree: Kind: TokPerSec:<nil> SlotIndex:<nil> Dark:false} Argv:[] TemplatePort:0 RSS:0}}]
+FAIL
+FAIL	aitop/internal/ui	0.004s
+FAIL
+S-T6-37-prod: AS-PREDICTED
+S-T6-37-prod: restored, porcelain clean, focused test green again
+
+===== S-T6-37-weak expect=GREEN run=^TestGraphPaneSelectionCarriesNoActions$
+plant diffstat:
+internal/ui/model.go     | 3 ---
+ internal/ui/view_test.go | 8 ++++----
+ 2 files changed, 4 insertions(+), 7 deletions(-)
+exit=0 wall=0.5s
+ok  	aitop/internal/ui	0.003s
+S-T6-37-weak: AS-PREDICTED
+S-T6-37-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY for cycles [73:81)
+S-T6-34-weak: AS-PREDICTED
+S-T6-35-prod: AS-PREDICTED
+S-T6-35-weak: AS-PREDICTED
+S-T6-36-prod: AS-PREDICTED
+S-T6-36-weak: AS-PREDICTED
+S-T6-36b-prod: AS-PREDICTED
+S-T6-37-prod: AS-PREDICTED
+S-T6-37-weak: AS-PREDICTED
+total=8 as_predicted=8
+production_RED=42 predicted_GREEN=39

@@ -4,3 +4,5 @@
 *.out
 .worktrees/
 dist/
+__pycache__/
+*.pyc
