@@ -479,6 +479,15 @@ func TestGrokScannerChildLifecycle(t *testing.T) {
 		grokMetaFields(grokHostSession, grokDarkChild, "explore", grokChildModel, "child of a quiet host",
 			"running", grokDaemonCWD, now.Add(-6*time.Minute), ""),
 		now.Add(-2*time.Minute))
+	// That child's OWN session directory, in the walked bucket, with no
+	// session_kind at all: a truncated write, or a grok that predates the field.
+	// Nothing then marks the file as a child, so the walk sees a perfectly
+	// ordinary main and the only thing keeping one node id from being published
+	// under two roles is that the child record is read first.
+	tree.summary(grokDaemonCWD, grokDarkChild,
+		grokMainFields(grokDarkChild, grokDaemonCWD, grokBuildAgent, grokModel, "unmarked child",
+			now.Add(-6*time.Minute), now.Add(-time.Minute)),
+		now.Add(-time.Minute))
 
 	tree.roster([]map[string]any{
 		grokRosterEntryFields(grokLiveSession, grokProjectCWD, now.Add(-45*time.Minute)),
@@ -559,6 +568,13 @@ func TestGrokScannerChildLifecycle(t *testing.T) {
 	}
 	if darkChild.State != "" || darkChild.Exit != "" {
 		t.Fatalf("grok-running-child-of-roster-absent-parent-claims-nothing rule violated: state=%q exit=%q parent=%s", darkChild.State, darkChild.Exit, grokHostSession)
+	}
+	// The same node reachable two ways: as this child, and as the unmarked main
+	// its own directory looks like. The child record wins, because it is the only
+	// one of the two that knows the role, the parent and the lifecycle.
+	if darkChild.Role != types.RoleSubagent || darkChild.Name != "explore" || darkChild.Location != darkChildPath {
+		t.Fatalf("grok-child-record-outranks-its-own-summary rule violated: role=%q name=%q location=%q want=%q/%q/%q",
+			darkChild.Role, darkChild.Name, darkChild.Location, types.RoleSubagent, "explore", darkChildPath)
 	}
 	// The parent is out of horizon and never published from its own summary, so
 	// the edge needs an endpoint: minimal, anchored on the child's meta file.
@@ -717,6 +733,20 @@ func TestGrokScannerSpawnEdges(t *testing.T) {
 			"completed", grokDaemonCWD, now.Add(-4*time.Hour), grokStamp(now.Add(-3*time.Hour))),
 		now.Add(-3*time.Hour))
 
+	// A store whose parent summary is stale and whose only child sits INSIDE the
+	// horizon and OUTSIDE the exit window. The child is a sighting the core will
+	// drop, so a parent synthesized for it would outlive the only child it exists
+	// for, with no edge, no state and no terminal to end it. The two bounds are
+	// different rules and this is the only fixture where they disagree.
+	tree.summary(grokDaemonCWD, grokSecondSession,
+		grokMainFields(grokSecondSession, grokDaemonCWD, grokBuildAgent, grokModel, "ended host",
+			now.Add(-5*time.Hour), now.Add(-2*time.Hour)),
+		now.Add(-2*time.Hour))
+	tree.meta(grokDaemonCWD, grokSecondSession, grokStaleExitChild,
+		grokMetaFields(grokSecondSession, grokStaleExitChild, "explore", grokChildModel, "finished a while ago",
+			"completed", grokDaemonCWD, now.Add(-30*time.Minute), grokStamp(now.Add(-6*time.Minute))),
+		now.Add(-6*time.Minute))
+
 	tree.roster([]map[string]any{
 		grokRosterEntryFields(grokLiveSession, grokProjectCWD, now.Add(-45*time.Minute)),
 	}, now.Add(-45*time.Minute))
@@ -776,6 +806,7 @@ func TestGrokScannerSpawnEdges(t *testing.T) {
 		{grokBuriedSession, "every child in its store is outside the horizon"},
 		{grokBuriedChild, "outside the horizon"},
 		{grokEmptyIDChild, "meta.json has no child_session_id"},
+		{grokSecondSession, "its only child is inside the horizon but outside the exit window, so the core drops that child"},
 	} {
 		if seen := countNodeID(nodes, mustGrokID(t, absent.session)); seen != 0 {
 			t.Fatalf("grok-skipped-child-synthesizes-no-parent rule violated: session=%s count=%d reason=%q ids=%v", absent.session, seen, absent.reason, nodeIDs(nodes))
@@ -786,13 +817,14 @@ func TestGrokScannerSpawnEdges(t *testing.T) {
 	if seen := countNodeID(nodes, parent); seen != 1 {
 		t.Fatalf("grok-published-parent-not-duplicated rule violated: parent=%s count=%d want=1 ids=%v", grokLiveSession, seen, nodeIDs(nodes))
 	}
-	// Six: the roster main, its three publishable children, the live dark child
-	// and the parent synthesized for it.
-	if len(nodes) != 6 {
-		t.Fatalf("grok-spawn-fixture-node-count rule violated: nodes=%d want=6 ids=%v", len(nodes), nodeIDs(nodes))
+	// Seven: the roster main, its three publishable children, the live dark child
+	// and the parent synthesized for it, and the child the core will drop for its
+	// stale terminal, which is a sighting here and a node nowhere.
+	if len(nodes) != 7 {
+		t.Fatalf("grok-spawn-fixture-node-count rule violated: nodes=%d want=7 ids=%v", len(nodes), nodeIDs(nodes))
 	}
-	if len(spawns) != 3 {
-		t.Fatalf("grok-spawn-fixture-edge-count rule violated: spawns=%d want=3 ids=%v", len(spawns), nodeIDs(nodes))
+	if len(spawns) != 4 {
+		t.Fatalf("grok-spawn-fixture-edge-count rule violated: spawns=%d want=4 ids=%v", len(spawns), nodeIDs(nodes))
 	}
 	// Two unusable metas: the self-naming one and the one with no child id. Both
 	// are dropped for reasons the node counts above cannot distinguish.
