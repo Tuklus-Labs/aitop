@@ -62,6 +62,9 @@ type Model struct {
 	splitLeft  types.Row
 	splitRight types.Row
 	splitFocus int // 0 left (parent), 1 right (winner candidate)
+
+	graphView  bool // the 2 preset: spawn forest instead of the table
+	graphLines []graphLine
 }
 
 func New(src *atomic.Pointer[snapshot.Snapshot], t theme.Theme, enqueue func(act.Intent) error) Model {
@@ -113,6 +116,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modePager || m.mode == modeSplit {
 			return m.pagerKey(msg)
 		}
+		if m.graphView {
+			return m.graphKey(msg)
+		}
 		return m.key(msg)
 	}
 	return m, nil
@@ -144,13 +150,16 @@ func (m *Model) reshape(now time.Time) {
 	s := m.snap()
 	if s == nil {
 		m.lines = nil
+		m.graphLines = nil
 		m.census = census{}
 		return
 	}
 	m.lines = m.shaper.shape(s.Rows, s.Host, now)
 	m.census = takeCensus(s.Rows)
-	// Keep the cursor on the same row across re-sorts.
-	if m.cursorKey != "" {
+	m.graphLines = flattenGraph(s.Graph)
+	// Keep the cursor on the same row across re-sorts. The graph pane has its
+	// own line list and no row keys, so the restore is the table's alone.
+	if !m.graphView && m.cursorKey != "" {
 		for i, l := range m.lines {
 			if l.key == m.cursorKey {
 				m.cursor = i
@@ -162,19 +171,42 @@ func (m *Model) reshape(now time.Time) {
 }
 
 func (m *Model) clampCursor() {
-	if m.cursor >= len(m.lines) {
-		m.cursor = len(m.lines) - 1
+	n := len(m.lines)
+	if m.graphView {
+		n = len(m.graphLines)
+	}
+	if m.cursor >= n {
+		m.cursor = n - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-	if len(m.lines) > 0 {
+	if !m.graphView && len(m.lines) > 0 {
 		m.cursorKey = m.lines[m.cursor].key
 	}
 	m.clampScroll()
 }
 
+// setGraphView switches presets. The cursor and offset are shared machinery
+// over two different line lists, so a switch starts the new list at the top
+// rather than carrying an index that means nothing in it.
+func (m *Model) setGraphView(on bool) {
+	if m.graphView == on {
+		return
+	}
+	m.graphView = on
+	m.cursor, m.scroll = 0, 0
+	m.clampCursor()
+}
+
 func (m *Model) rowsVisible() int {
+	if m.graphView {
+		// The graph pane is one box: top border, body, bottom border.
+		if n := m.height - headerH - 2; n > 1 {
+			return n
+		}
+		return 1
+	}
 	detailH := 0
 	if m.detail {
 		detailH = detailHeight(m.height)
@@ -306,6 +338,48 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.promptMode, m.prompt = "budget", ""
 	case "v":
 		m.markCurrent()
+	case "1":
+		m.setGraphView(false)
+	case "2":
+		m.setGraphView(true)
+	case "tab":
+		m.setGraphView(!m.graphView)
+	}
+	return m, nil
+}
+
+// graphKey is the graph pane's whole keymap. The action keys are absent by
+// construction rather than held back by a guard: a selection here carries no
+// actions in v1, and the way to keep that true is to give the pane no way to
+// express one.
+func (m Model) graphKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "1":
+		m.setGraphView(false)
+	case "2":
+		m.setGraphView(true)
+	case "tab":
+		m.setGraphView(!m.graphView)
+	case "j", "down":
+		m.cursor++
+		m.clampCursor()
+	case "up":
+		m.cursor--
+		m.clampCursor()
+	case "g", "home":
+		m.cursor = 0
+		m.clampCursor()
+	case "G", "end":
+		m.cursor = len(m.graphLines) - 1
+		m.clampCursor()
+	case "ctrl+d", "pgdown":
+		m.cursor += m.rowsVisible() / 2
+		m.clampCursor()
+	case "ctrl+u", "pgup":
+		m.cursor -= m.rowsVisible() / 2
+		m.clampCursor()
 	}
 	return m, nil
 }
@@ -641,20 +715,34 @@ func (m Model) View() string {
 		splitLeft:  m.splitLeft,
 		splitRight: m.splitRight,
 		splitFocus: m.splitFocus,
+		graphView:  m.graphView,
+		graphLines: m.graphLines,
 	})
 }
 
-// Render paints one frame from a snapshot at the given size, for tests and
-// --once screenshots. It shares every code path with the live view.
+// Render paints one frame of the table from a snapshot at the given size, for
+// tests and --once screenshots. It shares every code path with the live view.
 func Render(s *snapshot.Snapshot, t theme.Theme, width, height int, now time.Time) string {
+	return renderOnce(s, t, width, height, now, false)
+}
+
+// RenderGraph paints one frame of the graph pane the same way, as the 2 preset
+// would draw it.
+func RenderGraph(s *snapshot.Snapshot, t theme.Theme, width, height int, now time.Time) string {
+	return renderOnce(s, t, width, height, now, true)
+}
+
+func renderOnce(s *snapshot.Snapshot, t theme.Theme, width, height int, now time.Time, graphView bool) string {
 	m := New(nil, t, nil)
 	m.width, m.height = width, height
+	m.graphView = graphView
 	if s != nil {
 		m.lines = m.shaper.shape(s.Rows, s.Host, now)
 		m.census = takeCensus(s.Rows)
+		m.graphLines = flattenGraph(s.Graph)
 	}
 	return m.styles.render(frame{
 		snap: s, lines: m.lines, census: m.census, width: width, height: height,
-		sort: m.shaper.sort, now: now,
+		sort: m.shaper.sort, now: now, graphView: graphView, graphLines: m.graphLines,
 	})
 }

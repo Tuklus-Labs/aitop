@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"aitop/internal/graph"
 	"aitop/internal/present"
 	"aitop/internal/snapshot"
 	"aitop/internal/types"
@@ -203,6 +204,8 @@ type frame struct {
 	splitLeft  types.Row
 	splitRight types.Row
 	splitFocus int
+	graphView  bool
+	graphLines []graphLine
 }
 
 func (s *Styles) render(f frame) string {
@@ -214,6 +217,12 @@ func (s *Styles) render(f frame) string {
 	}
 	if f.mode == modeSplit {
 		return s.renderSplit(f)
+	}
+	if f.graphView {
+		var b strings.Builder
+		s.renderHeader(&b, f)
+		s.renderGraph(&b, f, f.height-headerH)
+		return b.String()
 	}
 	var b strings.Builder
 	detailH := 0
@@ -460,6 +469,8 @@ func (s *Styles) renderTable(b *strings.Builder, f frame, tableH int) {
 			s.key("⏎", "log"),
 			s.key("s", "sort"),
 			s.key("v", "mark"),
+			s.key("1", "table"),
+			s.key("2", "graph"),
 		}
 		var right []string
 		if f.lastErr != "" {
@@ -1029,4 +1040,187 @@ func overlayPagerLines(o types.Overlay, logs []string) []string {
 		out = append(out, logs...)
 	}
 	return out
+}
+
+// Graph pane column widths. NAME takes whatever is left over.
+const (
+	graphModelW   = 14
+	graphProjectW = 12
+	graphStateW   = 10 // widest state word ("completed"), reserved not padded
+)
+
+// renderGraph paints the spawn forest in place of the table. It writes exactly
+// h lines -- top border, h-2 body lines, bottom border with no trailing newline
+// -- which is the shape renderTable holds to, so the frame still fills the
+// terminal exactly.
+func (s *Styles) renderGraph(b *strings.Builder, f frame, h int) {
+	w := f.width
+	var g *graph.Snapshot
+	if f.snap != nil {
+		g = f.snap.Graph
+	}
+	left := []string{s.tab(s.Title.Render(" graph "))}
+	counts := " no graph "
+	if g != nil {
+		counts = fmt.Sprintf(" %d nodes · %d edges · %d gaps · topo r%d ",
+			len(g.Nodes), len(g.Edges), len(g.Gaps), g.TopologyRevision)
+	}
+	b.WriteString(s.boxTop(w, left, []string{s.tab(s.Dim.Render(counts))}))
+	b.WriteByte('\n')
+
+	bodyH := h - 2
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	inner := w - 2 - 1 // borders and one cell of left margin
+	if len(f.graphLines) == 0 {
+		// Empty is not quiet: a graph with nothing in it is byte-identical to a
+		// pane that never painted, so the canary says which one happened.
+		mid := bodyH / 2
+		for i := 0; i < bodyH; i++ {
+			line := ""
+			if i == mid {
+				line = centre(s.Hi.Render(snapshot.Canary), w-2)
+			}
+			b.WriteString(s.boxLine(line, w))
+			b.WriteByte('\n')
+		}
+	} else {
+		scroll := f.scroll
+		if scroll > len(f.graphLines) {
+			scroll = len(f.graphLines)
+		}
+		if scroll < 0 {
+			scroll = 0
+		}
+		end := scroll + bodyH
+		if end > len(f.graphLines) {
+			end = len(f.graphLines)
+		}
+		for i := scroll; i < end; i++ {
+			b.WriteString(s.boxLine(s.renderGraphLine(f.graphLines[i], inner, i == f.cursor), w))
+			b.WriteByte('\n')
+		}
+		for i := end - scroll; i < bodyH; i++ {
+			b.WriteString(s.boxLine("", w))
+			b.WriteByte('\n')
+		}
+	}
+
+	keys := []string{
+		s.key("q", "quit"),
+		s.key("↑↓j", "move"),
+		s.key("1", "table"),
+		s.key("2", "graph"),
+	}
+	var right []string
+	if n := len(f.graphLines); n > 0 {
+		right = append(right, s.tab(s.Dim.Render(fmt.Sprintf(" %d/%d ", f.cursor+1, n))))
+	}
+	b.WriteString(s.boxBottom(w, keys, right))
+}
+
+// centre left-pads seg so it sits in the middle of width cells.
+func centre(seg string, width int) string {
+	pad := (width - ansi.StringWidth(seg)) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	return strings.Repeat(" ", pad) + seg
+}
+
+// renderGraphLine paints one line of the forest. Every cell goes through paint
+// so a selected line carries selected_bg edge to edge, exactly as renderLine
+// does for the table.
+func (s *Styles) renderGraphLine(l graphLine, inner int, selected bool) string {
+	paint := func(st lipgloss.Style, text string) string {
+		if selected {
+			st = st.Background(lipgloss.Color(s.Theme.SelectedBg))
+		}
+		return st.Render(text)
+	}
+	pad := func(seg string, w int) string {
+		switch cur := ansi.StringWidth(seg); {
+		case cur < w:
+			return seg + paint(s.Text, strings.Repeat(" ", w-cur))
+		case cur > w:
+			return ansi.Truncate(seg, w, "…")
+		}
+		return seg
+	}
+	rail := ""
+	if l.depth > 0 {
+		rail = strings.Repeat("  ", l.depth-1)
+		if l.last {
+			rail += "└─"
+		} else {
+			rail += "├─"
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(paint(s.Text, " "))
+	switch l.kind {
+	case graphEdgeLine:
+		seg := paint(s.Div, strings.Repeat("  ", l.depth)) + paint(s.Misc, "· "+l.label)
+		b.WriteString(pad(seg, inner))
+		return b.String()
+	case graphBackLine:
+		seg := paint(s.Div, rail) + paint(s.Dim, "↩ "+l.name)
+		b.WriteString(pad(seg, inner))
+		return b.String()
+	}
+
+	n := l.node
+	nameStyle := s.graphStateStyle(n.State.Value)
+	stateStyle := nameStyle
+	if n.State.Stale {
+		stateStyle = s.Dim
+	}
+	if graphIsGhost(n) {
+		nameStyle, stateStyle = s.Dim, s.Dim
+	}
+	nameW := inner - graphModelW - graphProjectW - graphStateW - 3
+	if nameW < 16 {
+		nameW = 16
+	}
+	seg := paint(s.Div, rail) + s.runtimeGlyph(string(n.Runtime), selected) + paint(s.Text, " ")
+	if graphIsGhost(n) {
+		seg += paint(s.Dim, "✝ ")
+	}
+	name := l.name
+	if n.Partial {
+		name += "?"
+	}
+	seg += paint(nameStyle, name)
+	b.WriteString(pad(seg, nameW))
+	b.WriteString(paint(s.Text, " "))
+	b.WriteString(s.textCell(shortModel(n.Model), graphModelW, paint))
+	b.WriteString(paint(s.Text, " "))
+	b.WriteString(s.textCell(n.Project, graphProjectW, paint))
+	b.WriteString(paint(s.Text, " "))
+	if n.State.Value == "" {
+		b.WriteString(paint(s.Dim, absent))
+	} else {
+		b.WriteString(paint(stateStyle, string(n.State.Value)))
+	}
+	return b.String()
+}
+
+// graphStateStyle colours a node the way the table colours a status. The graph
+// vocabulary is wider than present.Status, so the mapping is written out rather
+// than inferred.
+func (s *Styles) graphStateStyle(v graph.State) lipgloss.Style {
+	switch v {
+	case graph.StateActive, graph.StateThinking, graph.StateTool, graph.StateShell:
+		return s.Status(present.StatusBusy)
+	case graph.StateWaiting, graph.StateApproval, graph.StateBlocked:
+		return s.Misc
+	case graph.StateError, graph.StateFailed:
+		return s.Hi
+	case graph.StateCompleted:
+		return s.Status(present.StatusDone)
+	default:
+		return s.Dim
+	}
 }

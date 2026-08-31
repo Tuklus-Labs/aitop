@@ -1,15 +1,20 @@
 package ui
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"aitop/internal/act"
+	"aitop/internal/graph"
 	"aitop/internal/proc"
 	"aitop/internal/snapshot"
 	"aitop/internal/theme"
@@ -17,6 +22,16 @@ import (
 )
 
 var now = time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+
+// TestMain pins the colour profile. Under `go test` there is no terminal, so
+// lipgloss detects Ascii and renders every style as the bare word: dim text and
+// bright text come out byte-identical, and any assertion about colour is
+// vacuously true. The graph pane's ghost and stale rules ARE colour rules, so
+// they have to be measured against a renderer that emits colour.
+func TestMain(m *testing.M) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	os.Exit(m.Run())
+}
 
 func fixtureSnapshot() *snapshot.Snapshot {
 	tok := int64(300655)
@@ -454,6 +469,8 @@ func press(tm tea.Model, k string) tea.Model {
 		msg = tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
 		msg = tea.KeyMsg{Type: tea.KeyDown}
+	case "tab":
+		msg = tea.KeyMsg{Type: tea.KeyTab}
 	default:
 		msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
 	}
@@ -898,5 +915,341 @@ func TestTargetFromLineCopiesArgvAndTemplatePort(t *testing.T) {
 	got.Argv[0] = "mutated"
 	if l.row.Process.Cmdline[0] != "llama-server" {
 		t.Fatalf("target-from-line-clones-argv violated: backing array shared")
+	}
+}
+
+// --- Task 6: the graph pane -------------------------------------------------
+
+const (
+	graphRootID  = graph.NodeID("claude:session:62fee278")
+	graphAgentID = graph.NodeID("claude:agent:62fee278:aimpl-t6")
+	graphGrokID  = graph.NodeID("grok:session:01a022e3")
+	graphCodexID = graph.NodeID("codex:thread:0199aa11")
+)
+
+// graphFixture is the brief's graph: 4 nodes, 2 spawn edges, 1 ghost, 1 partial.
+// The grok node carries no ProvenName, so its name has to come off the ID tail,
+// and it is both the ghost and a parent: a dimmed row still owns a subtree.
+func graphFixture() *snapshot.Snapshot {
+	s := fixtureSnapshot()
+	ghostUntil := now.Add(4 * time.Minute)
+	s.Graph = &graph.Snapshot{
+		At:               now,
+		TopologyRevision: 7,
+		Nodes: []graph.Node{
+			{ID: graphRootID, Runtime: types.RuntimeClaude, Role: types.RolePrimary, ProvenName: "aegis-79",
+				Model: "claude-fable-5", Project: "aitop", State: graph.NodeState{Value: graph.StateActive}},
+			{ID: graphAgentID, Runtime: types.RuntimeClaude, Role: types.RoleSubagent, ProvenName: "impl-t6",
+				Model: "opus", Project: "aitop", Partial: true,
+				State: graph.NodeState{Value: graph.StateThinking, Stale: true}},
+			{ID: graphGrokID, Runtime: types.RuntimeGrok, Role: types.RolePrimary,
+				Model: "grok-4.6", Project: "aitop", GhostExpiresAt: &ghostUntil,
+				State: graph.NodeState{Value: graph.StateCompleted}},
+			{ID: graphCodexID, Runtime: types.RuntimeCodex, Role: types.RoleSubagent, ProvenName: "codex-worker",
+				Model: "gpt-5.6-sol", Project: "aitop", State: graph.NodeState{Value: graph.StateActive}},
+		},
+		Edges: []graph.Edge{
+			{Key: "spawn:a", Source: graphRootID, Target: graphAgentID, Type: graph.EdgeSpawn,
+				Provenance: graph.ProvenanceNative, Lifecycle: graph.LifecycleActive},
+			{Key: "spawn:b", Source: graphGrokID, Target: graphCodexID, Type: graph.EdgeSpawn,
+				Provenance: graph.ProvenanceNative, Lifecycle: graph.LifecycleActive},
+		},
+		Gaps: []graph.Gap{{Source: "aitop:native:codex", Kind: graph.GapCollector, At: now, Count: 1}},
+	}
+	return s
+}
+
+func lineIndex(frame, needle string) int {
+	for i, l := range strings.Split(frame, "\n") {
+		if strings.Contains(l, needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestGraphPaneRendersSpawnForest(t *testing.T) {
+	out := ansi.Strip(RenderGraph(graphFixture(), theme.Nightfable(), 100, 30, now))
+	lines := strings.Split(out, "\n")
+	for _, want := range []string{"aegis-79", "impl-t6", "01a022e3", "codex-worker", "fable-5", "gpt-5.6-sol"} {
+		if lineIndex(out, want) < 0 {
+			t.Fatalf("graph-pane-renders-every-node rule violated: %q missing from\n%s", want, out)
+		}
+	}
+	for _, pair := range [][2]string{{"aegis-79", "impl-t6"}, {"01a022e3", "codex-worker"}} {
+		parent, child := lineIndex(out, pair[0]), lineIndex(out, pair[1])
+		if child != parent+1 {
+			t.Fatalf("graph-pane-renders-the-spawn-forest rule violated: child %s at line %d is not directly under parent %s at line %d:\n%s",
+				pair[1], child, pair[0], parent, out)
+		}
+		if !strings.Contains(lines[child], "└─") {
+			t.Fatalf("graph-pane-indents-children-under-parents rule violated: %q", lines[child])
+		}
+		if strings.Contains(lines[parent], "└─") || strings.Contains(lines[parent], "├─") {
+			t.Fatalf("graph-pane-roots-carry-no-rail rule violated: %q", lines[parent])
+		}
+	}
+	if !strings.Contains(out, "graph") {
+		t.Fatalf("graph-pane-header-names-itself rule violated:\n%s", out)
+	}
+	if !strings.Contains(out, "4 nodes · 2 edges · 1 gaps · topo r7") {
+		t.Fatalf("graph-pane-header-counts-what-it-drew rule violated:\n%s", out)
+	}
+}
+
+func TestGraphPaneMarksGhostAndPartial(t *testing.T) {
+	raw := RenderGraph(graphFixture(), theme.Nightfable(), 100, 30, now)
+	out := ansi.Strip(raw)
+	st := NewStyles(theme.Nightfable())
+
+	ghost := rowLine(out, "01a022e3")
+	dagger, name := strings.Index(ghost, "✝"), strings.Index(ghost, "01a022e3")
+	if dagger < 0 || dagger > name {
+		t.Fatalf("graph-pane-marks-ghosts-with-a-dagger rule violated: %q", ghost)
+	}
+	if !strings.Contains(raw, st.Dim.Render("01a022e3")) {
+		t.Fatalf("graph-pane-dims-a-ghost-row rule violated: ghost name is not painted dim:\n%s", out)
+	}
+
+	if partial := rowLine(out, "impl-t6"); !strings.Contains(partial, "impl-t6?") {
+		t.Fatalf("graph-pane-marks-partial-nodes rule violated: %q", partial)
+	}
+	if live := rowLine(out, "aegis-79"); strings.Contains(live, "✝") || strings.Contains(live, "aegis-79?") {
+		t.Fatalf("graph-pane-marks-only-what-is-marked rule violated: %q", live)
+	}
+
+	if !strings.Contains(raw, st.Dim.Render("thinking")) {
+		t.Fatalf("graph-pane-dims-a-stale-state rule violated: a stale state word is not painted dim:\n%s", out)
+	}
+	if strings.Contains(raw, st.Dim.Render("active")) {
+		t.Fatalf("graph-pane-dims-a-stale-state rule violated: a fresh state word is painted dim too:\n%s", out)
+	}
+}
+
+func TestGraphPaneEmptyShowsCanary(t *testing.T) {
+	nilGraph := fixtureSnapshot()
+	nilGraph.Graph = nil
+	emptyGraph := fixtureSnapshot()
+	emptyGraph.Graph = &graph.Snapshot{At: now}
+	for _, tc := range []struct {
+		name string
+		snap *snapshot.Snapshot
+	}{
+		{"no snapshot", nil},
+		{"nil graph", nilGraph},
+		{"zero nodes", emptyGraph},
+	} {
+		out := ansi.Strip(RenderGraph(tc.snap, theme.Nightfable(), 100, 30, now))
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) != 30 {
+			t.Fatalf("graph-pane-empty-keeps-frame-height rule violated (%s): %d lines", tc.name, len(lines))
+		}
+		body := 0
+		for i, l := range lines {
+			if i >= headerH && strings.Contains(l, snapshot.Canary) {
+				body++
+			}
+		}
+		if body != 1 {
+			t.Fatalf("graph-pane-empty-is-not-quiet rule violated (%s): %d body lines carry %s:\n%s",
+				tc.name, body, snapshot.Canary, out)
+		}
+	}
+}
+
+func TestGraphPaneKeysToggle(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(graphFixture())
+	m := New(src, theme.Nightfable(), nil)
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	tm, _ = tm.Update(tickMsg(now))
+
+	if tm.(Model).graphView {
+		t.Fatalf("graph-pane-keys-toggle rule violated: the table is not the default view")
+	}
+	table := ansi.Strip(tm.View())
+	if !strings.Contains(table, "1 table") || !strings.Contains(table, "2 graph") {
+		t.Fatalf("graph-pane-footer-offers-both-presets rule violated:\n%s", table)
+	}
+
+	tm = press(tm, "2")
+	if !tm.(Model).graphView {
+		t.Fatalf("graph-pane-keys-toggle rule violated: 2 did not open the graph")
+	}
+	view := ansi.Strip(tm.View())
+	if !strings.Contains(view, "aegis-79") {
+		t.Fatalf("graph-pane-two-shows-the-graph rule violated:\n%s", view)
+	}
+	if strings.Contains(view, "NAME") {
+		t.Fatalf("graph-pane-two-replaces-the-table rule violated: the column header is still painted\n%s", view)
+	}
+
+	tm = press(tm, "1")
+	if tm.(Model).graphView {
+		t.Fatalf("graph-pane-keys-toggle rule violated: 1 did not return to the table")
+	}
+	if !strings.Contains(ansi.Strip(tm.View()), "NAME") {
+		t.Fatalf("graph-pane-one-shows-the-table rule violated:\n%s", ansi.Strip(tm.View()))
+	}
+
+	tm = press(tm, "tab")
+	if !tm.(Model).graphView {
+		t.Fatalf("graph-pane-tab-flips-the-view rule violated: tab from the table did not open the graph")
+	}
+	tm = press(tm, "tab")
+	if tm.(Model).graphView {
+		t.Fatalf("graph-pane-tab-flips-the-view rule violated: tab from the graph did not return to the table")
+	}
+}
+
+func TestGraphPaneCycleSafe(t *testing.T) {
+	s := fixtureSnapshot()
+	a := graph.NodeID("claude:session:aaaa")
+	b := graph.NodeID("claude:session:bbbb")
+	c := graph.NodeID("claude:session:cccc")
+	mk := func(id graph.NodeID, name string) graph.Node {
+		return graph.Node{ID: id, Runtime: types.RuntimeClaude, ProvenName: name,
+			State: graph.NodeState{Value: graph.StateActive}}
+	}
+	s.Graph = &graph.Snapshot{
+		At: now, TopologyRevision: 2,
+		Nodes: []graph.Node{mk(a, "alpha"), mk(b, "beta"), mk(c, "gamma")},
+		Edges: []graph.Edge{
+			{Key: "spawn:ab", Source: a, Target: b, Type: graph.EdgeSpawn},
+			{Key: "spawn:ba", Source: b, Target: a, Type: graph.EdgeSpawn},
+			{Key: "spawn:cc", Source: c, Target: c, Type: graph.EdgeSpawn},
+		},
+	}
+	done := make(chan string, 1)
+	go func() { done <- ansi.Strip(RenderGraph(s, theme.Nightfable(), 100, 30, now)) }()
+	var out string
+	select {
+	case out = <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatalf("graph-pane-is-cycle-safe rule violated: render did not return on a two-node cycle")
+	}
+	if n := strings.Count(out, "alpha"); n != 2 {
+		t.Fatalf("graph-pane-draws-a-repeated-node-once rule violated: alpha appears %d times, want one node line and one back reference:\n%s", n, out)
+	}
+	if n := strings.Count(out, "beta"); n != 1 {
+		t.Fatalf("graph-pane-draws-a-repeated-node-once rule violated: beta appears %d times:\n%s", n, out)
+	}
+	if n := strings.Count(out, "gamma"); n != 2 {
+		t.Fatalf("graph-pane-draws-a-repeated-node-once rule violated: a self-spawning node appears %d times:\n%s", n, out)
+	}
+	if !strings.Contains(out, "↩ alpha") {
+		t.Fatalf("graph-pane-names-the-back-reference rule violated: no ↩ alpha in\n%s", out)
+	}
+	if !strings.Contains(out, "↩ gamma") {
+		t.Fatalf("graph-pane-names-the-back-reference rule violated: no ↩ gamma in\n%s", out)
+	}
+}
+
+func TestGraphPaneSelectionCarriesNoActions(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(graphFixture())
+	var got []act.Intent
+	m := New(src, theme.Nightfable(), func(in act.Intent) error {
+		got = append(got, in)
+		return nil
+	})
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	tm, _ = tm.Update(tickMsg(now))
+	tm = press(tm, "2")
+	for _, k := range []string{"k", "r", "c", "f", "m", "p", "b", "v", "enter", "y"} {
+		tm = press(tm, k)
+	}
+	if len(got) != 0 {
+		t.Fatalf("graph-pane-selection-carries-no-actions rule violated: %+v", got)
+	}
+	mm := tm.(Model)
+	if mm.confirmOp != "" || mm.promptMode != "" || mm.markKey != "" {
+		t.Fatalf("graph-pane-selection-carries-no-actions rule violated: confirm=%q prompt=%q mark=%q",
+			mm.confirmOp, mm.promptMode, mm.markKey)
+	}
+	if !mm.graphView {
+		t.Fatalf("graph-pane-selection-carries-no-actions rule violated: an action key left the graph view")
+	}
+	if v := ansi.Strip(tm.View()); strings.Contains(v, "y/N") {
+		t.Fatalf("graph-pane-selection-carries-no-actions rule violated: a confirm is up\n%s", v)
+	}
+}
+
+func TestGraphPaneKeepsFrameGeometry(t *testing.T) {
+	for _, sz := range [][2]int{{80, 24}, {100, 30}, {120, 40}, {200, 60}, {80, 12}} {
+		out := RenderGraph(graphFixture(), theme.Nightfable(), sz[0], sz[1], now)
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) != sz[1] {
+			t.Fatalf("graph-pane-fills-terminal-height rule violated at %dx%d: got %d lines", sz[0], sz[1], len(lines))
+		}
+		for i, l := range lines {
+			if w := ansi.StringWidth(l); w != sz[0] {
+				t.Fatalf("graph-pane-line-is-terminal-width rule violated at %dx%d line %d: width %d:\n%s",
+					sz[0], sz[1], i, w, ansi.Strip(l))
+			}
+		}
+	}
+}
+
+func TestGraphPaneOrdersRuntimeGroupsThenName(t *testing.T) {
+	s := fixtureSnapshot()
+	mk := func(id string, rt types.Runtime, name string) graph.Node {
+		return graph.Node{ID: graph.NodeID(id), Runtime: rt, ProvenName: name,
+			State: graph.NodeState{Value: graph.StateActive}}
+	}
+	s.Graph = &graph.Snapshot{At: now, Nodes: []graph.Node{
+		mk("hermes:session:1", types.RuntimeHermes, "aaa-rest"),
+		mk("local:unit:1", types.RuntimeLocal, "bbb-local"),
+		mk("codex:thread:1", types.RuntimeCodex, "ccc-codex"),
+		mk("grok:session:1", types.RuntimeGrok, "ddd-grok"),
+		mk("claude:session:1", types.RuntimeClaude, "eee-claude"),
+		mk("claude:session:2", types.RuntimeClaude, "aaa-claude"),
+	}}
+	out := ansi.Strip(RenderGraph(s, theme.Nightfable(), 120, 30, now))
+	want := []string{"aaa-claude", "eee-claude", "ddd-grok", "ccc-codex", "bbb-local", "aaa-rest"}
+	at := make([]int, len(want))
+	for i, w := range want {
+		if at[i] = lineIndex(out, w); at[i] < 0 {
+			t.Fatalf("graph-pane-orders-runtime-groups-then-name rule violated: %q missing from\n%s", w, out)
+		}
+	}
+	for i := 1; i < len(at); i++ {
+		if at[i] <= at[i-1] {
+			t.Fatalf("graph-pane-orders-runtime-groups-then-name rule violated: %s at line %d is not after %s at line %d:\n%s",
+				want[i], at[i], want[i-1], at[i-1], out)
+		}
+	}
+}
+
+func TestGraphPaneCapsMessageEdgesAtThree(t *testing.T) {
+	s := graphFixture()
+	extra := graph.NodeID("claude:agent:62fee278:aimpl-t7")
+	s.Graph.Nodes = append(s.Graph.Nodes, graph.Node{ID: extra, Runtime: types.RuntimeClaude,
+		ProvenName: "impl-t7", State: graph.NodeState{Value: graph.StateActive}})
+	for i, tgt := range []graph.NodeID{graphAgentID, graphCodexID, graphGrokID, extra} {
+		s.Graph.Edges = append(s.Graph.Edges, graph.Edge{
+			Key: graph.EdgeKey(fmt.Sprintf("message:%d", i)), Source: graphRootID, Target: tgt,
+			Type: graph.EdgeMessage, MessageKind: graph.MessageDirect, Lifecycle: graph.LifecycleActive,
+		})
+	}
+	s.Graph.Edges = append(s.Graph.Edges, graph.Edge{
+		Key: "service:1", Source: graphAgentID, Target: graphCodexID,
+		Type: graph.EdgeService, Lifecycle: graph.LifecycleActive,
+	})
+	out := ansi.Strip(RenderGraph(s, theme.Nightfable(), 120, 40, now))
+	if n := strings.Count(out, "msg→"); n != 3 {
+		t.Fatalf("graph-pane-caps-message-lines-at-three rule violated: %d msg lines:\n%s", n, out)
+	}
+	if !strings.Contains(out, "svc→ codex-worker") {
+		t.Fatalf("graph-pane-names-a-service-edge-as-service rule violated:\n%s", out)
+	}
+	// A message edge is not a spawn: its target keeps its own place in the forest.
+	extraLine := rowLine(out, "impl-t7")
+	if strings.Contains(extraLine, "└─") || strings.Contains(extraLine, "├─") {
+		t.Fatalf("graph-pane-message-edges-do-not-parent rule violated: %q", extraLine)
 	}
 }
