@@ -9,6 +9,7 @@ go build -o aitop ./cmd/aitop
 ./aitop                          # the TUI
 ./aitop --json --once            # one JSON dump (schema 2: rows + graph; control fields when set)
 ./aitop --screenshot 150x42      # one ANSI frame to stdout, truecolor
+./aitop --screenshot-graph 150x42  # the same, drawing the graph pane
 ./aitop --theme ~/.config/btop/themes/nightfable.theme
 ```
 
@@ -125,6 +126,9 @@ identical otherwise.
 
 The pane is read-only: a selection carries no actions in v1, so `f m c r k p b`
 do nothing there. Move with the usual keys, `1` or `⇥` to go back.
+`--screenshot-graph WxH` renders the same pane as one ANSI frame and exits, the
+way `--screenshot` does for the table; the two flags refuse each other, since
+one invocation writes one frame.
 
 `2 graph` sits at high priority in the table's key row, so it is on screen from
 100 columns up. That row packs from the head and drops from the tail, and it was
@@ -198,14 +202,104 @@ clock that never sits on the paint path:
    rollout JSONL via live fds; systemd unit descriptions for locals; heartbeat
    files; fork sidecars. Prices are applied here, never in the joiner. Publishes
    an overlay list the sampler joins against.
-4. **Actor** (async): bounded intent queue. Adapters exec off-tick. `--json`
-   and `--screenshot` do not start it.
+4. **Actor** (async): bounded intent queue. Adapters exec off-tick. `--json`,
+   `--screenshot` and `--screenshot-graph` do not start it.
+
+A fifth clock runs beside these when any runtime home exists: the **native
+collectors** (2s), which read parentage out of the runtimes' own session files
+and publish it into the shadow graph. See below.
 
 `--json` dumps the occupancy snapshot. Zero-value control fields are absent,
 same as cost: `fork_of`, `kind`, `worktree`, `capsule_id`, `tok_per_sec`,
 `dark`, `slot_index` appear only when set. `fork_of:""` is never emitted.
 Schema-2 JSON carries no canary; the canary lives in the TUI header
-(visible in `--screenshot` output), where the empty machine still shows it.
+(visible in `--screenshot` and `--screenshot-graph` output), where the empty
+machine still shows it. It also carries `graph`, with `nodes`, `edges` and
+`gaps`; every edge names its `provenance`, so a consumer can tell a proven
+spawn from an inferred one without re-deriving it. Because a one-shot has no
+second tick, it waits up to 2s in total for the native collectors' first disk
+walk before sampling; a lane still walking at the cap is simply missing, which
+is why the wait exists at all.
+
+### Native provenance
+
+The occupancy spine can see that eight agent processes are running. It cannot
+see that four of them were launched by the fifth: `/proc` ancestry does not
+survive a detached spawn, and an agent that spawns a child in-process has no
+second pid at all. Parentage is not visible from the outside, so aitop reads it
+from where the runtimes themselves record it.
+
+**Proven versus passive.** Every node in the graph carries one of two kinds of
+fact, and they are not interchangeable.
+
+- *Proven* is what a runtime wrote down about itself: this thread's own id, the
+  id of the thread that spawned it, the agent's type and model, the status a
+  subagent's metadata records. Native collectors read those files and publish
+  them with `AuthorityNative`. A spawn edge is proven, and carries
+  `provenance: "native"` in the JSON.
+- *Passive* is what the occupancy spine infers from the outside: a pid exists,
+  it is burning CPU, it holds this much RSS, its process start time binds it to
+  this session. That is inference over a live system, and it is what keeps the
+  graph honest about liveness when the files go quiet.
+
+The two are fused, never blended. A node bound to a live process gets that
+process's incarnation so occupancy and native agree on which run of a session
+they are describing; a node with no live process gets an invocation
+incarnation. The graph pane's `?` marks a node where some contributing source
+was refused, which is exactly the case where you should not trust the row to be
+complete.
+
+**Where the evidence comes from.** Three collectors, each polling its own home
+every 2s:
+
+| runtime | node evidence | parentage evidence |
+|---------|---------------|--------------------|
+| claude | `~/.claude/sessions/<pid>.json` sidecars for live sessions; `projects/<slug>/<parent>/subagents/agent-<id>.meta.json` for children | the directory path names the parent session; `parentAgentId` in the meta names the parent AGENT for nested spawns |
+| codex | first line (`session_meta`) of `~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl` | `parent_thread_id` in the child's own `session_meta` |
+| grok | `~/.grok/active_sessions.json` plus `sessions/<enc-cwd>/<id>/summary.json` | parent-side `sessions/<enc-cwd>/<parent>/subagents/<child>/meta.json` |
+
+A child's identity always comes from its own record, never from the field that
+looks like it. A Claude child transcript's `sessionId` is its PARENT's, and a
+codex `session_meta` carries both `id` (its own thread) and `session_id` (the
+root thread); using the wrong one of either pair collapses a whole forest into
+one node. Both traps have a test named after them.
+
+**The horizon rule.** A session is observed if a relevant file was touched
+within `nativeHorizon` (1 hour) **or** it is bound to a live process. The live
+lift matters: a session whose operator has been reading for two hours has a
+stale transcript and a perfectly healthy pid, and file mtime alone would call
+it dark. Terminals are narrower still. An exit is only published when the
+terminal timestamp is inside `nativeExitWindow` (4 minutes), which sits under
+the reconciler's 5-minute success-ghost TTL, so an agent that finished an hour
+ago is never observed at all rather than being observed and instantly evicted.
+Older completed children simply are not in the graph.
+
+Non-terminal native claims decay unless a health epoch is younger than 6s, so
+every poll tick ends by publishing a heartbeat for each lane that made a claim
+this tick. v1 claims only `active`, and only where a runtime says so outright;
+everything else is left to occupancy or to terminal evidence. Native never
+claims `approval` or `blocked`.
+
+**Known limits.** Each of these is a bounded, deliberate gap, not a bug:
+
+- **Codex thread liveness is file-based.** There is no per-thread process
+  binding to read, so a codex thread's liveness is inferred from its rollout
+  file's mtime. A thread alive but silent for over an hour goes dark in the
+  graph while its process stays visible in the table.
+- **The codex walk is bound to recent date dirs.** It scans today and yesterday
+  in both local and UTC. A long-running thread whose rollout file lives in an
+  older date directory is unreachable, even when its mtime is current. Observed
+  live at the phase gate on 2026-08-31: the one codex rollout touched inside
+  the horizon sat in `sessions/2026/08/28/`, so the codex lane published nothing.
+- **A stale-but-present sidecar leaves a terminal-less parent.** When a parent
+  session's sidecar is gone, that absence is evidence of death and the parent is
+  published `vanished`. When the sidecar is still there but stale, nothing on
+  disk distinguishes crashed from idle, so no terminal is published and the node
+  waits out the horizon instead of being ghosted. Presence is not death evidence.
+- **Fork children are visible but unparented.** aitop's own forks now carry a
+  runtime and appear in the graph, but nothing yet ties a fork child back to the
+  session that launched it; that needs the launch-intent handshake, which is a
+  later phase. Until then a fork child renders as a root of its own.
 
 `internal/join.Join` is a pure left join on `(pid, starttime)`. Overlays with
 no live process never create rows; processes with no overlay keep theirs with
@@ -225,9 +319,13 @@ Files older than 5s are ignored. Uncooperative processes still appear.
 
 `go test ./...`. Instruments follow `~/.claude/STYLE.md`: every gate has been
 watched fail on a planted mutation (`tests/SABOTAGE_LOG.md`), the risk model
-is `tests/RISK_MODEL.md`, and the empty machine still shows `aitop-canary`
-in the TUI header (JSON dropped the canary with schema 2).
-`hack/ansi2png.py` turns `--screenshot` output into a PNG for eyeballing.
+is `tests/RISK_MODEL.md`, the assertion-loudness audit is
+`tests/LOUDNESS_AUDIT.md`, the gate tallies are `tests/TALLY*.txt`, and the
+empty machine still shows `aitop-canary` in the TUI header (JSON dropped the
+canary with schema 2). Sabotage drivers live beside their logs under
+`tests/sabotage-*/` and are re-runnable from a clean checkout.
+`hack/ansi2png.py` turns `--screenshot` or `--screenshot-graph` output into a
+PNG for eyeballing.
 
 Design: `docs/superpowers/specs/2026-08-21-aitop-design.md`. Occupancy polish:
 `docs/superpowers/plans/2026-08-21-aitop-excellent.md`. Control plane:

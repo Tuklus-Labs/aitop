@@ -178,3 +178,172 @@ live handoff probe (not a gate command; recorded):
 
 HEAD recorded here: ae330623a05b0e543bff5cb1f37853be523fa8fc
 after this tally commit, this file is one commit behind that SHA by design.
+
+================================================================
+recertification: native provenance phase (Tasks 1-7)
+date: 2026-08-31
+go: go1.27.0-X:nodwarf5 linux/amd64
+certified_tree: b3de48a7cf28500897ac1fbead8a43247cf2115b
+branch: native-provenance (merge base with control: fd4991403d704b69eba17383eb8cab81e56b1874)
+reason: the native provenance phase landed 70 commits after the occupancy
+wiring tail certified above: three native scanners (claude, codex, grok), the
+graph attach and one-shot readiness wiring, the fork-runtime repo bug fix, the
+TUI graph pane, and the --screenshot-graph flag. This section certifies the
+current HEAD with the identical gate command list run from the worktree root.
+
+commands: identical to the list at the top of this file, run 2026-08-31 from
+the worktree root /home/aegis/Projects/aitop/.worktrees/native-provenance.
+
+go test ./... -count=1
+  exit: 0
+  packages: 25
+  failed packages: 0
+  package results:
+    ok  	aitop/cmd/aitop	5.265s
+    ok  	aitop/internal/act	0.084s
+    ok  	aitop/internal/act/claude	0.010s
+    ok  	aitop/internal/act/codex	0.011s
+    ok  	aitop/internal/act/grok	0.009s
+    ok  	aitop/internal/act/local	0.005s
+    ok  	aitop/internal/classify	0.006s
+    ok  	aitop/internal/graph	2.156s
+    ok  	aitop/internal/join	0.007s
+    ok  	aitop/internal/native	0.921s
+    ok  	aitop/internal/overlay/claude	0.058s
+    ok  	aitop/internal/overlay/codex	0.008s
+    ok  	aitop/internal/overlay/forks	0.005s
+    ok  	aitop/internal/overlay/grok	0.009s
+    ok  	aitop/internal/overlay/heartbeat	0.006s
+    ok  	aitop/internal/overlay/inference	0.414s
+    ok  	aitop/internal/overlay/local	0.004s
+    ok  	aitop/internal/present	0.003s
+    ok  	aitop/internal/price	0.005s
+    ok  	aitop/internal/proc	0.043s
+    ok  	aitop/internal/snapshot	1.898s
+    ok  	aitop/internal/supervisor	0.006s
+    ok  	aitop/internal/theme	0.011s
+    ok  	aitop/internal/types	0.004s
+    ok  	aitop/internal/ui	0.056s
+  note: 25 packages, one more than the 24 above; internal/native is new.
+
+go test -race ./... -count=1
+  exit: 0 (first run; no retry needed)
+  packages: 25
+  failed packages: 0
+  graph race:    ok aitop/internal/graph    18.311s
+  native race:   ok aitop/internal/native    1.988s
+  snapshot race: ok aitop/internal/snapshot  3.141s
+  cmd race:      ok aitop/cmd/aitop          6.037s
+  ui race:       ok aitop/internal/ui        1.417s
+  proc race:     ok aitop/internal/proc      1.103s
+
+go vet ./...
+  exit: 0
+
+go list -deps ./cmd/aitop | rg '^github.com/santhosh-tekuri/jsonschema'
+  match: none
+  exit: 0 (absence required)
+  self-test: go list -deps ./cmd/aitop emits 257 packages, so the pipeline ran.
+  self-test: the module IS reachable from the TEST build of internal/snapshot
+  (go list -deps -test ./internal/snapshot matches it twice), so its absence
+  from the cmd/aitop production deps is a real negative, not a dead query.
+
+rg production jsonschema imports
+  match: none
+  exit: 0 (absence required)
+  self-test: rg 15.2.0 present. The identical pattern with the *_test.go
+  exclusion REMOVED finds 2 matches in internal/snapshot/schema_v2_test.go, so
+  the pattern is valid and discriminating. An absence check that has never
+  matched anything is indistinguishable from a malformed one.
+
+aegis-taste-check --fail-on critical
+  exit: 0
+  Total: 0 violations, critical: 0
+  COVERAGE, recorded because the verdict alone overstates it: this checker is
+  regex-over-source for .py and .c/.h only ("Other languages will be a no-op
+  until rules are added" -- its own docstring). aitop is 108 .go files, 0 .c/.h,
+  and 10 .py (the sabotage drivers plus hack/ansi2png.py). So this stage
+  certifies the 10 Python files and NONE of the Go. Demonstrated both
+  directions on 2026-08-31: a scratch Go file with a swallowed error, a panic,
+  a magic number and a TODO scores 0 violations and exits 0, while a scratch
+  Python file with a bare except scores 1 critical and exits 1. The stage ran
+  and it passed; what it did not do is look at this project's production
+  language, and every prior tally in this file recorded its green without
+  saying so.
+
+git diff --check
+  exit: 0 (zero bytes of output)
+
+live probe (NOT a gate command; recorded)
+  binary: go run ./cmd/aitop from this tree at HEAD b3de48a, tree clean
+  taken: 2026-08-31T07:51 -0700
+
+  on-disk preconditions measured first, because the edge-count claim is
+  conditional on them:
+    claude subagent files with mtime < 60 min:  8 (4 of them .meta.json)
+    claude live sidecars:                       4
+    codex rollouts with mtime < 60 min:         1
+    grok summary.json with mtime < 60 min:      1
+    grok subagent meta.json with mtime < 60 min: 0
+    live agent-shaped processes:                10
+  instrument note: the first survey used `find -newermt '-1 hour'` and returned
+  0 for every lane against files stamped one minute earlier. That was the
+  instrument, not the world; redone with -mmin -60. Recorded because a zero
+  here would have made the probe below look like a scanner failure.
+
+  go run ./cmd/aitop --json --once | jq
+    schema:            2
+    has("canary"):     false  (required absent in --json)
+    rows:              42
+    graph.nodes:       30
+    graph.edges:       4
+    graph.gaps:        0
+    node-id prefix histogram (complete, nothing dropped):
+      20  proc:            (occupancy)
+       4  claude:session:  (native)
+       4  claude:agent:    (native)
+       2  grok:session:    (native)
+       0  codex:thread:
+    edge provenance histogram: 4 native, 0 anything else
+    edge type histogram:       4 spawn
+    the four spawn edges are this session's own forest:
+      claude:session:beec7d46-...  ->  claude:agent:beec7d46-...:areview-t6-...
+      claude:session:beec7d46-...  ->  claude:agent:beec7d46-...:arereview-t6-...
+      claude:session:beec7d46-...  ->  claude:agent:beec7d46-...:aimpl-t7-...
+      claude:session:beec7d46-...  ->  claude:agent:beec7d46-...:aimpl-t6-...
+
+  codex:thread: is 0, and that is BOTH documented limits acting at once, each
+  measured rather than assumed:
+    - the walk covers today and yesterday in local and UTC (codex.go:289). The
+      two walked date dirs hold 101 rollouts and ZERO with mtime < 60 min; the
+      newest is 05:01, about 2h50m old, so the horizon correctly excludes them.
+    - the ONE rollout with mtime < 60 min (07:32) lives in sessions/2026/08/28/,
+      outside the two-day walk, so the date-dir bound excludes it.
+    Neither is a scanner fault. Both are on the README's known-limits list.
+
+  go run ./cmd/aitop --screenshot 150x42
+    exit 0, 42 lines, 1 canary line (the header), pane border tab absent.
+  go run ./cmd/aitop --screenshot-graph 150x42
+    exit 0, 42 lines, 1 canary line (the header), pane border tab present,
+    header reads "30 nodes · 4 edges · 0 gaps · topo r34", and the body draws
+    the live forest with impl-t6/impl-t7/rereview-t6/review-t6 railed under
+    their parent session.
+  scope note: "the table is unchanged" is asserted here only as "still renders
+  42 lines with its canary and no graph pane on live data". A byte-diff against
+  a pre-branch render is not available, because the frame is a function of live
+  process data that moves every second. The stable-input evidence for the table
+  is internal/ui's own table tests, which run against a fixed fixture and are
+  green in the run recorded above.
+
+re-run after writing this file and the README, before the evidence commit:
+  (cd "$repo_root" && go test ./... -count=1)
+  exit: 0
+  packages: 25
+  failed packages: 0
+  cmd/aitop: ok 5.302s   graph: ok 2.233s   native: ok 0.935s
+  snapshot:  ok 1.914s   ui:    ok 0.062s
+  (cd "$repo_root" && git diff --check)
+  exit: 0
+
+HEAD recorded here: b3de48a7cf28500897ac1fbead8a43247cf2115b
+after the evidence commit, this file is one commit behind that SHA by design.
