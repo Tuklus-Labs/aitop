@@ -816,6 +816,14 @@ func TestProductionCaptureOncePublishesGraph(t *testing.T) {
 	if occupancyMappableRows(snap.Rows) > 0 && len(snap.Graph.Nodes) == 0 {
 		t.Fatalf("production-capture-once-publishes-graph rule violated: mappableRows=%d graphNodes=0", occupancyMappableRows(snap.Rows))
 	}
+	var buf bytes.Buffer
+	if err := snapshot.WriteJSON(snap, &buf, snap.At); err != nil {
+		states := map[string]int{}
+		for _, n := range snap.Graph.Nodes {
+			states[string(n.State.Value)]++
+		}
+		t.Fatalf("production-capture-once-write-json rule violated: err=%v nodes=%d rows=%d states=%v", err, len(snap.Graph.Nodes), len(snap.Rows), states)
+	}
 }
 
 func TestProductionRunInteractiveRegistersGraph(t *testing.T) {

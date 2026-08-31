@@ -8,6 +8,33 @@ import (
 	"aitop/internal/types"
 )
 
+func TestOccupancyEventsFromRowsIdleIsUnknownPassive(t *testing.T) {
+	now := time.Date(2026, 8, 31, 6, 0, 0, 0, time.UTC)
+	rows := []types.Row{{
+		Process:   types.Process{PID: 42, StartTime: 1001, Runtime: types.RuntimeGrok, Role: types.RolePrimary},
+		Overlay:   types.Overlay{Status: "idle"},
+		OverlayOK: true,
+	}}
+	events := OccupancyEventsFromRows(rows, now)
+	found := false
+	for _, ev := range events {
+		if ev.Kind != EventStateObserved {
+			continue
+		}
+		found = true
+		if err := ev.Validate(); err != nil {
+			t.Fatalf("occupancy-idle-state-validate rule violated: err=%v", err)
+		}
+		data, ok := ev.Data.(StateObserved)
+		if !ok || data.State != StateUnknown {
+			t.Fatalf("occupancy-passive-idle-is-unknown rule violated: state=%v", ev.Data)
+		}
+	}
+	if !found {
+		t.Fatalf("occupancy-passive-idle-is-unknown rule violated: missing state event")
+	}
+}
+
 func TestOccupancyEventsFromRowsEmitsPassiveProcessNode(t *testing.T) {
 	now := time.Date(2026, 8, 31, 6, 0, 0, 0, time.UTC)
 	rows := []types.Row{{

@@ -206,19 +206,10 @@ func occupancyDisplay(value string) string {
 }
 
 func occupancyState(row types.Row) State {
+	// Passive occupancy may only prove unknown, active, or vanished.
 	switch present.Status(row) {
 	case present.StatusBusy:
 		return StateActive
-	case present.StatusIdle:
-		return StateIdle
-	case present.StatusWait:
-		return StateWaiting
-	case present.StatusShell:
-		return StateShell
-	case present.StatusError:
-		return StateError
-	case present.StatusDone:
-		return StateCompleted
 	case present.StatusCancelled:
 		return StateVanished
 	default:
