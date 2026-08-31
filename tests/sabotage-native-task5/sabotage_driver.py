@@ -100,9 +100,13 @@ P_COD_NO_HORIZON = (COD,
                     "\t\t\tif now.Sub(info.ModTime()) > 100*nativeHorizon {")
 # The suffix match dropped: any live thread admits every stale rollout in the
 # walked days, which is the whole corpus for those dates.
+# The suffix test replaced by a check that the name exists at all: any live
+# thread then admits every stale rollout in the walked days, which is the whole
+# corpus for those dates. The base binding is kept so the plant compiles and the
+# cycle measures the rule rather than the compiler.
 P_COD_NO_MATCH = (COD,
                   '\t\tif thread != "" && strings.HasSuffix(base, "-"+thread) {',
-                  '\t\tif thread != "" {')
+                  '\t\tif thread != "" && len(base) > 0 {')
 # Match the id anywhere in the name rather than at the end. A rollout's name
 # carries a timestamp too, so this is a looser rule that still looks right.
 P_COD_CONTAINS = (COD,
@@ -193,9 +197,12 @@ P_ATT_ABS_EMPTY = (ATT,
                    '\tif home == "" {\n\t\treturn "", nil\n\t}\n',
                    "")
 
+# Cleaned rather than resolved. Clean tidies a path and leaves a relative one
+# relative, which is the edit that looks like normalisation and keeps the
+# filepath import in use, so the cycle measures the rule rather than the build.
 P_ATT_NO_ABS = (ATT,
                 "\tabs, err := filepath.Abs(home)\n\tif err != nil {\n\t\treturn \"\", fmt.Errorf(\"snapshot graph attach home rule violated: home=%s err=%w\", home, err)\n\t}\n\treturn abs, nil",
-                "\treturn home, nil")
+                "\treturn filepath.Clean(home), nil")
 
 # --- schema 2 and the unclaimed state --------------------------------------
 
