@@ -1369,7 +1369,21 @@ per frozen name.
 
 ### Coverage Matrix
 
-The names below are the explicit tests planned by Tasks 1 through 11.
+Task 12 complete executable mapping. Historical planned names that never
+landed (`TestReconcileUnverifiedLaunchRemainsInvisible`,
+`TestReconcileRankingCycleIsHeldPartial`,
+`TestReconcileHookExpiryFallsBackToNative`,
+`TestReconcileTransitionsCapAt256PerNode`,
+`TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`,
+`TestReconcileMutableSameRevisionIsNoop`,
+`TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation`,
+`TestSchema1FixtureIsNotProductionOutput`,
+`TestRunUsesOneCancelableOwnerForRuntimeTasks`,
+`TestPollerCancelsInFlightRequest`,
+`TestActorStopsOnContextCancellation`) are replaced by the landed tests
+below. Per-task matrices remain the archive for nested subrows. No blank
+row and no unexplained N/A remain in this table. `GF-T7-RACE` stays N/A in
+the Task 7 matrix because the Task 7 Reconciler is a single-writer reducer.
 
 | Risk row | Planned test function name(s) |
 |----------|-------------------------------|
@@ -1388,25 +1402,42 @@ The names below are the explicit tests planned by Tasks 1 through 11.
 | `GF-SAFEINT-1` | `graph.TestDeliveryObserveRejectsOverflowAtomically`, `graph.TestReconcileJSONSafeCounterAndRevisionCeilings`, `snapshot.TestSafeIntegerBoundaries` |
 | `GF-PORTABLE-1` | `graph.TestDeliveryObserveRejectsOverflowAtomically`; Linux/386 compile-only gate `GOOS=linux GOARCH=386 CGO_ENABLED=0 go test ./internal/graph -run '^$' -count=1` |
 | `GF-EDGE-2` | `graph.TestEdgeKeysAreDeterministicAndCollisionSafe`, `graph.TestDeliveryObserveAccumulatesMixedOutcomes` |
-| `GF-EDGE-1` | `graph.TestReconcileUnverifiedLaunchRemainsInvisible`, `graph.TestReconcileRankingCycleIsHeldPartial` |
+| `GF-EDGE-1` | `graph.TestReconcilePublicLaunchRejected`, `graph.TestReconcileRankingCycleOnlyOpensGap` |
 | `GF-STATE-1` | `graph.TestPreferStateExactOrdering` |
 | `GF-STATE-2` | `graph.TestStateClosedVocabulary`, `graph.TestStateTerminalAndProtectedSets`, `graph.TestNormalizeGenericBusyIsOnlyActive`, `graph.TestNormalizePassiveRestrictions`, `graph.TestNormalizeValidityRules`, `graph.TestValidateStateEvidence` |
 | `GF-STATE-3` | `graph.TestReconcileApprovalAndBlockedRelationshipsResolveIndependently` |
-| `GF-STATE-HEALTH-1` | `graph.TestReconcileHookExpiryFallsBackToNative`, `graph.TestReconcileRejectsOldIncarnationEvent` |
+| `GF-STATE-HEALTH-1` | `graph.TestReconcileSourceHealthStaleAtSixSeconds`, `graph.TestReconcileRejectsOldIncarnationEvent`, `graph.TestReconcileStateAuthorityAndSemanticTTL` |
 | `GF-GHOST-1` | `graph.TestReconcileSuccessVanishedAndFailedGhostDeadlines`, `graph.TestReconcileGhostPinAfterDeadline` |
 | `GF-BOUND-1` | `graph.TestCanonicalNodeIDAccepts192BytesRejects193`, `graph.TestCanonicalNodeIDsRejectEmptyControlAndOversizeComponents`, `graph.TestProcessIdentityRejectsPartialIdentity` |
 | `GF-BOUND-2` | `graph.TestStoreDefaultLimits`, `graph.TestStoreExactQueuePartition`, `graph.TestStoreCriticalOverflowLedger` |
-| `GF-BOUND-3` | `graph.TestReconcileTransitionsCapAt256PerNode` |
+| `GF-BOUND-3` | `graph.TestReconcileStateAuthorityAndSemanticTTL` |
 | `GF-EVENT-1` | `graph.TestEventKindPayloadCartesianClosed`, `graph.TestObservationRejectsInvalidRevision`, `graph.TestFingerprintCollisionFailsLoud`, `graph.TestCloneEventRejectsInvalidPayloadShapes` |
 | `GF-JSON-1` | `snapshot.TestSchema2RequiresNonNullArrays`, `snapshot.TestEmptyCaptureEmitsSchema2RequiredArrays`, `snapshot.TestCaptureFailureEmitsNoSuccessfulDocument` |
 | `GF-CONC-1` | `graph.TestStoreOverflowPublicationLinearizes`, `graph.TestStoreConcurrentReadersSeeImmutableSnapshots` |
-| `GF-CONC-2` | `supervisor.TestShutdownCancelsOnceAndWaitsForEveryNamedTaskWithoutSleep`, `supervisor.TestSupervisorShutdownCancelsOnceAndWaits`, `supervisor.TestSupervisorConcurrentShutdownSharesResult` |
+| `GF-CONC-2` | `supervisor.TestSupervisorShutdownCancelsOnceAndWaits`, `supervisor.TestSupervisorConcurrentShutdownSharesResult` |
 | `GF-REPLAY-1` | `graph.TestEventReplayModeFingerprintTable`, `graph.TestEventReplayAndCollisionComposition`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
-| `GF-REPLAY-2` | `graph.TestObservationDedupTimestampFirst`, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestReconcileMutableSameRevisionIsNoop`, `graph.TestReconcileNewerRevisionUpdatesOnceWithoutCounterInflation` |
-| `GF-REPLAY-3` | `snapshot.TestSchema1FixtureIsNotProductionOutput`, `snapshot.TestWriteJSONEmitsSchema2Only` |
+| `GF-REPLAY-2` | `graph.TestObservationDedupTimestampFirst`, `graph.TestObservationFingerprintCanonicalizesTime`, `graph.TestReconcileObservationRevisionTable`, `graph.TestReconcileImmutableReplayAcrossCollectorRestart` |
+| `GF-REPLAY-3` | `snapshot.TestSchema1FixtureContainsActualCanary`, `snapshot.TestWriteJSONEmitsSchema2Only`, `snapshot.TestSchema2OmitsCanary` |
 | `GF-COLLECT-1` | `graph.TestRegistryCollectorFailureDoesNotStopSiblings`, `snapshot.TestShadowGraphPublicationLeavesOccupancyRowsUnchanged` |
-| `GF-LIFE-1` | `main.TestRunUsesOneCancelableOwnerForRuntimeTasks`, `main.TestRuntimeTasksNoLeakAfterTwentyCycles`, `main.TestRegisterActorWithSupervisor`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestPollerCancelsInFlightRequest`, `inference.TestInferencePollerCancelsInFlightRequest`, `act.TestActorStopsOnContextCancellation`, `act.TestActorCancellationStopsEnqueueAndDrainsQueued`, `act.TestActorCancellationWaitsForInFlightAndConfirmedKill`, `act.TestActorRunRejectsSecondRun`, `act.TestActorAdapterReceivesRunContext`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
-| `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor` |
+| `GF-LIFE-1` | `main.TestRuntimeTasksNoLeakAfterTwentyCycles`, `main.TestRegisterActorWithSupervisor`, `main.TestRunInteractiveUsesSupervisorContext`, `snapshot.TestEngineStopsOnContextCancellation`, `inference.TestInferencePollerCancelsInFlightRequest`, `act.TestActorCancellationStopsEnqueueAndDrainsQueued`, `act.TestActorCancellationWaitsForInFlightAndConfirmedKill`, `act.TestActorRunRejectsSecondRun`, `act.TestActorAdapterReceivesRunContext`, `graph.TestRegistryStopsOnContextCancellation`, `graph.TestStoreCancellationStopsAcceptance` |
+| `GF-ONE-1` | `main.TestJSONDoesNotStartActor`, `main.TestScreenshotDoesNotStartActor`, `main.TestRunOnceAliasesJSON` |
+| `GF-SAFEERR-1` | `graph.TestValidationErrorsDoNotEchoRejectedBytes`, `graph.TestEventRejectsMalformedIdentityBounds`, `graph.TestEventRelationshipIDIsOpaqueAndBounded` |
+| `GF-ROLE-1` | `graph.TestPublicRolesExcludeClassifierSentinels`, `snapshot.TestPublicRolesExcludeClassifierSentinels` |
+| `GF-TXN-1` | `graph.TestReconcileRejectedEventIsAtomic`, `graph.TestReconcileSequenceDeadlineDrainsReadyWork`, `graph.TestReconcileRankingCycleOnlyOpensGap`, `graph.TestReconcileRelationshipContributionByteLimitFailsClosed` |
+| `GF-BYTES-1` | `graph.TestReconcileRetainedByteLimitRejectsAtomically`, `graph.TestReconcilePublishedByteLimitRejectsAtomically`, `graph.TestStoreQueuedByteLimit`, `graph.TestStoreExactQueuePartition` |
+| `GF-DIAG-1` | `graph.TestStorePendingDiagnosticFloodBeforeRunIsBounded`, `graph.TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic`, `graph.TestReconcileGapLedgerCatchAll`, `graph.TestReconcileDiagnosticReserveCannotBeConsumed` |
+| `GF-REV-1` | `graph.TestReconcileRevisionCeilingStopsWithoutDiagnosticRecursion`, `graph.TestStoreRevisionExhaustionDiscardsPendingDiagnosticsAndKeepsLastGeneration` |
+| `GF-COW-1` | `graph.TestReconcileCopyOnWriteSharesUnchangedBacking`, `graph.TestReconcileCopyOnWriteReplacesOnlyAffectedRecords`, `graph.TestStorePublicationDoesNotMutateEarlierBorrow` |
+| `GF-EDGE-3` | `graph.TestReconcileEdgePartialFromNilCapabilityGap`, `graph.TestReconcileEdgePartialFromExactCapabilityGap`, `graph.TestReconcileOldIncarnationEdgeIsolation`, `graph.TestEdgePublicShapeOmitsEndpointIncarnations` |
+| `GF-STORE-1` | `graph.TestStoreOverflowPublicationLinearizes`, `graph.TestStoreCancellationStopsAcceptance`, `graph.TestStoreUsesOneShotTimersWithoutReset`, `graph.TestStoreFairnessThirtyTwoToOne`, `graph.TestStoreBatchPublishesAtHundredMilliseconds` |
+| `GF-COLLECT-2` | `graph.TestRegistryDoesNotRestartReturnedCollector`, `graph.TestRegistryReturnOpensUnresolvedCapabilityGaps` |
+| `GF-COLLECT-3` | `graph.TestCollectorStateVocabulary`, `graph.TestCollectorHealthShapeSortCloneAndSanitization`, `graph.TestRegistryTerminalGapEnvelope`, `graph.TestInputSchemaShapeAndValidation` |
+| `GF-SUP-1` | `supervisor.TestSupervisorConcurrentShutdownSharesResult`, `supervisor.TestSupervisorShutdownCancelsOnceAndWaits` |
+| `GF-ACTOR-1` | `act.TestActorCancellationStopsEnqueueAndDrainsQueued`, `act.TestActorCancellationWaitsForInFlightAndConfirmedKill`, `act.TestActorRunRejectsSecondRun` |
+| `GF-JSON-2` | `snapshot.TestSchema2ValidatesEmptyGolden`, `snapshot.TestSchema2ValidatesFullGolden`, `snapshot.TestStateSemanticValidationMatchesConditionalRules`, `snapshot.TestSchema2UsesDraft202012AndClosedObjects` |
+| `GF-WRITER-1` | `snapshot.TestWriterBuildFailureWritesZeroBytes`, `snapshot.TestWriterShortWrite`, `snapshot.TestWriterShortWriteWithSinkErrorPreservesBoth`, `snapshot.TestWriterFullCountWithErrorIsNotShortWrite` |
+| `GF-CLIDIAG-1` | `main.TestRunFlagAndDependencyDiagnosticsAreRedacted`, `main.TestRunCaptureAndJSONDiagnosticsAreRedacted`, `main.TestRunScreenshotWriterDiagnosticsAreRedacted`, `main.TestRunRegisterInteractiveShutdownDiagnosticsAreRedacted`, `main.TestSafeDiagnosticClassificationPrecedence` |
+| `GF-TESTDEP-1` | `snapshot.TestSchemaValidatorAbsentFromProductionDependencies`, `snapshot.TestSchemaValidatorImportedOnlyByTests` |
 
 ### Task 7 Coverage Matrix (Phase A fence)
 

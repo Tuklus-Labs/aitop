@@ -1,22 +1,101 @@
-?   	aitop/cmd/aitop	[no test files]
-ok  	aitop/internal/act	0.074s
-ok  	aitop/internal/act/claude	0.016s
-ok  	aitop/internal/act/codex	0.016s
-ok  	aitop/internal/act/grok	0.016s
-ok  	aitop/internal/act/local	0.018s
-ok  	aitop/internal/classify	0.016s
-ok  	aitop/internal/join	0.018s
-ok  	aitop/internal/overlay/claude	0.026s
-ok  	aitop/internal/overlay/codex	0.018s
-ok  	aitop/internal/overlay/forks	0.018s
-ok  	aitop/internal/overlay/grok	0.018s
-ok  	aitop/internal/overlay/heartbeat	0.018s
-ok  	aitop/internal/overlay/inference	0.405s
-ok  	aitop/internal/overlay/local	0.002s
-ok  	aitop/internal/present	0.002s
-ok  	aitop/internal/price	0.002s
-ok  	aitop/internal/proc	0.015s
-ok  	aitop/internal/snapshot	0.010s
-ok  	aitop/internal/theme	0.003s
-ok  	aitop/internal/types	0.002s
-ok  	aitop/internal/ui	0.012s
+aitop graph foundation gate tally
+date: 2026-08-30
+go: go1.27.0-X:nodwarf5 linux/amd64
+certified_tree: a5c15eef8930fd776dcd0817d9b907b9a83f8fc2
+evidence_commit_message: test: prove graph foundation invariants
+note: this tally certifies the working tree immediately before the evidence commit (parent SHA above). The evidence commit itself is not yet present when these commands ran.
+
+commands (exact, all from repo root):
+  repo_root="$(git rev-parse --show-toplevel)" || exit 1
+  case "$repo_root" in /*) ;; *) exit 1 ;; esac
+  test -f "$repo_root/go.mod"
+  (cd "$repo_root" && go test ./... -count=1)
+  (cd "$repo_root" && go test -race ./... -count=1)
+  (cd "$repo_root" && go vet ./...)
+  if (cd "$repo_root" && go list -deps ./cmd/aitop) | rg -q '^github.com/santhosh-tekuri/jsonschema'; then exit 1; fi
+  if rg -n 'github.com/santhosh-tekuri/jsonschema' --glob '*.go' --glob '!*_test.go' --glob '!vendor/**' --glob '!.git/**' --glob '!.worktrees/**' --glob '!**/.worktrees/**' "$repo_root"; then exit 1; fi
+  aegis-taste-check "$repo_root" --fail-on critical
+  (cd "$repo_root" && git diff --check)
+
+repo_root: /home/aegis/Projects/aitop/.worktrees/agent-telemetry-graph
+
+go test ./... -count=1
+  exit: 0
+  packages: 24
+  failed packages: 0
+  package results:
+    ok aitop/cmd/aitop 0.116s
+    ok aitop/internal/act 0.079s
+    ok aitop/internal/act/claude 0.005s
+    ok aitop/internal/act/codex 0.004s
+    ok aitop/internal/act/grok 0.005s
+    ok aitop/internal/act/local 0.005s
+    ok aitop/internal/classify 0.004s
+    ok aitop/internal/graph 1.462s
+    ok aitop/internal/join 0.004s
+    ok aitop/internal/overlay/claude 0.045s
+    ok aitop/internal/overlay/codex 0.004s
+    ok aitop/internal/overlay/forks 0.004s
+    ok aitop/internal/overlay/grok 0.005s
+    ok aitop/internal/overlay/heartbeat 0.004s
+    ok aitop/internal/overlay/inference 0.408s
+    ok aitop/internal/overlay/local 0.004s
+    ok aitop/internal/present 0.005s
+    ok aitop/internal/price 0.005s
+    ok aitop/internal/proc 0.033s
+    ok aitop/internal/snapshot 0.205s
+    ok aitop/internal/supervisor 0.004s
+    ok aitop/internal/theme 0.006s
+    ok aitop/internal/types 0.004s
+    ok aitop/internal/ui 0.017s
+
+go test -race ./... -count=1
+  first run exit: 1
+    failed package: aitop/internal/proc
+    failure: TestWalkRealProcFitsTickBudget (legacy 25ms /proc walk budget)
+      cpu_apply_test.go:95 walk-fits-tick-budget violated: best of 3 = 25.474057ms > 25ms
+    this is out of Task 12 source scope (not a listed _test.go, not graph foundation)
+  retry: go test -race ./internal/proc -count=1  x3: all exit 0
+  rerun go test -race ./... -count=1
+    exit: 0
+    packages: 24
+    failed packages: 0
+    graph race: ok aitop/internal/graph 13.718s
+    proc race: ok aitop/internal/proc 1.101s
+  final race result: PASS (exit 0)
+
+go vet ./...
+  exit: 0
+
+go list -deps ./cmd/aitop | rg '^github.com/santhosh-tekuri/jsonschema'
+  match: none
+  exit: 0 (absence required)
+
+rg production jsonschema imports
+  match: none
+  exit: 0 (absence required)
+
+aegis-taste-check --fail-on critical
+  exit: 0
+  Total: 0 violations
+  critical: 0
+
+git diff --check
+  exit: 0
+
+live handoff probe (not a gate command; recorded):
+  go run ./cmd/aitop --json | jq -e '.schema == 2 and (.rows|type)=="array" and (.graph.nodes|type)=="array" and (.graph.edges|type)=="array" and (.graph.gaps|type)=="array" and (has("canary") | not)'
+  result: true
+  exit: 0
+
+re-run after writing this file:
+  (cd "$repo_root" && go test ./... -count=1)
+  exit: 0
+  packages: 24
+  failed packages: 0
+  graph: ok aitop/internal/graph 1.454s
+  cmd/aitop: ok aitop/cmd/aitop 0.103s
+  supervisor: ok aitop/internal/supervisor 0.004s
+
+HEAD recorded here: a5c15eef8930fd776dcd0817d9b907b9a83f8fc2
+after evidence commit, this file is one commit behind that SHA by design.

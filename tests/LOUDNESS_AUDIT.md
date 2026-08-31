@@ -3445,3 +3445,170 @@ New nested assertions under `TestRunInteractiveAlwaysShutsDownOnce/engine-wait-a
 | `cmd/aitop/main_test.go:445` | `run-interactive-always-shuts-down-once engine wait not invoked after cancel` | n | `engine wait not invoked after cancel n=` | yes | PASS |
 
 Follow-up loudness: 2 PASS, zero failures, zero exemptions.
+
+
+## Task 12 foundation closeout (2026-08-30)
+
+Scope is assertion sites added or modified after production/test baseline
+`35c35255f52ff5586ebda738df45da127e9fa363`. Untouched legacy assertions are
+out of scope. Helpers used only by in-scope assertions are in scope.
+
+### File inventory (literal conditional `_test.go` paths)
+
+| Path | Reviewed assertion lines | Prior audit | Task 12 action |
+|---|---|---|---|
+| `internal/graph/id_test.go` | 112-475 (15 sites) | Task 3A | Reused. Current `pid-start-pair safe-rejection` site is line 427. |
+| `internal/graph/types_test.go` | 55-402 (38 sites) | Task 2A | Reused. |
+| `internal/graph/event_test.go` | 21-1999 (114 Fatalf sites) | Task 3A | Reused. |
+| `internal/graph/state_test.go` | 21-394 (28 sites) | Task 4 | Reused. |
+| `internal/graph/bytes_test.go` | 34-265 (30 sites) | Task 5 | Reused. |
+| `internal/graph/reconcile_test.go` | 33-8628 (701 sites) | Task 5/6/7 FINAL | Reused. |
+| `internal/graph/store_test.go` | 198-7152 (686 sites) | Task 8 FINAL | Reused. |
+| `internal/graph/collector_test.go` | 362-3878 (452 sites) | Task 9 V6 | Reused. |
+| `internal/graph/shadow_test.go` | 371-1891 (195 sites) | Task 9 V6 | Reused. |
+| `internal/supervisor/supervisor_test.go` | 39-429 (54 sites) | none | Audited and repaired below. |
+| `internal/snapshot/engine_test.go` | Task 9 sites 83-210; Task 10 site 234 | Task 9 V6 for shadow tick | Audited `TestEngineStopsOnContextCancellation` below. |
+| `internal/snapshot/json_v2_test.go` | 208-897 (88 sites) | Task 11 | Reused. |
+| `internal/snapshot/schema_v2_test.go` | 26-504 (52 sites) | Task 11 | Reused. |
+| `internal/snapshot/snapshot_test.go` | none in-scope | first-light | Zero diff vs baseline. Named only. |
+| `internal/overlay/inference/inference_test.go` | 317, 323 in-scope | none for Task 10 | Audited and repaired `TestInferencePollerCancelsInFlightRequest`. Legacy Poll assertions out of scope. |
+| `internal/act/act_test.go` | 352-610 Task 10 helpers and tests | none for Task 10 | Audited and repaired below. Legacy enqueue/sidecar assertions out of scope. |
+| `internal/act/capsule_test.go` | none in-scope | first-light | Diff only replaces `Start`/`Stop` with `runActor`. Assertion strings unchanged. Helper failure covered at `act_test.go:379`. |
+| `cmd/aitop/main_test.go` | 42-117 Task 10; 261-799 Task 11 | Task 11 for one-shot/JSON | Audited Task 10 `TestRegisterActorWithSupervisor` and `TestRuntimeTasksNoLeakAfterTwentyCycles` below. |
+
+### Repairs
+
+Assertion-message-only repairs in originating tests. No production code edits.
+
+- `internal/supervisor/supervisor_test.go:104` prints `heldFinished=true` and supervisor context error.
+- `internal/act/act_test.go:379` prints `timeout=5s started stopped` under the actor mutex.
+- `internal/act/act_test.go:400` prints `timeout=5s second=%v`.
+- `internal/act/act_test.go:470` prints `timeout=5s forks stopping`.
+- `internal/act/act_test.go:505` prints `timeout=5s forks keys`.
+- `internal/act/act_test.go:540` prints `timeout=5s forks`.
+- `internal/act/act_test.go:548` prints `timeout=5s forks kills`.
+- `internal/act/act_test.go:578` prints `timeout=5s forks kills`.
+- `internal/act/act_test.go:600` prints `timeout=5s forks`.
+- `internal/act/act_test.go:610` prints `timeout=5s got want` context pointers.
+- `internal/overlay/inference/inference_test.go:317` prints `timeout=5s clientTimeout`.
+
+### Exemptions
+
+None. `err.Error()` reads are not testing assertions. Legacy first-light
+messages in `snapshot_test.go`, `capsule_test.go`, and pre-Task-10
+`act_test.go`/`inference_test.go` are out of scope.
+
+### Task 10 previously unaudited sites
+
+Helpers `waitSignal`/`waitErr`/`waitFailures`/`requireFailureName` format
+`%s rule violated` with a caller-supplied present-tense rule name plus
+timeout/name/control state.
+
+| Site | Present-tense rule name | Enough offending state | Unique greppable phrase | Present-tense wording | Result |
+|---|---|---|---|---|---|
+| `internal/supervisor/supervisor_test.go:39` | `%s rule violated` | yes | `%s rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:49` | `%s rule violated` | yes | `%s rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:60` | `%s rule violated` | yes | `%s rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:68` | `%s rule violated` | yes | `%s rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:72` | `%s rule violated` | yes | `%s rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:87` | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:95` | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:100` | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:104` | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:110` | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | `supervisor-named-task-failure-does-not-cancel-siblings rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:124` | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:131` | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:137` | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:141` | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | `supervisor-shutdown-cancels-once-and-waits rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:154` | `supervisor-rejects-duplicate-task-name rule violated` | yes | `supervisor-rejects-duplicate-task-name rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:163` | `supervisor-rejects-duplicate-task-name rule violated` | yes | `supervisor-rejects-duplicate-task-name rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:166` | `supervisor-rejects-duplicate-task-name rule violated` | yes | `supervisor-rejects-duplicate-task-name rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:177` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:180` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:198` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:201` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:206` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:209` | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | `supervisor-concurrent-shutdown-shares-result rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:224` | `supervisor-go-rejected-after-stopping rule violated` | yes | `supervisor-go-rejected-after-stopping rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:232` | `supervisor-go-rejected-after-stopping rule violated` | yes | `supervisor-go-rejected-after-stopping rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:240` | `supervisor-go-rejected-after-stopping rule violated` | yes | `supervisor-go-rejected-after-stopping rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:250` | `supervisor-go-rejected-after-stopping rule violated` | yes | `supervisor-go-rejected-after-stopping rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:261` | `supervisor-go-rejected-after-stopping rule violated` | yes | `supervisor-go-rejected-after-stopping rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:271` | `supervisor-failures-sorted-and-immutable rule violated` | yes | `supervisor-failures-sorted-and-immutable rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:274` | `supervisor-failures-sorted-and-immutable rule violated` | yes | `supervisor-failures-sorted-and-immutable rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:278` | `supervisor-failures-sorted-and-immutable rule violated` | yes | `supervisor-failures-sorted-and-immutable rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:283` | `supervisor-failures-sorted-and-immutable rule violated` | yes | `supervisor-failures-sorted-and-immutable rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:287` | `supervisor-failures-sorted-and-immutable rule violated` | yes | `supervisor-failures-sorted-and-immutable rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:296` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:312` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:316` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:325` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:331` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:335` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:338` | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | `supervisor-suppresses-only-owned-cancellation rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:349` | `supervisor-reserves-name-before-launch rule violated` | yes | `supervisor-reserves-name-before-launch rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:357` | `supervisor-reserves-name-before-launch rule violated` | yes | `supervisor-reserves-name-before-launch rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:386` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:390` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:393` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:397` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:400` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:403` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:407` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:411` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:414` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:419` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:426` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/supervisor/supervisor_test.go:429` | `failure-shape-bounds-sort-and-clone rule violated` | yes | `failure-shape-bounds-sort-and-clone rule violated` | yes | PASS |
+| `internal/act/act_test.go:352` | `actor-running-state rule violated` | yes | `actor-running-state rule violated` | yes | PASS |
+| `internal/act/act_test.go:379` | `actor-run-cleanup rule violated` | yes | `actor-run-cleanup rule violated` | yes | PASS |
+| `internal/act/act_test.go:391` | `actor-run-rejects-second-run rule violated` | yes | `actor-run-rejects-second-run rule violated` | yes | PASS |
+| `internal/act/act_test.go:397` | `actor-run-rejects-second-run rule violated` | yes | `actor-run-rejects-second-run rule violated` | yes | PASS |
+| `internal/act/act_test.go:400` | `actor-run-rejects-second-run rule violated` | yes | `actor-run-rejects-second-run rule violated` | yes | PASS |
+| `internal/act/act_test.go:404` | `actor-run-rejects-second-run rule violated` | yes | `actor-run-rejects-second-run rule violated` | yes | PASS |
+| `internal/act/act_test.go:429` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:435` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:440` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:454` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:461` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:467` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:470` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:473` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:488` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:492` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:497` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:502` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:505` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:508` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:511` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:516` | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | `actor-cancellation-stops-enqueue-and-drains-queued rule violated` | yes | PASS |
+| `internal/act/act_test.go:535` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:540` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:543` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:548` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:558` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:566` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:575` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:578` | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | `actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated` | yes | PASS |
+| `internal/act/act_test.go:595` | `actor-adapter-receives-run-context rule violated` | yes | `actor-adapter-receives-run-context rule violated` | yes | PASS |
+| `internal/act/act_test.go:600` | `actor-adapter-receives-run-context rule violated` | yes | `actor-adapter-receives-run-context rule violated` | yes | PASS |
+| `internal/act/act_test.go:604` | `actor-adapter-receives-run-context rule violated` | yes | `actor-adapter-receives-run-context rule violated` | yes | PASS |
+| `internal/act/act_test.go:610` | `actor-adapter-receives-run-context rule violated` | yes | `actor-adapter-receives-run-context rule violated` | yes | PASS |
+| `internal/overlay/inference/inference_test.go:317` | `inference-poller-cancels-in-flight-request rule violated` | yes | `inference-poller-cancels-in-flight-request rule violated` | yes | PASS |
+| `internal/overlay/inference/inference_test.go:323` | `inference-poller-cancels-in-flight-request rule violated` | yes | `inference-poller-cancels-in-flight-request rule violated` | yes | PASS |
+| `internal/snapshot/engine_test.go:234` | `engine-stops-on-context-cancellation rule violated` | yes | `engine-stops-on-context-cancellation rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:42` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:46` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:49` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:57` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:60` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:67` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:70` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:73` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:81` | `register-actor-with-supervisor rule violated` | yes | `register-actor-with-supervisor rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:104` | `runtime-tasks-no-leak-after-twenty-cycles rule violated` | yes | `runtime-tasks-no-leak-after-twenty-cycles rule violated` | yes | PASS |
+| `cmd/aitop/main_test.go:117` | `runtime-tasks-no-leak-after-twenty-cycles rule violated` | yes | `runtime-tasks-no-leak-after-twenty-cycles rule violated` | yes | PASS |
+
+Task 12 loudness result: 102 Task-10/unaudited sites PASS after 11
+assertion-message repairs, zero failures, zero exemptions. Prior-task
+audits remain the record for already-closed graph/JSON files.

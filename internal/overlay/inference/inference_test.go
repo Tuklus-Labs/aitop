@@ -314,7 +314,7 @@ func TestInferencePollerCancelsInFlightRequest(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("inference-poller-cancels-in-flight-request rule violated: handler never saw request")
+		t.Fatalf("inference-poller-cancels-in-flight-request rule violated: handler never saw request timeout=5s clientTimeout=%s", p.Client.Timeout)
 	}
 	cancel()
 	select {

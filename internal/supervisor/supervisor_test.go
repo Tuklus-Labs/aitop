@@ -101,7 +101,7 @@ func TestSupervisorNamedTaskFailureDoesNotCancelSiblings(t *testing.T) {
 	}
 	select {
 	case <-heldFinished:
-		t.Fatalf("supervisor-named-task-failure-does-not-cancel-siblings rule violated: held returned after boom without Shutdown")
+		t.Fatalf("supervisor-named-task-failure-does-not-cancel-siblings rule violated: held returned after boom without Shutdown heldFinished=true supervisorErr=%v", s.Context().Err())
 	default:
 	}
 	got := s.Shutdown()

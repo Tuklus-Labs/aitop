@@ -1947,3 +1947,87 @@ T11-12c isolation update: `vanished-with-valid-until` now sets idx 3 `source.aut
 ### Mutation escalation
 
 Unchanged from the Task 11 commit epoch: pinned `go-mutesting@v0.0.0-20210610104036-6d9217011a00` crashed at `go/types.(*StdSizes).Sizeof` nil-receiver before source mutation. No mutation score. Physical 66+3 plants are the fallback.
+
+
+## Task 12 foundation closeout (2026-08-30)
+
+Branch-wide evidence gate. Tasks 2A through 11 already recorded named physical
+pairs. Task 12 does not re-plant those tests. New plants this closeout: 0.
+Reused archive pairs cover every minimum topic below. Restore method in the
+archive is `command cp -f` from a saved good copy, or inverse `apply_patch`;
+never `git checkout --` of uncommitted implementation.
+
+### Minimum-topic crosswalk (archive pairs)
+
+| Topic | Named test / pair IDs | Archive section |
+|---|---|---|
+| optional capability clone/sort | `TestGapCloneDeepCopiesOptionalCapability`, `TestGapSortOrdersNilCapabilityFirst` | Task 2A |
+| delivery overflow | `TestDeliveryObserveRejectsOverflowAtomically` | Task 2A |
+| replay-mode fingerprint equivalence | `TestEventReplayModeFingerprintTable` | Task 3A |
+| every semantic fingerprint field and payload | `TestEventFingerprintIncludesEverySemanticFieldAndPayload` | Task 3A + payload type tags |
+| timestamp-first observations | `TestObservationDedupTimestampFirst` | Task 3A |
+| Cartesian default and 10x10 payload closure | `TestEventKindPayloadCartesianClosed` | Task 3A |
+| opaque relationship ID | `TestEventRelationshipIDIsOpaqueAndBounded` | Task 3A |
+| pointer-zero rejection | `TestEventRejectsInvalidOptionalZeros` | Task 3A |
+| coalescing order and metric coverage | `TestCanCoalesceReplaceOrdering`, `TestCanCoalesceReplaceRequiresMetricCoverage` | Task 3A |
+| deep event clone | `TestCloneEventDeeplyIsolatesPointers` | Task 3A |
+| metric/role/error validation | `TestSemanticValidationTable`, `TestPublicRolesExcludeClassifierSentinels`, `TestValidationErrorsDoNotEchoRejectedBytes` | Task 3A |
+| retired-witness collision | `TestReconcileRetiredStableWitnessDetectsCollision` | Task 5 |
+| ghost-expiry replay | `TestReconcileImmutableReplayAfterGhostExpiryRemainsNoop` | Task 7 |
+| history | `TestReconcileHistoryLimitFailsClosed` | Task 5 |
+| retained/published/queue byte limits | `TestReconcileRetainedByteLimitRejectsAtomically`, `TestReconcilePublishedByteLimitRejectsAtomically`, `TestStoreQueuedByteLimit` | Task 5 / Task 8 |
+| diagnostic reserves | `TestReconcileDiagnosticReserveCannotBeConsumed` | Task 5 |
+| pending-diagnostic flood/catchall | `TestStorePendingDiagnosticFloodBeforeRunIsBounded`, `TestReconcileGapLedgerCatchAll` | Task 8 / Task 5 |
+| oversize/coalescing-drop/invariant-abort | `TestStoreOversizeEventRejected`, `TestStoreCoalescingGrowthDropsNewer`, `TestStoreInvariantAbortAccountsQueued` | Task 8 |
+| all-or-nothing diagnostic batches | `TestStoreDiagnosticBatchFailureOnLaterItemIsAtomic` | Task 8 |
+| candidate-generation charge validation | `TestReconcileCandidateGenerationChargeMismatchRejectsBeforeCommit` | Task 5 |
+| copy-on-write borrowing | `TestReconcileCopyOnWriteSharesUnchangedBacking` | Task 5 |
+| gap-ledger and revision saturation | `TestReconcileJSONSafeCounterAndRevisionCeilings`, `TestReconcileRevisionCeilingStopsWithoutDiagnosticRecursion` | Task 5 |
+| exact `D-1ns`/`D` | `TestReconcileSuccessVanishedAndFailedGhostDeadlines`, `TestReconcileSequenceGapExactDeadline` | Task 7 / Task 6 |
+| late heartbeat epoch | `TestReconcileLateHeartbeatStartsNewEpoch` | Task 6 |
+| per-actor native heartbeat and zero-actor poll | `TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane`, `TestPublishNativePollHeartbeatsZeroLanesPublishesNothing`, `TestPublishNativePollHeartbeatsEmitsOnePerUniqueActorLane` | Task 6 / Task 9 |
+| incarnation proof | `TestReconcileAcceptsStrictlyNewerIncarnation`, `TestReconcileRejectsUnprovenIncarnationSwitch` | Task 5 / Task 7 |
+| nil heartbeat sink | `TestPublishNativePollHeartbeatsRejectsNilSinkBeforeEmission` | Task 9 |
+| Registry terminal return/no-restart | `TestRegistryDoesNotRestartReturnedCollector`, `TestRegistryReturnOpensUnresolvedCapabilityGaps` | Task 9 |
+| unverified launch | `TestReconcilePublicLaunchRejected` | Task 7 |
+| terminal-gap envelope/clock/restart identity | `TestRegistryTerminalGapEnvelope`, `TestRegistryTerminalGapUsesManualClock`, `TestRegistryRestartChangesProtocolIdentity` | Task 9 |
+| collector health/failure shapes | `TestCollectorHealthShapeSortCloneAndSanitization`, `TestRegistryCollectorFailureDoesNotStopSiblings` | Task 9 |
+| process start safe integers | `TestEventProcessIdentityJSONSafeBoundaries` | Task 3A |
+| gap-only ranking cycle | `TestReconcileRankingCycleOnlyOpensGap` | Task 7 |
+| private endpoint-incarnation ownership | `TestEdgePublicShapeOmitsEndpointIncarnations`, `TestReconcileOldIncarnationEdgeIsolation` | Task 7 |
+| per-source edge partiality | `TestReconcileEdgePartialFromNilCapabilityGap`, `TestReconcileResolvingOneSourceKeepsOtherEdgePartial` | Task 7 |
+| relationship/message contribution byte admission | `TestReconcileRelationshipContributionByteLimitFailsClosed`, `TestReconcileMessageContributionByteLimitFailsClosed` | Task 7 |
+| sliding message expiry | `TestReconcileMessageSlidingWindowExpiry` | Task 7 |
+| failed ghost TTL | `TestReconcileSuccessVanishedAndFailedGhostDeadlines` | Task 7 |
+| Store clone-before-return | `TestStoreClonesBeforeReturn` | Task 8 |
+| both queue overflow linearizations | `TestStoreOverflowPublicationLinearizes`, `TestStoreNormalOverflowLedger`, `TestStoreCriticalOverflowLedger` | Task 8 |
+| 32:1 fairness | `TestStoreFairnessThirtyTwoToOne` | Task 8 |
+| 100ms maximum latency | `TestStoreBatchPublishesAtHundredMilliseconds` | Task 8 |
+| Store cancellation outcomes | `TestStoreCancellationStopsAcceptance`, `TestStoreCancellationDropsQueuedSemantics`, `TestStoreAlreadyCanceledRunFinalizes`, `TestStoreCancellationPublishesFinalDiagnostics` | Task 8 |
+| Supervisor concurrent shutdown | T10-04 `TestSupervisorConcurrentShutdownSharesResult` | Task 10 |
+| Actor drain | T10-13, T10-13b `TestActorCancellationStopsEnqueueAndDrainsQueued` | Task 10 |
+| schema semantic validation | T11-13 `TestStateSemanticValidationMatchesConditionalRules` | Task 11 |
+| writer short write | T11-36 `TestWriterShortWrite` | Task 11 |
+| run dependency injection | T11-46, T11-47 | Task 11 |
+| exact golden bytes/newline | T11-39, T11-40, T11-41 | Task 11 |
+| state schema conditions | T11-12, T11-12b, T11-12c | Task 11 |
+| interactive Supervisor shutdown branches | T11-50 through T11-54, T11-49b | Task 11 |
+| dual short-write/sink errors | T11-37, T11-38 | Task 11 |
+| positive edge/gap counts | T11-24, T11-28 | Task 11 |
+| delivery latest | T11-26 `TestMessageDeliveryMatchesEventCount` | Task 11 |
+| state time ordering | T11-14 `TestStateValidUntilAfterSince` | Task 11 |
+| message active lifecycle | T11-25 `TestMessageEdgeLifecycleMustBeActive` | Task 11 |
+| command precedence | T11-55 `TestSafeDiagnosticClassificationPrecedence` | Task 11 |
+| rooted validator dependency closure | T11-65, T11-66 | Task 11 |
+| diagnostic precedence | T11-55 | Task 11 |
+| bounded redaction of every flag/dependency/capture/JSON/screenshot/register/interactive/Shutdown stderr branch | T11-56 through T11-59 | Task 11 |
+| least-authority interactive task registration | T11-49 `TestRunInteractiveUsesSupervisorContext` | Task 11 |
+| supplied-empty screenshot presence | T11-61 `TestRunRejectsScreenshotWithJSONOrOnce` | Task 11 |
+| capture failure | T11-42 `TestCaptureFailureEmitsNoSuccessfulDocument` | Task 11 |
+| nil gap capability JSON | T11-27 `TestGapCapabilityOmittedWhenUnknown` | Task 11 |
+| null arrays | T11-03, T11-44 | Task 11 |
+| actor-free one-shot | T11-62, T11-63, T11-60 | Task 11 |
+| canary removal | T11-10, T11-64 | Task 11 |
+
+Every topic has a named production/assertion pair in the archive. No summary-only
+rows remain on the minimum list. Task 12 planted 0 additional pairs.

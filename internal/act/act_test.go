@@ -373,7 +373,10 @@ func runActor(t *testing.T, a *Actor) {
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			t.Errorf("actor-run-cleanup rule violated: Run did not return")
+			a.mu.Lock()
+			started, stopped := a.started, a.stopped
+			a.mu.Unlock()
+			t.Errorf("actor-run-cleanup rule violated: Run did not return timeout=5s started=%t stopped=%t", started, stopped)
 		}
 	})
 }
@@ -394,7 +397,7 @@ func TestActorRunRejectsSecondRun(t *testing.T) {
 			t.Fatalf("actor-run-rejects-second-run rule violated: first Run err=%v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-run-rejects-second-run rule violated: first Run did not return after cancel")
+		t.Fatalf("actor-run-rejects-second-run rule violated: first Run did not return after cancel timeout=5s second=%v", second)
 	}
 	third := a.Run(context.Background())
 	if third == nil {
@@ -464,7 +467,7 @@ func TestActorCancellationStopsEnqueueAndDrainsQueued(t *testing.T) {
 				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run err=%v", err)
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run did not return after drain")
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: Run did not return after drain timeout=5s forks=%d stopping=%t", ad.forks.Load(), a.stopping)
 		}
 		if got := ad.forks.Load(); got != 4 {
 			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=4", got)
@@ -499,7 +502,7 @@ func TestActorCancellationStopsEnqueueAndDrainsQueued(t *testing.T) {
 				t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Run err=%v", err)
 			}
 		case <-time.After(5 * time.Second):
-			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Run did not return after drain")
+			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued-only Run did not return after drain timeout=5s forks=%d keys=%v", ad.forks.Load(), ad.snapshotForkKeys())
 		}
 		if got := ad.forks.Load(); got != 0 {
 			t.Fatalf("actor-cancellation-stops-enqueue-and-drains-queued rule violated: queued work dispatched forks=%d want=0 keys=%v", got, ad.snapshotForkKeys())
@@ -534,7 +537,7 @@ func TestActorCancellationWaitsForInFlightAndConfirmedKill(t *testing.T) {
 	select {
 	case <-ad.started:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: fork never entered")
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: fork never entered timeout=5s forks=%d", ad.forks.Load())
 	}
 	if err := a.Enqueue(Intent{Op: OpKill, Target: Target{Runtime: types.RuntimeGrok, Key: "kill"}, Confirmed: true}); err != nil {
 		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: confirmed kill enqueue err=%v", err)
@@ -542,7 +545,7 @@ func TestActorCancellationWaitsForInFlightAndConfirmedKill(t *testing.T) {
 	select {
 	case <-ad.killStarted:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: confirmed kill never entered")
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: confirmed kill never entered timeout=5s forks=%d kills=%d", ad.forks.Load(), ad.kills.Load())
 	}
 	cancel()
 	stopDeadline := time.After(5 * time.Second)
@@ -572,7 +575,7 @@ func TestActorCancellationWaitsForInFlightAndConfirmedKill(t *testing.T) {
 			t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run err=%v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run did not return after workers released")
+		t.Fatalf("actor-cancellation-waits-for-in-flight-and-confirmed-kill rule violated: Run did not return after workers released timeout=5s forks=%d kills=%d", ad.forks.Load(), ad.kills.Load())
 	}
 }
 
@@ -594,7 +597,7 @@ func TestActorAdapterReceivesRunContext(t *testing.T) {
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-adapter-receives-run-context rule violated: adapter never entered")
+		t.Fatalf("actor-adapter-receives-run-context rule violated: adapter never entered timeout=5s forks=%d", ad.forks.Load())
 	}
 	gotCtx, _ := ad.lastCtx.Load().(context.Context)
 	if gotCtx == nil || gotCtx != ctx {
@@ -604,6 +607,6 @@ func TestActorAdapterReceivesRunContext(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatalf("actor-adapter-receives-run-context rule violated: Run did not return")
+		t.Fatalf("actor-adapter-receives-run-context rule violated: Run did not return timeout=5s got=%p want=%p", gotCtx, ctx)
 	}
 }
