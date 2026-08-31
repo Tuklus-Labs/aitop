@@ -799,3 +799,50 @@ func TestScreenshotDoesNotStartActor(t *testing.T) {
 		t.Fatalf("screenshot-does-not-start-actor rule violated: status=%d actor=%d sup=%d interactive=%d stderr=%q", status, spies.newActor.Load(), spies.newSup.Load(), spies.interactive.Load(), stderr.String())
 	}
 }
+
+func TestProductionCaptureOncePublishesGraph(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	snap, err := productionCaptureOnce(ctx, runOptions{Interval: time.Millisecond, NoPrices: true})
+	if err != nil {
+		t.Fatalf("production-capture-once-publishes-graph rule violated: err=%v", err)
+	}
+	if snap == nil || snap.Graph == nil {
+		t.Fatalf("production-capture-once-publishes-graph rule violated: snap=%v graph=%v", snap, snap)
+	}
+	if snap.Graph.Nodes == nil || snap.Graph.Edges == nil || snap.Graph.Gaps == nil {
+		t.Fatalf("production-capture-once-publishes-graph rule violated: nodesNil=%t edgesNil=%t gapsNil=%t", snap.Graph.Nodes == nil, snap.Graph.Edges == nil, snap.Graph.Gaps == nil)
+	}
+	if occupancyMappableRows(snap.Rows) > 0 && len(snap.Graph.Nodes) == 0 {
+		t.Fatalf("production-capture-once-publishes-graph rule violated: mappableRows=%d graphNodes=0", occupancyMappableRows(snap.Rows))
+	}
+}
+
+func TestProductionRunInteractiveRegistersGraph(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reg := &registrarSpy{}
+	actor := act.New(nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- productionRunInteractive(ctx, runOptions{NoPrices: true, Interval: time.Hour}, reg, actor, io.Discard)
+	}()
+	select {
+	case err := <-done:
+		if reg.n.Load() != 1 || reg.name != "graph" || reg.run == nil {
+			t.Fatalf("production-run-interactive-registers-graph rule violated: n=%d name=%s runNil=%t err=%v", reg.n.Load(), reg.name, reg.run == nil, err)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatalf("production-run-interactive-registers-graph rule violated: tea did not return on canceled context")
+	}
+}
+
+func occupancyMappableRows(rows []types.Row) int {
+	n := 0
+	for _, ev := range graph.OccupancyEventsFromRows(rows, time.Unix(1, 0).UTC()) {
+		if ev.Kind == graph.EventNodeObserved {
+			n++
+		}
+	}
+	return n
+}

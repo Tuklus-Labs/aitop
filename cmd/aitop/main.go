@@ -110,11 +110,8 @@ func main() {
 
 func productionRunDeps() runDeps {
 	return runDeps{
-		Now: time.Now,
-		CaptureOnce: func(ctx context.Context, opt runOptions) (*snapshot.Snapshot, error) {
-			eng := productionEngine(opt)
-			return eng.CaptureOnce(ctx)
-		},
+		Now:          time.Now,
+		CaptureOnce:  productionCaptureOnce,
 		WriteJSON:    snapshot.WriteJSON,
 		ResolveTheme: theme.Resolve,
 		RenderScreenshot: func(s *snapshot.Snapshot, th theme.Theme, w, h int, now time.Time) string {
@@ -173,8 +170,52 @@ func reapEngineOnCancel(ctx context.Context, wait func()) {
 	}()
 }
 
-func productionRunInteractive(ctx context.Context, opt runOptions, _ taskRegistrar, actor *act.Actor, out io.Writer) error {
+func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snapshot, error) {
 	eng := productionEngine(opt)
+	shadow, occ, err := snapshot.AttachOccupancyGraph(eng)
+	if err != nil {
+		return nil, err
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- shadow.Run(runCtx) }()
+	snap, err := eng.CaptureOnce(ctx)
+	if err != nil {
+		cancel()
+		<-done
+		return snap, err
+	}
+	occ.Notify()
+	rows := []types.Row(nil)
+	if snap != nil {
+		rows = snap.Rows
+	}
+	snapshot.WaitOccupancyGraph(shadow, rows, 500*time.Millisecond)
+	if snap != nil {
+		snap.Graph = shadow.Snapshot()
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
+	return snap, nil
+}
+
+func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegistrar, actor *act.Actor, out io.Writer) error {
+	eng := productionEngine(opt)
+	shadow, _, err := snapshot.AttachOccupancyGraph(eng)
+	if err != nil {
+		return err
+	}
+	if reg != nil {
+		if err := reg.Go("graph", shadow.Run); err != nil {
+			return err
+		}
+	} else {
+		go func() { _ = shadow.Run(ctx) }()
+	}
 	src := eng.Start(ctx)
 	reapEngineOnCancel(ctx, eng.Wait)
 	th := theme.Resolve(opt.ThemePath, "")
@@ -184,7 +225,7 @@ func productionRunInteractive(ctx context.Context, opt runOptions, _ taskRegistr
 		tea.WithOutput(out),
 		tea.WithContext(ctx),
 	)
-	_, err := p.Run()
+	_, err = p.Run()
 	return err
 }
 
