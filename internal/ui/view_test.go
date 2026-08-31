@@ -989,11 +989,19 @@ func TestGraphPaneRendersSpawnForest(t *testing.T) {
 			t.Fatalf("graph-pane-roots-carry-no-rail rule violated: %q", lines[parent])
 		}
 	}
-	if !strings.Contains(out, "graph") {
-		t.Fatalf("graph-pane-header-names-itself rule violated:\n%s", out)
+	// The name falls back to the ID TAIL, not the whole id: a pane full of
+	// claude:session:<uuid> would still contain every substring asserted above.
+	if ghost := lines[lineIndex(out, "01a022e3")]; strings.Contains(ghost, "grok:session:") {
+		t.Fatalf("graph-pane-falls-back-to-the-id-tail rule violated: %q", ghost)
 	}
-	if !strings.Contains(out, "4 nodes · 2 edges · 1 gaps · topo r7") {
-		t.Fatalf("graph-pane-header-counts-what-it-drew rule violated:\n%s", out)
+	// Both of these live on the pane's own top border. Asserting them anywhere
+	// in the frame would pass on the footer's own "2 graph" key tab.
+	top := lines[headerH]
+	if !strings.Contains(top, "┤ graph ├") {
+		t.Fatalf("graph-pane-header-names-itself rule violated: %q", top)
+	}
+	if !strings.Contains(top, "4 nodes · 2 edges · 1 gaps · topo r7") {
+		t.Fatalf("graph-pane-header-counts-what-it-drew rule violated: %q", top)
 	}
 }
 
