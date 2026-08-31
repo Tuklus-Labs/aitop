@@ -223,14 +223,22 @@ P_MSG_PARENTS_B = (GRA,
 
 # --- keys and the read-only rule --------------------------------------------
 
-# The pane's own way back removed. The table's row drops the presets on any
+# The pane's own way back removed. The table's row drops `1 table` on any
 # normal terminal, so this tab is the only one an operator at 80 cells sees.
 P_NO_PANE_WAYBACK = (VIE,
                      "\t\ts.key(\"1\", \"table\"),\n\t\ts.key(\"2\", \"graph\"),\n\t}\n\tvar right []string",
                      "\t\ts.key(\"2\", \"graph\"),\n\t}\n\tvar right []string")
-P_NO_FOOTER_PRESETS = (VIE,
-                       "\t\t\ts.key(\"1\", \"table\"),\n\t\t\ts.key(\"2\", \"graph\"),\n\t\t}",
-                       "\t\t}")
+# The entry preset removed from the table's key row entirely.
+P_PRESET_GONE = (VIE,
+                 "\t\t\ts.key(\"q\", \"quit\"),\n\t\t\t// High priority on purpose. pack drops from the tail, and at the\n\t\t\t// widths this runs at the tail is already being dropped, so a graph\n\t\t\t// preset parked there is a view nobody can find. `1 table` stays at\n\t\t\t// the tail because it only ever says \"you are already here\": the\n\t\t\t// way BACK is on the pane's own short key row, which always fits.\n\t\t\ts.key(\"2\", \"graph\"),\n\t\t\ts.key(\"\u2191\u2193j\", \"move\"),",
+                 "\t\t\ts.key(\"q\", \"quit\"),\n\t\t\ts.key(\"\u2191\u2193j\", \"move\"),")
+# The entry preset back at TAIL priority, which is where this task first put it
+# and what the ruling overturned. The tab still exists and still renders at 165
+# and up, so only an assertion read at a width the house actually runs can see
+# the difference. This is the pair that proves 150 was the right width to ask at.
+P_PRESET_AT_TAIL_B = (VIE,
+                      "\t\t\ts.key(\"v\", \"mark\"),\n\t\t\ts.key(\"1\", \"table\"),\n\t\t}",
+                      "\t\t\ts.key(\"v\", \"mark\"),\n\t\t\ts.key(\"1\", \"table\"),\n\t\t\ts.key(\"2\", \"graph\"),\n\t\t}")
 P_KEY_TWO_DEAD = (MOD,
                   "\tcase \"2\":\n\t\tm.setGraphView(true)\n\tcase \"tab\":\n\t\tm.setGraphView(!m.graphView)\n\t}\n\treturn m, nil\n}\n\n// graphKey",
                   "\tcase \"2\":\n\tcase \"tab\":\n\t\tm.setGraphView(!m.graphView)\n\t}\n\treturn m, nil\n}\n\n// graphKey")
@@ -321,8 +329,8 @@ W_PANE_WAYBACK = (TST,
                   "\tif !strings.Contains(narrow, \"1 table\") {",
                   "\tif false && !strings.Contains(narrow, \"1 table\") {")
 W_FOOTER_PRESETS = (TST,
-                    "\tif !strings.Contains(table, \"1 table\") || !strings.Contains(table, \"2 graph\") {",
-                    "\tif false && (!strings.Contains(table, \"1 table\") || !strings.Contains(table, \"2 graph\")) {")
+                    "\tif !strings.Contains(table, \"2 graph\") {",
+                    "\tif false && !strings.Contains(table, \"2 graph\") {")
 W_TWO_OPENS = (TST,
                "\tif !tm.(Model).graphView {\n\t\tt.Fatalf(\"graph-pane-keys-toggle rule violated: 2 did not open the graph\")",
                "\tif false {\n\t\tt.Fatalf(\"graph-pane-keys-toggle rule violated: 2 did not open the graph\")")
@@ -415,7 +423,7 @@ R_STALE = "graph-pane-dims-a-stale-state rule violated"
 R_EMPTY_H = "graph-pane-empty-keeps-frame-height rule violated"
 R_QUIET = "graph-pane-empty-is-not-quiet rule violated"
 R_TOGGLE = "graph-pane-keys-toggle rule violated"
-R_PRESETS = "graph-pane-footer-offers-both-presets rule violated"
+R_PRESETS = "graph-pane-footer-offers-the-graph-preset rule violated"
 R_WAYBACK = "graph-pane-offers-a-way-back-at-any-width rule violated"
 R_TWO_SHOWS = "graph-pane-two-shows-the-graph rule violated"
 R_TWO_REPLACES = "graph-pane-two-replaces-the-table rule violated"
@@ -544,8 +552,13 @@ CYCLES = [
     ("S-T6-30-weak", [P_NO_GHOST_DIM, P_NO_COLOR_PIN, W_FRESH_NOT_DIM], T_MARKS, "GREEN", None),
 
     # --- keys and the read-only rule ----------------------------------------
-    ("S-T6-31-prod", [P_NO_FOOTER_PRESETS], T_KEYS, "RED", R_PRESETS),
-    ("S-T6-31-weak", [P_NO_FOOTER_PRESETS, W_FOOTER_PRESETS], T_KEYS, "GREEN", None),
+    ("S-T6-31-prod", [P_PRESET_GONE], T_KEYS, "RED", R_PRESETS),
+    ("S-T6-31-weak", [P_PRESET_GONE, W_FOOTER_PRESETS], T_KEYS, "GREEN", None),
+    # The ruling's pair. The tab still EXISTS at tail priority and still renders
+    # from 165 up; the assertion reds only because it is read at 150, the width
+    # the house runs. Asked at 200, as it originally was, this plant is green.
+    ("S-T6-31c-prod", [P_PRESET_GONE, P_PRESET_AT_TAIL_B], T_KEYS, "RED", R_PRESETS),
+    ("S-T6-31c-weak", [P_PRESET_GONE, P_PRESET_AT_TAIL_B, W_FOOTER_PRESETS], T_KEYS, "GREEN", None),
     ("S-T6-31b-prod", [P_NO_PANE_WAYBACK], T_KEYS, "RED", R_WAYBACK),
     ("S-T6-31b-weak", [P_NO_PANE_WAYBACK, W_PANE_WAYBACK], T_KEYS, "GREEN", None),
     ("S-T6-32-prod", [P_KEY_TWO_DEAD], T_KEYS, "RED", R_TOGGLE),

@@ -458,6 +458,12 @@ func (s *Styles) renderTable(b *strings.Builder, f frame, tableH int) {
 	} else {
 		keys := []string{
 			s.key("q", "quit"),
+			// High priority on purpose. pack drops from the tail, and at the
+			// widths this runs at the tail is already being dropped, so a graph
+			// preset parked there is a view nobody can find. `1 table` stays at
+			// the tail because it only ever says "you are already here": the
+			// way BACK is on the pane's own short key row, which always fits.
+			s.key("2", "graph"),
 			s.key("↑↓j", "move"),
 			s.key("f", "fork"),
 			s.key("m", "msg"),
@@ -470,7 +476,6 @@ func (s *Styles) renderTable(b *strings.Builder, f frame, tableH int) {
 			s.key("s", "sort"),
 			s.key("v", "mark"),
 			s.key("1", "table"),
-			s.key("2", "graph"),
 		}
 		var right []string
 		if f.lastErr != "" {

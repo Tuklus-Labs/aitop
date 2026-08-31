@@ -400,12 +400,19 @@ func TestActionKeysEnqueueAndConfirm(t *testing.T) {
 		t.Fatalf("v-sets-markKey violated: markKey=%q cursor=%d", mm.markKey, mm.cursor)
 	}
 
-	view = ansi.Strip(tm.View())
-	if !strings.Contains(view, "k kill") || !strings.Contains(view, "s sort") {
-		t.Fatalf("footer-btop-actions violated: idle footer wants k kill and s sort\n%s", view)
+	// This assertion names the row's CONTENT, not its packing, so it reads a
+	// frame wide enough to hold the whole row. It used to read the live 140
+	// frame, which worked only while the row happened to reach `s sort` there;
+	// `2 graph` now holds high priority and the tail is dropped one item
+	// sooner. Measuring content on a truncated row asks the wrong question,
+	// and the tempting repair -- dropping `s sort` from the rule -- would have
+	// weakened an assertion that was right.
+	full := ansi.Strip(Render(fixtureSnapshot(), theme.Nightfable(), 170, 32, now))
+	if !strings.Contains(full, "k kill") || !strings.Contains(full, "s sort") {
+		t.Fatalf("footer-btop-actions violated: idle footer wants k kill and s sort\n%s", full)
 	}
-	if strings.Contains(view, "c r t a n") {
-		t.Fatalf("footer-btop-actions violated: idle footer still presents c r t a n as the sort cluster\n%s", view)
+	if strings.Contains(full, "c r t a n") {
+		t.Fatalf("footer-btop-actions violated: idle footer still presents c r t a n as the sort cluster\n%s", full)
 	}
 }
 
@@ -1082,24 +1089,25 @@ func TestGraphPaneKeysToggle(t *testing.T) {
 	m := New(src, theme.Nightfable(), nil)
 	m.now = func() time.Time { return now }
 	var tm tea.Model = m
-	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 200, Height: 40})
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 150, Height: 42})
 	tm, _ = tm.Update(tickMsg(now))
 
 	if tm.(Model).graphView {
 		t.Fatalf("graph-pane-keys-toggle rule violated: the table is not the default view")
 	}
-	// The table's key row is already over budget before this task: at 140 cells
-	// it silently drops `v mark`, and the two presets only appear from 165 up
-	// (measured against --screenshot, not reasoned about). The window here is
-	// wide enough to see them.
+	// 150x42 is the width the house actually runs (`--screenshot 150x42`). The
+	// table's key row is packed from the head and dropped from the tail, and it
+	// was already over budget before this task, so the ENTRY preset has to hold
+	// high priority or it is a view nobody can find. Asserting it on a 200-cell
+	// frame, as this did, certified discoverability at a width nobody uses.
+	// `1 table` is not asserted here: in the table's own row it only ever says
+	// "you are already here", so it keeps tail priority.
 	table := ansi.Strip(tm.View())
-	if !strings.Contains(table, "1 table") || !strings.Contains(table, "2 graph") {
-		t.Fatalf("graph-pane-footer-offers-both-presets rule violated:\n%s", table)
+	if !strings.Contains(table, "2 graph") {
+		t.Fatalf("graph-pane-footer-offers-the-graph-preset rule violated:\n%s", table)
 	}
-	// Which is why the assertion that actually protects an operator is this
-	// one: the pane's own key row is short, so the way back is on screen at
-	// every width the app will run. Asserting the presets ONLY on a 200-cell
-	// frame would certify discoverability at a width nobody uses.
+	// The way BACK is the pane's own key row, which is short enough to fit at
+	// every width the app will run.
 	narrow := ansi.Strip(RenderGraph(graphFixture(), theme.Nightfable(), 80, 24, now))
 	if !strings.Contains(narrow, "1 table") {
 		t.Fatalf("graph-pane-offers-a-way-back-at-any-width rule violated:\n%s", narrow)
