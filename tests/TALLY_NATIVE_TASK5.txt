@@ -1,9 +1,9 @@
-aitop native provenance Task 5 tally (post-fix-round-1, post-sabotage-epoch)
+aitop native provenance Task 5 tally (post-fix-wave-2, post-sabotage-epoch)
 date: 2026-08-31T06:19:59-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-head: 7242eaf8e74435856a45c5d8d727996a58eb8da9
+head_superseded: 7242eaf8e74435856a45c5d8d727996a58eb8da9
 epoch_head: 7242eafd0bd7ec5c53b5ad33e0dd2b39e94dda0c
 note: certifies production wiring of the four graph collectors, the horizon
 note: rule's live-process clause, the fork runtime fix, and fix round 1
@@ -98,3 +98,56 @@ edges: 1 spawn, provenance=native
 note: counts differ from the round-0 probe (32 nodes, 4 edges) because sibling
 note: agents finished in between; the graph tracks live reality, which is the
 note: point. Baseline pre-task binary from 70f2594: 26 nodes, 0 edges.
+
+================================================================
+FIX WAVE 2 (supersedes everything above)
+================================================================
+date: 2026-08-31T08:55:25-07:00
+head: 079c3fea1915a91ae7dc16be6a74600d00510b2b
+epoch_head: 079c3fe
+note: adds the newborn binding rule (the interactive-path incarnation race),
+note: the cmd/aitop colour-profile pin, the --screenshot size assertions, and
+note: the README fork-sentence correction.
+
+== gofmt -l internal/ cmd/ ==
+(empty above = formatted)
+
+== go vet ./... ==            vet_exit=0
+== go build ./... ==          build_exit=0
+== go test ./... -count=1 ==  packages_ok=25 non_ok_lines=0 all_exit=0
+
+== go test -race ./internal/native ./internal/snapshot ./cmd/aitop -count=1 ==
+ok  	aitop/internal/native	1.970s
+ok  	aitop/internal/snapshot	3.125s
+ok  	aitop/cmd/aitop	5.897s
+race_exit=0
+
+== Task 5 tests, fix wave 2 ==
+internal/native/native_test.go  TestNewbornSightingWaitsOneTickForItsProcessBinding
+internal/native/native_test.go  TestNewbornSightingIsWaitedForOnlyOnce
+internal/native/native_test.go  TestStaleUnboundSightingPublishesImmediately
+internal/native/native_test.go  TestBoundSightingPublishesImmediately
+cmd/aitop/main_test.go          TestScreenshotGraphRendersTheGraphPane
+                                  /table_flag_is_untouched  (width + line count)
+cmd/aitop/main_test.go          TestMain (colour profile pin)
+count=4 new tests + 1 subtest hardened + 1 TestMain pin
+task_5_tests_total=33
+
+== sabotage epoch (final, from a clean tree, five bounded chunks) ==
+total=113 as_predicted=113 mismatches=0
+production_RED=52 predicted_GREEN=61
+cycles by package: native=43 cmd/aitop=23 snapshot=22 join=12 act=7 forks=6
+patch preflight: 116 distinct patches, each applied alone and vetted, all build
+chunks: --range 0 25 / 25 50 / 50 75 / 75 95 / 95 113, each verified before the next
+note: S-T5-48 and S-T5-49 weakenings were corrected mid-epoch (two witnesses,
+note: and an empty-slice panic); S-T5-51/52/53 are recorded GREENs with
+note: reasons. See SABOTAGE_LOG.
+
+== live probe, real homes, three consecutive one-shots ==
+wall=185ms / 176ms / 195ms
+nodes=30  edges=4  gaps=0  partial_nodes=0   (identical on all three runs)
+claude:session=4  claude:agent=4  grok:session=2  proc:*=20
+incarnations: all 4 claude:session and both grok:session nodes carry a PROCESS
+  incarnation with a process identity attached; the only 4 invocation
+  incarnations are the claude:agent subagents, which are in-process and have no
+  process of their own. That is the shape the newborn rule exists to preserve.

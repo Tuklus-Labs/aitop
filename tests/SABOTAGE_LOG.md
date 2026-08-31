@@ -2888,3 +2888,53 @@ could not show which assertion caught which.
 `W_SIZE`'s old-string was updated for the constant, and re-running the whole
 epoch rather than only the new cycles confirmed the other 16 still hold at the
 new head.
+
+### Native provenance Task 5, fix wave 2
+
+The newborn binding rule and the screenshot size hole. Epoch head `079c3fe`,
+run as five bounded chunks, combined log in
+`tests/sabotage-native-task5/sabotage_runs_native_task5.log`. 113 cycles, 113 as
+predicted, 52 production REDs and 61 predicted GREENs, across six packages.
+
+**The rule under test is an identity rule, not a timing one.** A session writes
+its file before the engine's next capture binds the row behind it, and a native
+poll landing in that window establishes the node under its INVOCATION
+incarnation. Rotation away from it is impossible, not merely delayed:
+`strictlyNewerIncarnation` needs a strict increase on an anchor pair where BOTH
+sides are non-nil, native's node carries `StartedAt` but never a `Process`, and
+its `StartedAt` is the same instant occupancy reads from the same file. So the
+startTicks pair is half-nil, the startedAt pair is equal, and occupancy's node,
+state and metrics events for that session are refused on identity until the node
+is evicted. S-T5-47 removes the rule and reds; the assertion it reds on is that
+no event ever carried the invocation incarnation, which is the fact that
+matters, rather than that the node was late.
+
+**Three cycles are recorded GREENs with reasons.** S-T5-51 strips the claude
+scanner's activity timestamp, which makes every claude session undatable and so
+never a newborn: the horizon tests do not notice, because an undated sighting
+still publishes. S-T5-52 holds terminal sightings back a poll, and S-T5-53 drops
+the prune that lets a node reclaim its grace after it goes away. Neither has an
+assertion aimed at it: the first costs one poll of terminal latency and the
+second costs a returning node its grace, and both were judged too small to build
+a test around. Said here rather than left to be inferred from a cycle list.
+
+**Two weakenings needed correcting, both found by running them.** The
+every-tick plant (S-T5-48) leaves the node never published at all, so it reds
+the once-only assertion AND the stays-published one — two witnesses of one rule,
+only one of them predicted. And weakening the bound-sighting guard (S-T5-49)
+silenced a check whose successors index `events[0]`, so the cycle panicked on an
+empty slice and reported a crash rather than a green; it short-circuits now, the
+way the schema and edge weakenings already did.
+
+**Two match strings needed anchoring.** Three tests now assert on
+`sink.count()`, so a patch matching the bare shape aimed at none of them. And
+the table subtest's width check sits one indent level shallower than the graph
+pane's, which makes the shallower text a strict SUBSTRING of the deeper one — a
+three-tab patch matched both. Both are now anchored on their own message text.
+
+**S-T5-54 closes a hole that had been open in the older flag the whole time.**
+Hardcoding the render width reds `--screenshot-graph` and, now, `--screenshot`
+too. A frame of the right HEIGHT is the right height at any width, which is
+exactly how the original hole passed the entire suite: the spy renderers discard
+their int arguments and `internal/ui`'s geometry tests call `Render` directly
+rather than through `runScreenshot`.
