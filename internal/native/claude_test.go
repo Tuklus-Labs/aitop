@@ -25,6 +25,7 @@ const (
 	claudeFixtureThird     = "9646f67b-0120-4d1e-836e-2e21fc16d80c"
 	claudeFixtureOrphan    = "06e524ab-4afa-4a36-a578-1a629d4853c3"
 	claudeFixtureOrphanOld = "0b5eee95-4523-4249-8c82-463efd174f6a"
+	claudeFixtureStaleHost = "0bb9b35b-251d-4c4d-bdb7-44c68f2860a2"
 	claudeFixtureSlug      = "-home-aegis"
 	claudeNamedAgent       = "alane1r-architect-b8b06ac8c091add8"
 	claudeNestedAgent      = "a2045f6a2f6cc8f6a"
@@ -397,6 +398,13 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 	tree.agentMeta(claudeFixtureOrphanOld, "aburied0000000000", map[string]any{"agentType": "Explore", "spawnDepth": 0}, now.Add(-40*time.Minute))
 	tree.agentTranscript(claudeFixtureOrphanOld, "aburied0000000000", now.Add(-30*time.Minute))
 
+	// A roster entry too old to publish a primary is still a roster entry. Its
+	// children are not orphans, and the parent synthesized to root them must
+	// not invent a death nothing witnessed.
+	tree.sidecar(31337, claudeFixtureStaleHost, "/home/aegis/Projects/aitop", "quiet-host", now.Add(-2*time.Hour))
+	tree.agentMeta(claudeFixtureStaleHost, "ahosted0000000000", map[string]any{"agentType": "Explore", "spawnDepth": 0}, now.Add(-5*time.Minute))
+	tree.agentTranscript(claudeFixtureStaleHost, "ahosted0000000000", now.Add(-2*time.Minute))
+
 	nodes, _, _ := scanClaude(t, tree.home, now)
 
 	active, ok := nodeByID(nodes, mustAgentID(t, claudeFixtureSession, "aactive0000000000"))
@@ -455,8 +463,26 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 	if _, ok := nodeByID(nodes, buriedParent); ok {
 		t.Fatalf("claude-buried-store-synthesizes-no-parent rule violated: session=%s present with every child past window=%s ids=%v", claudeFixtureOrphanOld, nativeExitWindow, nodeIDs(nodes))
 	}
-	if len(nodes) != 6 {
-		t.Fatalf("claude-orphan-fixture-node-count rule violated: nodes=%d want=6 ids=%v", len(nodes), nodeIDs(nodes))
+
+	// The other half of the same rule: presence, however stale, is not death
+	// evidence. Nothing here witnessed an exit, so nothing may claim one.
+	hostParent, ok := nodeByID(nodes, mustSessionID(t, claudeFixtureStaleHost))
+	if !ok {
+		t.Fatalf("claude-stale-host-parent-synthesized rule violated: session=%s absent ids=%v", claudeFixtureStaleHost, nodeIDs(nodes))
+	}
+	if hostParent.Exit != "" || hostParent.ExitAt != nil {
+		t.Fatalf("claude-present-sidecar-invents-no-terminal rule violated: exit=%q exitAt=%v sidecarAge=2h horizon=%s", hostParent.Exit, hostParent.ExitAt, nativeHorizon)
+	}
+	hosted, ok := nodeByID(nodes, mustAgentID(t, claudeFixtureStaleHost, "ahosted0000000000"))
+	if !ok {
+		t.Fatalf("claude-stale-host-child-observed rule violated: agent=ahosted0000000000 absent ids=%v", nodeIDs(nodes))
+	}
+	if hosted.Exit != "" {
+		t.Fatalf("claude-child-of-present-sidecar-does-not-vanish rule violated: exit=%q exitAt=%v", hosted.Exit, hosted.ExitAt)
+	}
+
+	if len(nodes) != 8 {
+		t.Fatalf("claude-orphan-fixture-node-count rule violated: nodes=%d want=8 ids=%v", len(nodes), nodeIDs(nodes))
 	}
 
 	// End-to-end: the core must drop that old terminal entirely rather than
@@ -474,11 +500,11 @@ func TestClaudeScannerVanishesOrphanedChildren(t *testing.T) {
 			t.Fatalf("claude-old-orphan-not-observed rule violated: kind=%s actor=%s target=%s exitAt=%v window=%s", ev.Kind, ev.Actor, ev.Target, buried.ExitAt, nativeExitWindow)
 		}
 	}
-	// Five published nodes: the live session, its two children, the fresh
-	// orphan and that orphan's synthesized parent. A sixth would be the
-	// immortal one this test exists to keep out.
-	if published := countKind(events, graph.EventNodeObserved); published != 5 {
-		t.Fatalf("claude-orphan-published-node-count rule violated: node_observed=%d want=5 kinds=%v", published, kindsOf(events))
+	// Seven published nodes: the live session and its two children, the fresh
+	// orphan and its synthesized parent, and the stale host with its child. An
+	// eighth would be the immortal one this test exists to keep out.
+	if published := countKind(events, graph.EventNodeObserved); published != 7 {
+		t.Fatalf("claude-orphan-published-node-count rule violated: node_observed=%d want=7 kinds=%v", published, kindsOf(events))
 	}
 	// One, not two: the buried child is dropped here, while its parent was
 	// never synthesized in the first place.
