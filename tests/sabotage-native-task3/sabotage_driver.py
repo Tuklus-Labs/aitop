@@ -53,10 +53,13 @@ P_NICK_FROM_ROLE = (COD,
                     '\t\t\tAgentNickname string `json:"agent_nickname"`',
                     '\t\t\tAgentNickname string `json:"agent_role"`')
 
-# A4: stop deriving the project from the thread's cwd.
-P_NO_PROJECT = (COD,
-                "\t\t\tProject:   join.ProjectName(rollout.meta.CWD),\n",
-                "")
+# A4: derive the project from where the rollout FILE lives rather than from the
+# thread's cwd. Deleting the field instead would remove the only use of the join
+# import and fail the build, which is a fact about the compiler rather than about
+# the assertion under test.
+P_PROJECT_FROM_PATH = (COD,
+                       "\t\t\tProject:   join.ProjectName(rollout.meta.CWD),\n\t\t\tLocation:  rollout.path,",
+                       "\t\t\tProject:   join.ProjectName(filepath.Dir(rollout.path)),\n\t\t\tLocation:  rollout.path,")
 
 # A5: locate the sighting at the directory rather than the file.
 P_LOCATION_DIR = (COD,
@@ -279,8 +282,8 @@ CYCLES = [
     # --- node content -------------------------------------------------------
     ("S-X4a-prod", [P_NICK_FROM_ROLE], T_ID, "RED", "codex-name-from-spawn-nickname rule violated"),
     ("S-X4a-weak", [P_NICK_FROM_ROLE, W_NAME], T_ID, "GREEN", None),
-    ("S-X4b-prod", [P_NO_PROJECT], T_ID, "RED", "codex-project-from-cwd rule violated"),
-    ("S-X4b-weak", [P_NO_PROJECT, W_PROJECT], T_ID, "GREEN", None),
+    ("S-X4b-prod", [P_PROJECT_FROM_PATH], T_ID, "RED", "codex-project-from-cwd rule violated"),
+    ("S-X4b-weak", [P_PROJECT_FROM_PATH, W_PROJECT], T_ID, "GREEN", None),
     ("S-X4c-prod", [P_LOCATION_DIR], T_ID, "RED", "codex-location-is-source-file rule violated"),
     ("S-X4c-weak", [P_LOCATION_DIR, W_LOCATION_ID], T_ID, "GREEN", None),
 
@@ -374,9 +377,12 @@ def main():
         if not all(apply_patch(*p) for p in patches):
             sh(["git", "checkout", "--"] + ALL_FILES)
             sys.exit(1)
-        diff = sh(["git", "diff", "--stat"]).stdout.strip()
+        # Source files only. This driver's own log lives in the repo, so a
+        # whole-tree diffstat would be non-empty whether or not a plant landed,
+        # and the check would certify nothing.
+        diff = sh(["git", "diff", "--stat", "--"] + [COD, CODT]).stdout.strip()
         if not diff:
-            emit("ABORT: plant left no diff")
+            emit("ABORT: plant left no diff in the source under test")
             sys.exit(1)
         emit("plant diffstat:\n" + diff)
         started = time.time()

@@ -1,72 +1,145 @@
-head: 5590291f516cc120eb724719b5fb2ba64e9e7673
+head: 21348e68ea3ae4dab8a41b45313062af6b395af8
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 tz_offset: -0700
 
 ===== S-X1a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
 plant diffstat:
-internal/native/codex.go                       | 2 +-
- tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
- 2 files changed, 8 insertions(+), 2 deletions(-)
-exit=1 wall=0.2s
+internal/native/codex.go                           |  2 +-
+ .../sabotage_runs_native_task3.log                 | 69 +---------------------
+ 2 files changed, 2 insertions(+), 69 deletions(-)
+exit=1 wall=0.1s
 --- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
     codex_test.go:245: codex-node-is-own-thread-id rule violated: thread=019fbeff-6378-7902-a6b2-57e3d8e09cc2 absent ids=[codex:thread:019faa13-fd80-7db0-a2fa-a71ffaa87690 codex:thread:019fb670-f95b-7000-9c92-82d163400945]
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-X1a-prod: AS-PREDICTED
 S-X1a-prod: restored, porcelain clean, focused test green again
 
 ===== S-X1b-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
 plant diffstat:
-internal/native/codex.go                       | 2 +-
- tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
- 2 files changed, 8 insertions(+), 2 deletions(-)
-exit=1 wall=0.2s
+internal/native/codex.go                           |  2 +-
+ .../sabotage_runs_native_task3.log                 | 65 ++--------------------
+ 2 files changed, 7 insertions(+), 60 deletions(-)
+exit=1 wall=0.1s
 --- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
     codex_test.go:251: codex-node-short-id-is-own-thread-id rule violated: sessionID="019faa13-fd80-7db0-a2fa-a71ffaa87690" want="019fbeff-6378-7902-a6b2-57e3d8e09cc2" id=codex:thread:019fbeff-6378-7902-a6b2-57e3d8e09cc2
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-X1b-prod: AS-PREDICTED
 S-X1b-prod: restored, porcelain clean, focused test green again
 
 ===== S-X1b-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
 plant diffstat:
-internal/native/codex.go                       | 2 +-
- internal/native/codex_test.go                  | 3 ---
- tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
- 3 files changed, 8 insertions(+), 5 deletions(-)
-exit=0 wall=0.2s
+internal/native/codex.go                           |  2 +-
+ internal/native/codex_test.go                      |  3 --
+ .../sabotage_runs_native_task3.log                 | 61 ++++------------------
+ 3 files changed, 12 insertions(+), 54 deletions(-)
+exit=0 wall=0.1s
 ok  	aitop/internal/native	0.001s
 S-X1b-weak: AS-PREDICTED
 S-X1b-weak: restored, porcelain clean, focused test green again
 
 ===== S-X2a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
 plant diffstat:
-internal/native/codex.go                       | 2 +-
- tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
- 2 files changed, 8 insertions(+), 2 deletions(-)
-exit=1 wall=0.2s
+internal/native/codex.go                           |  2 +-
+ .../sabotage_runs_native_task3.log                 | 60 ++++++----------------
+ 2 files changed, 17 insertions(+), 45 deletions(-)
+exit=1 wall=0.1s
 --- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
     codex_test.go:275: codex-session-id-is-never-a-node rule violated: nodes for session_id=019faa13-fd80-7db0-a2fa-a71ffaa87690 count=1 ids=[codex:thread:019fbeff-6378-7902-a6b2-57e3d8e09cc2 codex:thread:019faa13-fd80-7db0-a2fa-a71ffaa87690]
 FAIL
-FAIL	aitop/internal/native	0.002s
+FAIL	aitop/internal/native	0.001s
 FAIL
 S-X2a-prod: AS-PREDICTED
 S-X2a-prod: restored, porcelain clean, focused test green again
 
 ===== S-X2a-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
 plant diffstat:
-internal/native/codex.go                       | 2 +-
- internal/native/codex_test.go                  | 6 +++---
- tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
- 3 files changed, 11 insertions(+), 5 deletions(-)
+internal/native/codex.go                           |  2 +-
+ internal/native/codex_test.go                      |  6 +--
+ .../sabotage_runs_native_task3.log                 | 56 ++++++++--------------
+ 3 files changed, 25 insertions(+), 39 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-X2a-weak: AS-PREDICTED
+S-X2a-weak: restored, porcelain clean, focused test green again
+
+===== S-X3a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                           |  2 +-
+ .../sabotage_runs_native_task3.log                 | 63 +++++++++++-----------
+ 2 files changed, 31 insertions(+), 34 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
+    codex_test.go:297: codex-relationship-is-own-thread-id rule violated: relationship="019faa13-fd80-7db0-a2fa-a71ffaa87690" want="019fbeff-6378-7902-a6b2-57e3d8e09cc2"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-X3a-prod: AS-PREDICTED
+S-X3a-prod: restored, porcelain clean, focused test green again
+
+===== S-X3a-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                           |  2 +-
+ internal/native/codex_test.go                      |  2 +-
+ .../sabotage_runs_native_task3.log                 | 77 ++++++++++++----------
+ 3 files changed, 46 insertions(+), 35 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-X3a-weak: AS-PREDICTED
+S-X3a-weak: restored, porcelain clean, focused test green again
+
+===== S-X3b-shadow-prod expect=RED run=^TestCodexCollectorLandsForkInRealShadow$
+plant diffstat:
+internal/native/codex.go                           |  2 +-
+ .../sabotage_runs_native_task3.log                 | 88 ++++++++++++++--------
+ 2 files changed, 56 insertions(+), 34 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexCollectorLandsForkInRealShadow (0.11s)
+    codex_test.go:750: codex-shadow-relationship-is-thread-id rule violated: child=codex:thread:01a05374-58e3-73e1-b4a7-93e45399d123 relationship="01a0519a-73df-7261-b1ad-32b399e90ed2" want="01a05374-58e3-73e1-b4a7-93e45399d123"
+FAIL
+FAIL	aitop/internal/native	0.112s
+FAIL
+S-X3b-shadow-prod: AS-PREDICTED
+S-X3b-shadow-prod: restored, porcelain clean, focused test green again
+
+===== S-X4a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                           |   2 +-
+ .../sabotage_runs_native_task3.log                 | 102 ++++++++++++++-------
+ 2 files changed, 70 insertions(+), 34 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
+    codex_test.go:257: codex-name-from-spawn-nickname rule violated: name="" want="Hooke"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-X4a-prod: AS-PREDICTED
+S-X4a-prod: restored, porcelain clean, focused test green again
+
+===== S-X4a-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                           |   2 +-
+ internal/native/codex_test.go                      |   2 +-
+ .../sabotage_runs_native_task3.log                 | 116 +++++++++++++++------
+ 3 files changed, 85 insertions(+), 35 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-X4a-weak: AS-PREDICTED
+S-X4a-weak: restored, porcelain clean, focused test green again
+
+===== S-X4b-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                           |   1 -
+ .../sabotage_runs_native_task3.log                 | 127 +++++++++++++++------
+ 2 files changed, 94 insertions(+), 34 deletions(-)
 exit=1 wall=0.0s
 FAIL	aitop/internal/native [build failed]
 FAIL
 # aitop/internal/native [aitop/internal/native.test]
-internal/native/codex_test.go:240:2: declared and not used: root
-internal/native/codex_test.go:275:120: undefined: seen
-S-X2a-weak: MISMATCH
-S-X2a-weak: restored, porcelain clean, focused test green again
+internal/native/codex.go:14:2: "aitop/internal/join" imported and not used
+S-X4b-prod: MISMATCH
+S-X4b-prod: restored, porcelain clean, focused test green again
 STOP on mismatch for inspection
