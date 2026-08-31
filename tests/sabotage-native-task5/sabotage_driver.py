@@ -311,7 +311,7 @@ W_FRK_ROW = (FRKT,
              "\tif false && (child.Runtime != types.RuntimeClaude) {")
 W_FRK_GRAPH = (FRKT,
                "\tif !found {\n\t\tt.Fatalf(\"fork-child-reaches-the-graph",
-               "\tif false {\n\t\tt.Fatalf(\"fork-child-reaches-the-graph")
+               "\tif false && !found {\n\t\tt.Fatalf(\"fork-child-reaches-the-graph")
 
 W_JOIN_ROLE = (JOIT,
                "\tif got := byID[\"C\"].Process.Role; got != types.RoleSubagent {",
@@ -369,7 +369,7 @@ W_SCHEMA_SOURCE = (ATTT,
                    '\tif false && (len(state.Source) != 0 && string(state.Source) != "null") {')
 W_SCHEMA_SINCE = (ATTT,
                   '\tif state.Since != "" {',
-                  "\tif false && (state.Since != "") {")
+                  '\tif false && (state.Since != "") {')
 
 W_MAIN_HOMES = (MAIT,
                 "\tif spy.homes != want {",
