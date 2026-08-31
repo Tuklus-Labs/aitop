@@ -344,6 +344,9 @@ func TestStateSchemaEncodesConditionalRules(t *testing.T) {
 			st["valid_until"] = "2026-08-26T12:15:00Z"
 		}},
 		{"vanished-with-valid-until", 3, func(st map[string]any) {
+			src, _ := st["source"].(map[string]any)
+			src["authority"] = "native"
+			st["source"] = src
 			st["valid_until"] = "2026-08-26T12:15:00Z"
 		}},
 		{"approval-with-valid-until", 0, func(st map[string]any) { st["value"] = "approval" }},
