@@ -928,11 +928,17 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 	// A cwd with a space, written where grok writes it: %20 for the space. This
 	// is the shape that slash-only encoding loses, and 1 of the 434 sessions on
 	// the live box has it.
+	//
+	// Its file is deliberately two hours cold, so the walk's mtime gate refuses
+	// it and the roster is the ONLY route in. With a fresh file the walk supplies
+	// the node whatever the encoder computes, and a broken encoder is then
+	// visible only in a counter -- which is how the first run of this fixture
+	// behaved, and why it now looks like this.
 	const spacedCWD = "/home/x/Obsidian Vault"
 	spacedPath := tree.summary(spacedCWD, grokSecondSession,
 		grokMainFields(grokSecondSession, spacedCWD, grokBuildAgent, grokModel, "vault session",
-			now.Add(-30*time.Minute), now.Add(-2*time.Minute)),
-		now.Add(-2*time.Minute))
+			now.Add(-3*time.Hour), now.Add(-2*time.Hour)),
+		now.Add(-2*time.Hour))
 
 	// The same spaced encoding reached the other way, by a walk that never
 	// computes a path at all. Keeping both routes in one fixture is what
