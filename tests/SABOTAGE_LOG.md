@@ -2777,15 +2777,24 @@ the renderer dispatch in `run()`, the shared `runScreenshot` body, and
 `productionRunDeps`'s wiring of `ui.RenderGraph`. Driver
 `tests/sabotage-native-task7/sabotage_driver.py`, log
 `tests/sabotage-native-task7/sabotage_runs_native_task7.log`. Epoch head
-`8e9af1d936789cde8ade39603081a0bf00c20af0`. 16 cycles, 16 as predicted, 8
-production REDs and 8 predicted GREENs, run as three bounded chunks against one
-head with no tree drift between them.
+`4cf8bc610a0f406c182f883ffc18608e46f32f8b` (fix round 1). **18 cycles, 18 as
+predicted, 9 production REDs and 9 predicted GREENs**, run as three bounded
+chunks against one head with no tree drift between them.
 
 The instrument under measurement is `TestScreenshotGraphRendersTheGraphPane`,
 which makes five separable claims about one frame (its size, its pane identity,
 the node it drew, the empty state it did not draw, and the table flag it did not
 disturb) plus the eleven rows added to
-`TestRunRejectsScreenshotWithJSONOrOnce`. Every one has a plant aimed at it.
+`TestRunRejectsScreenshotWithJSONOrOnce`. Every one now has a plant aimed at it.
+
+**The word "now" is doing work in that sentence, and the first version of this
+section did not have it.** At the 16-cycle epoch head `8e9af1d` this section
+claimed a plant was aimed at each of the five claims, and that was false for
+the size claim: `screenshot-graph-renders-the-requested-size` asserted the LINE
+COUNT and nothing else, so it measured the height and not the width. The
+correction and the cycle that earns it are recorded under "Fix round 1" below.
+The 16-cycle numbers are superseded, not deleted: they were honest counts of
+cycles that all ran and all matched, over a rule that was half unmeasured.
 
 **Two predictions were wrong, and neither was visible by reading the plant.**
 
@@ -2832,3 +2841,50 @@ not blast radius in the sense STYLE warns about: the instrument under
 measurement is the focused `cmd/aitop` test, and what matters is which of ITS
 assertions move. Restores are verified by porcelain and a post-restore green on
 the focused test, every cycle.
+
+### Task 7 fix round 1: the half-measured size rule (2026-08-31)
+
+Review finding, Important: the size claim was measured on one axis. Verified
+before fixing rather than accepted from the report, because a finding's
+predicted consequence is a claim like any other. Planting
+`frame := render(snap, th, 80, height, now)` in `runScreenshot` and running
+`go test ./... -count=1` exits **0**: all 25 packages green with the width
+argument thrown away.
+
+Three separate things had to be true at once for that to hide, and this is the
+part worth carrying forward:
+
+1. A 42-line frame is 42 lines at any width, so the height assertion cannot see
+   a width defect.
+2. The spy renderers in `testRunDeps` return the literal string `"FRAME"` and
+   discard their int arguments, so every cmd-path test that uses them is blind
+   to both dimensions by construction.
+3. `internal/ui`'s `TestGraphPaneKeepsFrameGeometry` DOES assert per-line cell
+   width, and it calls `RenderGraph` directly. It proves the renderer honours a
+   width it is handed; it says nothing about whether `runScreenshot` hands it
+   the parsed one. Coverage existed on both sides of the seam and not across it.
+
+This is the drifted-question shape STYLE names: the assertion said "size", the
+check said "height", and the two agreed with each other right up until someone
+aimed a plant at the other half.
+
+**Fix.** Every line's cell width is now asserted against the requested width on
+the cmd path, and the requested size lives in one constant pair (`graphFrameW`,
+`graphFrameH`) that the flag argument is built from, so the ask and the check
+cannot drift apart again. Cell width rather than byte length, because the pane
+is drawn in box glyphs.
+
+**New cycle S-T7-09**, kept separate from S-T7-06 rather than folded into it,
+because the two halves of "size" fail independently and a plant that moved both
+could not show which assertion caught which.
+
+- `S-T7-09-prod` plants the hardcoded width: RED, with
+  `screenshot-graph-renders-the-requested-size rule violated: line 0 is 80
+  cells wide, want 150`.
+- `S-T7-09-weak` relaxes the width condition alone: GREEN. The relaxation count
+  was measured before it was predicted, by rendering the real pane at 80x42:
+  42 lines, border tab present, one canary line, so no other assertion moves.
+
+`W_SIZE`'s old-string was updated for the constant, and re-running the whole
+epoch rather than only the new cycles confirmed the other 16 still hold at the
+new head.

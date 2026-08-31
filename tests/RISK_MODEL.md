@@ -1766,6 +1766,7 @@ briefs, so a row naming a test that no longer exists is impossible here.
 | `ui.RenderGraph` exported with no production caller, so the phase's headline view has no runnable evidence and can rot unnoticed | `main.TestScreenshotGraphRendersTheGraphPane` |
 | `--screenshot-graph` rendering the table, or `--screenshot` rendering the graph | same test: the border-tab assertion and the negative half (sabotage S-T7-01, S-T7-02, S-T7-03, S-T7-07) |
 | Two frames written to one stdout when both screenshot flags are given | `main.TestRunRejectsScreenshotWithJSONOrOnce`, eleven added rows (sabotage S-T7-08) |
+| The parsed size not reaching the renderer, on either axis | same test: the line-count assertion (sabotage S-T7-06) and the per-line cell-width assertion (sabotage S-T7-09). The width half was added in fix round 1; before it, a hardcoded width passed all 25 packages, because `internal/ui`'s geometry test proves the RENDERER honours a width it is handed and says nothing about whether `runScreenshot` hands it the parsed one. Coverage on both sides of a seam is not coverage across it. |
 
 **Blank rows: none.** Every row in this section and in the Task 1 section above
 names at least one test. 71 distinct names are cited across both; 70 of them

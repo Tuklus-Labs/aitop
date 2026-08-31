@@ -3635,7 +3635,7 @@ loud also forgot to list it.
 
 | file | added lines | line range | assertion sites | named rule | prints state |
 |------|------------:|-----------:|----------------:|-----------:|-------------:|
-| `cmd/aitop/main_test.go` | 506 | 12-1360 | 28 | 28 | 27 |
+| `cmd/aitop/main_test.go` | 526 | 12-1380 | 29 | 29 | 28 |
 | `internal/act/sidecar_test.go` | 85 | 1-85 | 9 | 9 | 9 |
 | `internal/join/join_test.go` | 69 | 225-293 | 7 | 7 | 7 |
 | `internal/native/claude_test.go` | 713 | 1-713 | 81 | 81 | 81 |
@@ -3645,14 +3645,14 @@ loud also forgot to list it.
 | `internal/overlay/forks/forks_test.go` | 85 | 7-146 | 7 | 7 | 7 |
 | `internal/snapshot/graph_attach_test.go` | 607 | 1-607 | 56 | 56 | 54 |
 | `internal/ui/view_test.go` | 514 | 4-1410 | 55 | 55 | 48 |
-| **total** | **5731** | | **531** | **531** | **518** |
+| **total** | **5751** | | **532** | **532** | **519** |
 
 An assertion site is a `t.Fatalf`/`t.Errorf`/`t.Fatal`/`t.Error` call on an
 added line. "Named rule" means the message carries a present-tense
 `<phrase> rule violated` (or `<phrase> violated`); "prints state" means the
 call carries at least one format verb naming the offending value.
 
-**531 of 531 name a rule. 428 distinct phrases, and not one of them appears in
+**532 of 532 name a rule. 428 distinct phrases, and not one of them appears in
 more than one file**, so every phrase in this phase greps to exactly one place.
 That is the property the phrases exist for: a rule name that two files share
 sends whoever is reading a failure to the wrong test.
@@ -3693,3 +3693,11 @@ The line to hold: this exemption is for a boolean, not for a value the author
 did not bother to print. `:1384` above was in this list on the first pass and
 came out of it, because its condition compares two keys and the keys are worth
 seeing.
+
+### Fix round 1 (2026-08-31)
+
+One site added, `cmd/aitop/main_test.go`'s per-line cell-width assertion, which
+took the totals from 531 to 532. It prints the line index, the measured width,
+the wanted width and the offending line, so it is loud on the axis the rule
+had been silent about. Counts above are re-derived, not incremented by hand.
+The 13 exemptions and their reasoning are unchanged.

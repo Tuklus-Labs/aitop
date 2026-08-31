@@ -15,7 +15,17 @@ empty state it did NOT draw, and the table flag it did not disturb -- plus one
 about the flag combinations run() refuses. Every one of them has a plant aimed
 at IT, and each weakened cycle names the exact assertion sites relaxed.
 
-Three cycles are worth reading before the rest.
+Four cycles are worth reading before the rest.
+
+S-T7-09 was added in fix round 1 and it is the one that matters most, because
+its absence is what a passing epoch looked like. The size claim was named "its
+size" and measured only the LINE COUNT, so a plant hardcoding the render call's
+width argument passed all 25 packages: a 42-line frame is 42 lines at any
+width, the spy renderers discard their int arguments, and internal/ui's
+geometry test calls RenderGraph directly rather than through runScreenshot.
+Sixteen cycles ran green over a rule that was half unmeasured. The lesson is
+the one STYLE states about drifted questions: the assertion said "size" and the
+check said "height", and only a plant aimed at the other half could tell.
 
 S-T7-02 and S-T7-03 are the same defect at two different lines: the graph flag
 wired to the TABLE renderer, once in productionRunDeps and once at the dispatch
@@ -107,6 +117,16 @@ P_SIZE_PINNED = (MAIN,
                  "\tframe := render(snap, th, width, height, now)",
                  "\tframe := render(snap, th, width, 24, now)")
 
+# The requested WIDTH ignored, height honoured. The plant that showed the size
+# rule was only half measured: before the fix round this passed all 25
+# packages, because a 42-line frame is 42 lines at any width and nothing on the
+# cmd path read the width at all. Kept as its own cycle rather than folded into
+# P_SIZE_PINNED, because the two halves of "size" fail independently and a
+# plant that moves both cannot show which assertion caught which.
+P_WIDTH_PINNED = (MAIN,
+                  "\tframe := render(snap, th, width, height, now)",
+                  "\tframe := render(snap, th, 80, height, now)")
+
 # The TABLE flag wired to the graph renderer: the mirror image of S-T7-02, and
 # the plant the negative half of the test exists for.
 P_TABLE_FLAG_GRAPH = (MAIN,
@@ -143,8 +163,14 @@ W_CANARY = (TST,
             "\t\t\tif got := graphFrameLinesWith(frame, snapshot.Canary); got < 0 {")
 
 W_SIZE = (TST,
-          "\t\t\tif len(lines) != 42 {",
+          "\t\t\tif len(lines) != graphFrameH {",
           "\t\t\tif len(lines) < 0 {")
+
+# The width half of the same rule, relaxed at its condition so the loop, the
+# message and the offending state all stay put.
+W_WIDTH = (TST,
+           "\t\t\t\tif w := ansi.StringWidth(l); w != graphFrameW {",
+           "\t\t\t\tif w := ansi.StringWidth(l); w < 0 {")
 
 # The negative half's needle changed to one the pane cannot draw. `false` would
 # orphan the frame binding and the cycle would measure the compiler.
@@ -200,8 +226,16 @@ CYCLES = [
     ("S-T7-05-weak", [P_EMPTY_BLANK, W_CANARY], T_FRAME, "GREEN", None),
 
     # --- the frame's geometry ----------------------------------------------
+    # Two halves, two cycles. The height plant reds on the line count; the
+    # width plant reds on the per-line cell width, and BEFORE the fix round it
+    # reddened nothing at all and passed the full 25-package suite.
     ("S-T7-06-prod", [P_SIZE_PINNED], T_FRAME, "RED", R_SIZE),
     ("S-T7-06-weak", [P_SIZE_PINNED, W_SIZE], T_FRAME, "GREEN", None),
+    ("S-T7-09-prod", [P_WIDTH_PINNED], T_FRAME, "RED", R_SIZE),
+    # Measured before predicting: the pane at 80x42 still draws 42 lines, still
+    # carries its border tab, and still shows one canary line, so relaxing the
+    # width condition alone is enough to green it.
+    ("S-T7-09-weak", [P_WIDTH_PINNED, W_WIDTH], T_FRAME, "GREEN", None),
 
     # --- the negative half --------------------------------------------------
     ("S-T7-07-prod", [P_TABLE_FLAG_GRAPH], T_FRAME, "RED", R_TABLE),
