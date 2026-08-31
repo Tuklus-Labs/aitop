@@ -246,12 +246,22 @@ func (s *codexScanner) readRecentRollouts(now time.Time) []codexRollout {
 // codex names each date directory from the LOCAL date (a rollout stamped
 // 07:09:33Z sits under 2026/08/30 at UTC-7), so local today and yesterday are
 // the pair that matters; the UTC pair covers a box whose codex ran under a
-// different zone. Order is fixed rather than sorted, so a parent synthesized
-// from the first child that names it is anchored on the same file every tick and
-// its event id holds still.
+// different zone.
 func codexDateDirs(now time.Time) []string {
+	return codexDateDirsIn(now, time.Local)
+}
+
+// codexDateDirsIn takes the local zone as an argument because the union of the
+// two pairs collapses to one pair whenever the local date matches UTC, which is
+// most of the day in most zones: a caller that could only ask about the running
+// machine's zone could not tell a scanner that walks both from one that walks
+// whichever pair happens to be in front of it. Order is fixed rather than
+// sorted, so a parent synthesized from the first child that names it is anchored
+// on the same file every tick and its event id holds still.
+func codexDateDirsIn(now time.Time, loc *time.Location) []string {
+	local := now.In(loc)
 	days := []time.Time{
-		now.Local(), now.Local().AddDate(0, 0, -1),
+		local, local.AddDate(0, 0, -1),
 		now.UTC(), now.UTC().AddDate(0, 0, -1),
 	}
 	dirs := make([]string, 0, len(days))

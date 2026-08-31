@@ -563,26 +563,44 @@ func TestCodexScannerScansOnlyRecentDateDirs(t *testing.T) {
 		t.Fatalf("codex-walk-does-not-open-old-date-dirs rule violated: skippedRollouts=%d want=0 ids=%v", skipped, nodeIDs(nodes))
 	}
 
-	// The other half of the rule, which no fixture can see under a single
-	// timezone: the walked set is the UTC pair and the LOCAL pair, deduped.
-	dirs := codexDateDirs(now)
-	if len(dirs) < 2 || len(dirs) > 4 {
-		t.Fatalf("codex-date-dirs-bounded rule violated: dirs=%v count=%d want 2..4", dirs, len(dirs))
-	}
-	seen := map[string]bool{}
-	for _, dir := range dirs {
-		if seen[dir] {
-			t.Fatalf("codex-date-dirs-deduped rule violated: dir=%q repeated dirs=%v", dir, dirs)
-		}
-		seen[dir] = true
-	}
-	for _, want := range []time.Time{
-		now.UTC(), now.UTC().AddDate(0, 0, -1),
-		now.Local(), now.Local().AddDate(0, 0, -1),
+	// The other half of the rule, which the fixtures above cannot see: the walked
+	// set is the UTC pair AND the local pair, deduped. Those two pairs are the
+	// same pair for most of the day in most zones, so the zones here are pinned
+	// rather than inherited -- under the machine's own zone a scanner that walks
+	// only one pair is indistinguishable from one that walks both.
+	for _, probe := range []struct {
+		name   string
+		now    time.Time
+		offset int // seconds east of UTC
+	}{
+		{"local-behind-utc", now, -12 * 3600},
+		{"local-ahead-of-utc", time.Date(2026, 8, 31, 23, 0, 0, 0, time.UTC), 14 * 3600},
 	} {
-		dir := filepath.Join(want.Format("2006"), want.Format("01"), want.Format("02"))
-		if !seen[dir] {
-			t.Fatalf("codex-date-dirs-cover-utc-and-local rule violated: dir=%q absent dirs=%v localZone=%s", dir, dirs, time.Local)
+		loc := time.FixedZone(probe.name, probe.offset)
+		local := probe.now.In(loc)
+		if local.Format("2006-01-02") == probe.now.UTC().Format("2006-01-02") {
+			t.Fatalf("codex-date-dirs-probe-is-discriminating rule violated: probe=%q local=%s utc=%s share a date, so this probe cannot tell the two pairs apart",
+				probe.name, local.Format("2006-01-02"), probe.now.UTC().Format("2006-01-02"))
+		}
+		dirs := codexDateDirsIn(probe.now, loc)
+		if len(dirs) < 2 || len(dirs) > 4 {
+			t.Fatalf("codex-date-dirs-bounded rule violated: probe=%q dirs=%v count=%d want 2..4", probe.name, dirs, len(dirs))
+		}
+		seen := map[string]bool{}
+		for _, dir := range dirs {
+			if seen[dir] {
+				t.Fatalf("codex-date-dirs-deduped rule violated: probe=%q dir=%q repeated dirs=%v", probe.name, dir, dirs)
+			}
+			seen[dir] = true
+		}
+		for _, want := range []time.Time{
+			probe.now.UTC(), probe.now.UTC().AddDate(0, 0, -1),
+			local, local.AddDate(0, 0, -1),
+		} {
+			dir := filepath.Join(want.Format("2006"), want.Format("01"), want.Format("02"))
+			if !seen[dir] {
+				t.Fatalf("codex-date-dirs-cover-utc-and-local rule violated: probe=%q dir=%q absent dirs=%v", probe.name, dir, dirs)
+			}
 		}
 	}
 }
