@@ -1030,25 +1030,6 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 	if spaced.Location != spacedPath || spaced.Project != "Obsidian Vault" {
 		t.Fatalf("grok-spaced-cwd-is-reachable-by-roster-path rule violated: location=%q project=%q want=%q/%q", spaced.Location, spaced.Project, spacedPath, "Obsidian Vault")
 	}
-	// One, and exactly one: the entry with no summary.json on disk. This counter
-	// is what told us the spaced cwd was being lost in the first place, so it is
-	// pinned to a number rather than to zero -- a 2 here means the space is being
-	// dropped again, and a 0 means the counter has stopped seeing anything at
-	// all. Both readings are wrong and both are visible.
-	if skipped := scanner.skippedSummaries.Load(); skipped != 1 {
-		t.Fatalf("grok-unreadable-roster-summary-counted rule violated: skippedSummaries=%d want=1 (the entry with no summary.json, and NOT the spaced cwd %q) ids=%v", skipped, spacedCWD, nodeIDs(nodes))
-	}
-	if seen := countNodeID(nodes, mustGrokID(t, grokNoSummarySession)); seen != 0 {
-		t.Fatalf("grok-roster-entry-without-a-summary-publishes-nothing rule violated: session=%s count=%d ids=%v", grokNoSummarySession, seen, nodeIDs(nodes))
-	}
-
-	walked, ok := nodeByID(nodes, mustGrokID(t, grokDarkSession))
-	if !ok {
-		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: session=%s absent bucket=%q ids=%v", grokDarkSession, grokDiskEncode(walkedCWD), nodeIDs(nodes))
-	}
-	if walked.Location != walkedPath || walked.Project != "Heph Journal" {
-		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: location=%q project=%q want=%q/%q", walked.Location, walked.Project, walkedPath, "Heph Journal")
-	}
 	// The finding this fixture exists for. The session is found either way, so a
 	// presence check proves nothing; the loss an incomplete encoder used to cause
 	// was the CLAIM, because the roster entry stayed behind on a visit pointing
@@ -1070,6 +1051,25 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 			colonChild.State, colonChild.Location, graph.StateActive, colonChildPath)
 	}
 
+	// One, and exactly one: the entry with no summary.json on disk. This counter
+	// is what told us the spaced cwd was being lost in the first place, so it is
+	// pinned to a number rather than to zero -- a 2 here means the space is being
+	// dropped again, and a 0 means the counter has stopped seeing anything at
+	// all. Both readings are wrong and both are visible.
+	if skipped := scanner.skippedSummaries.Load(); skipped != 1 {
+		t.Fatalf("grok-unreadable-roster-summary-counted rule violated: skippedSummaries=%d want=1 (the entry with no summary.json, and NOT the spaced cwd %q) ids=%v", skipped, spacedCWD, nodeIDs(nodes))
+	}
+	if seen := countNodeID(nodes, mustGrokID(t, grokNoSummarySession)); seen != 0 {
+		t.Fatalf("grok-roster-entry-without-a-summary-publishes-nothing rule violated: session=%s count=%d ids=%v", grokNoSummarySession, seen, nodeIDs(nodes))
+	}
+
+	walked, ok := nodeByID(nodes, mustGrokID(t, grokDarkSession))
+	if !ok {
+		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: session=%s absent bucket=%q ids=%v", grokDarkSession, grokDiskEncode(walkedCWD), nodeIDs(nodes))
+	}
+	if walked.Location != walkedPath || walked.Project != "Heph Journal" {
+		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: location=%q project=%q want=%q/%q", walked.Location, walked.Project, walkedPath, "Heph Journal")
+	}
 	// Five, not seven: the two decoy buckets hold the same session id as the real
 	// one, so a scanner that read them all would still publish one node, and only
 	// the location and content assertions above can tell which file it read.
