@@ -1,0 +1,258 @@
+head: 7f76f4b8b3eb5921ea05482dfd9596148cf3d010
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+
+===== S-N1-prod expect=RED run=^TestNativeEmitOrderNodesBeforeEdges$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeEmitOrderNodesBeforeEdges (0.00s)
+    native_test.go:228: native-emit-order-nodes-before-edges rule violated: parentIdx=2 parentSeen=true childIdx=1 childSeen=true edgeIdx=0 kinds=[relationship_observed node_observed node_observed]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N1-prod: AS-PREDICTED
+S-N1-prod: restored, porcelain clean, focused test green again
+
+===== S-N1-weak expect=GREEN run=^TestNativeEmitOrderNodesBeforeEdges$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N1-weak: AS-PREDICTED
+S-N1-weak: restored, porcelain clean, focused test green again
+
+===== S-N2-prod expect=RED run=^TestNativeEventIDsDeterministicAcrossTicks$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeEventIDsDeterministicAcrossTicks (0.00s)
+    native_test.go:309: native-replay-identity-stable rule violated: tick2 event kind=node_observed actor=claude:session:11111111-2222-4333-8444-555555555555 id=c271a2077365c0f49f4d4be935abc152 absent from tick1 ids=4
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N2-prod: AS-PREDICTED
+S-N2-prod: restored, porcelain clean, focused test green again
+
+===== S-N2-weak expect=GREEN run=^TestNativeEventIDsDeterministicAcrossTicks$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N2-weak: AS-PREDICTED
+S-N2-weak: restored, porcelain clean, focused test green again
+
+===== S-N3-prod expect=RED run=^TestNativeIncarnationPrefersLiveProcess$
+plant diffstat:
+internal/native/native.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeIncarnationPrefersLiveProcess (0.00s)
+    native_test.go:394: native-incarnation-prefers-live-process rule violated: actor=claude:session:66666666-7777-4888-8999-aaaaaaaaaaaa incarnation=claude:invocation:66666666-7777-4888-8999-aaaaaaaaaaaa want=claude:proc:77:2002
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N3-prod: AS-PREDICTED
+S-N3-prod: restored, porcelain clean, focused test green again
+
+===== S-N3-weak expect=GREEN run=^TestNativeIncarnationPrefersLiveProcess$
+plant diffstat:
+internal/native/native.go      | 3 ---
+ internal/native/native_test.go | 1 -
+ 2 files changed, 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N3-weak: AS-PREDICTED
+S-N3-weak: restored, porcelain clean, focused test green again
+
+===== S-N4-prod expect=RED run=^TestNativeStateClaimGetsHeartbeatLane$
+plant diffstat:
+internal/native/native.go | 5 -----
+ 1 file changed, 5 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeStateClaimGetsHeartbeatLane (0.00s)
+    native_test.go:442: native-state-claim-gets-heartbeat-lane rule violated: heartbeats=0 want=1 kinds=[node_observed state_observed]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N4-prod: AS-PREDICTED
+S-N4-prod: restored, porcelain clean, focused test green again
+
+===== S-N4-weak expect=GREEN run=^TestNativeStateClaimGetsHeartbeatLane$
+plant diffstat:
+internal/native/native.go      |  5 -----
+ internal/native/native_test.go | 12 ------------
+ 2 files changed, 17 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N4-weak: AS-PREDICTED
+S-N4-weak: restored, porcelain clean, focused test green again
+
+===== S-N5-prod expect=RED run=^TestNativeExitWindowSkipsStaleTerminals$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeExitWindowSkipsStaleTerminals (0.00s)
+    native_test.go:497: native-exit-window-skips-stale-terminals rule violated: kind=node_observed actor=claude:session:11111111-2222-4333-8444-555555555555 target= exitAt=2026-08-31 06:50:00 +0000 UTC window=4m0s
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N5-prod: AS-PREDICTED
+S-N5-prod: restored, porcelain clean, focused test green again
+
+===== S-N5-weak expect=GREEN run=^TestNativeExitWindowSkipsStaleTerminals$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 8 +-------
+ 2 files changed, 2 insertions(+), 8 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N5-weak: AS-PREDICTED
+S-N5-weak: restored, porcelain clean, focused test green again
+
+===== S-N6-prod expect=RED run=^TestNativeRejectionDoesNotStopRun$
+plant diffstat:
+internal/native/native.go | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeRejectionDoesNotStopRun (0.00s)
+    native_test.go:555: native-rejection-counted rule violated: rejected=0 publishCalls=6
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-N6-prod: AS-PREDICTED
+S-N6-prod: restored, porcelain clean, focused test green again
+
+===== S-N6-weak expect=GREEN run=^TestNativeRejectionDoesNotStopRun$
+plant diffstat:
+internal/native/native.go      | 5 ++++-
+ internal/native/native_test.go | 2 +-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.003s
+S-N6-weak: AS-PREDICTED
+S-N6-weak: restored, porcelain clean, focused test green again
+
+===== S-N6b-prod expect=RED run=^TestNativeRejectionDoesNotStopRun$
+plant diffstat:
+internal/native/native.go | 3 +++
+ 1 file changed, 3 insertions(+)
+exit=1 wall=3.1s
+--- FAIL: TestNativeRejectionDoesNotStopRun (3.00s)
+    native_test.go:537: native-rejection-does-not-stop-run rule violated: scanCalls=1 want>=2 after 3s events=3
+FAIL
+FAIL	aitop/internal/native	3.002s
+FAIL
+S-N6b-prod: AS-PREDICTED
+S-N6b-prod: restored, porcelain clean, focused test green again
+
+===== S-N7-prod expect=RED run=^TestNativeDisplayBoundsAndUTF8$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeDisplayBoundsAndUTF8 (0.00s)
+    native_test.go:617: native-display-rune-boundary rule violated: bytes=120 want=126 validUTF8=true value="世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世世"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N7-prod: AS-PREDICTED
+S-N7-prod: restored, porcelain clean, focused test green again
+
+===== S-N7-weak expect=GREEN run=^TestNativeDisplayBoundsAndUTF8$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N7-weak: AS-PREDICTED
+S-N7-weak: restored, porcelain clean, focused test green again
+
+===== S-N7b-prod expect=RED run=^TestNativeDisplayBoundsAndUTF8$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeDisplayBoundsAndUTF8 (0.00s)
+    native_test.go:582: native-display-events-validate rule violated: invalid=[node-display rule violated: text-field rule violated: field=ProvenName bytes=128 limit=128 class=control codepoint=U+0000]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N7b-prod: AS-PREDICTED
+S-N7b-prod: restored, porcelain clean, focused test green again
+
+===== S-N8-prod expect=RED run=^TestNativeDescriptorValid$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeDescriptorValid (0.00s)
+    native_test.go:630: native-descriptor-accepted-by-shadow rule violated: err=collector descriptor capability rule violated: field=Capabilities length=4 class=unsorted descriptor={ID:aitop:native:claude Runtime:claude Schemas:[{Name:aitop-native Version:1}] Capabilities:[identity state spawn terminal]}
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-N8-prod: AS-PREDICTED
+S-N8-prod: restored, porcelain clean, focused test green again
+
+===== S-N8-weak expect=GREEN run=^TestNativeDescriptorValid$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 5 ++---
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-N8-weak: AS-PREDICTED
+S-N8-weak: restored, porcelain clean, focused test green again
+
+===== S-N9-prod expect=RED run=^TestNativeSpawnEdgeLandsInRealShadow$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=5.1s
+--- FAIL: TestNativeSpawnEdgeLandsInRealShadow (5.01s)
+    native_test.go:693: native-shadow-spawn-edge rule violated: no edge after 5s nodes=2 edges=0 published=4 rejected=0 scanCalls=1
+FAIL
+FAIL	aitop/internal/native	5.009s
+FAIL
+S-N9-prod: AS-PREDICTED
+S-N9-prod: restored, porcelain clean, focused test green again
+
+===== S-N9-weak expect=GREEN run=^TestNativeSpawnEdgeLandsInRealShadow$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 5 +++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+exit=0 wall=5.2s
+ok  	aitop/internal/native	5.010s
+S-N9-weak: AS-PREDICTED
+S-N9-weak: restored, porcelain clean, focused test green again
+
+===== SUMMARY
+S-N1-prod: AS-PREDICTED
+S-N1-weak: AS-PREDICTED
+S-N2-prod: AS-PREDICTED
+S-N2-weak: AS-PREDICTED
+S-N3-prod: AS-PREDICTED
+S-N3-weak: AS-PREDICTED
+S-N4-prod: AS-PREDICTED
+S-N4-weak: AS-PREDICTED
+S-N5-prod: AS-PREDICTED
+S-N5-weak: AS-PREDICTED
+S-N6-prod: AS-PREDICTED
+S-N6-weak: AS-PREDICTED
+S-N6b-prod: AS-PREDICTED
+S-N7-prod: AS-PREDICTED
+S-N7-weak: AS-PREDICTED
+S-N7b-prod: AS-PREDICTED
+S-N8-prod: AS-PREDICTED
+S-N8-weak: AS-PREDICTED
+S-N9-prod: AS-PREDICTED
+S-N9-weak: AS-PREDICTED
+total=20 as_predicted=20

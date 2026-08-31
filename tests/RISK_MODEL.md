@@ -1664,3 +1664,16 @@ For `TestRunInteractiveUsesSupervisorContext`, the full-Supervisor production
 plant plus removal of only the dynamic-capability assertion must falsely GREEN
 while callback invocation and Go-delegation remain. Combined diagnostic rows
 treat every named branch as a separate physical production plant.
+
+## Native provenance, Task 1 core (2026-08-31)
+
+| Risk | Test |
+|------|------|
+| Edge published before its endpoint nodes (reconciler drops it, no placeholder is created) | `native.TestNativeEmitOrderNodesBeforeEdges` (emission index order), `native.TestNativeSpawnEdgeLandsInRealShadow` (same claim judged by the production reconciler, single tick) |
+| recordID unstable across ticks (same replay key with a drifted fingerprint is `AdmissionCollision` plus a `GapCollision` that marks the source Partial) | `native.TestNativeEventIDsDeterministicAcrossTicks` |
+| Stale terminal churns the store (observed then instantly evicted, instead of never observed) | `native.TestNativeExitWindowSkipsStaleTerminals` (absence scan plus the `staleTerminals` skip counter, so an empty result cannot pass as a dead scanner) |
+| Saturation drop invisible (drops return no error, so only the disposition shows them) | `native.TestNativeRejectionDoesNotStopRun` (every disposition counted, and a rejecting sink never ends `Run`) |
+| Incarnation fight with the occupancy collector (a session bound to a live process must use that process's incarnation, children included) | `native.TestNativeIncarnationPrefersLiveProcess` |
+| Native state claim decays without a heartbeat lane inside `HookFreshness` | `native.TestNativeStateClaimGetsHeartbeatLane` |
+| Runtime-supplied display string rejected by the event validator (over 128 bytes, invalid UTF-8, control runes, or cut mid-rune) | `native.TestNativeDisplayBoundsAndUTF8` |
+| Malformed collector descriptor (unsorted or duplicate capabilities) fails `NewShadow` at construction | `native.TestNativeDescriptorValid` |

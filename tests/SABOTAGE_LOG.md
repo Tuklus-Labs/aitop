@@ -2057,3 +2057,52 @@ test re-run green after every restore. Driver and raw logs:
 16 counted cycles (8 production RED, 8 false GREEN, one recorded informative
 RED before S-T7's corrected weakening). All AS-PREDICTED; tree restored clean
 after every cycle.
+
+## Native provenance Task 1
+
+Nine tests in `internal/native/native_test.go` covering the shared native
+collector core (commits `5f8acc0`, `7f76f4b`). Production and test code were
+committed BEFORE any plant, because `git checkout --` discards uncommitted
+work. Twenty cycles in one epoch: eleven physical production mutations
+(predicted RED with a named phrase) and nine weakened-assertion mutations
+carrying the same production plant (predicted false GREEN). Every cycle proved
+the plant present (exact-match replace count == 1 per patch, non-empty
+`git diff`), ran the focused test with `-count=1`, restored with
+`git checkout --`, proved the restore (porcelain empty), and re-ran the focused
+test green. Driver and raw log: `sabotage_driver.py`,
+`sabotage_runs_native_task1.log` (archived in `tests/sabotage-native-task1/`).
+
+| ID / test | production mutation | observed | weakened assertion | observed | conclusion |
+|---|---|---|---|---|---|
+| S-N1 / `TestNativeEmitOrderNodesBeforeEdges` | `defer` the node publish in `emit`, so nodes land at function return instead of before the edges. Endpoints and incarnations stay correct; only the ORDER moves. Predicted RED. | RED: `native-emit-order-nodes-before-edges rule violated: parentIdx=2 parentSeen=true childIdx=1 childSeen=true edgeIdx=0 kinds=[relationship_observed node_observed node_observed]`. | Drop the index comparison from the guard, keep the presence checks. Predicted false GREEN. | PASS. | Load-bearing. Endpoint, incarnation, and payload assertions all hold under a wrong order; only the index comparison sees it. |
+| S-N2 / `TestNativeEventIDsDeterministicAcrossTicks` | Fold the tick time into the event id (`record+strconv.FormatInt(now.UnixNano(), 10)`). Predicted RED. | RED: `native-replay-identity-stable rule violated: tick2 event kind=node_observed actor=claude:session:1111... absent from tick1`. | Replace the tick2 membership test with `len(idsOne) == 0`. Predicted false GREEN. | PASS. | Load-bearing. Event counts, id distinctness, and heartbeat keys are all unmoved by a drifting replay key. |
+| S-N3 / `TestNativeIncarnationPrefersLiveProcess` | Stop walking `row.Children` in `processBindings`, so a subagent's own session never binds to its live process. Predicted RED. | RED: `native-incarnation-prefers-live-process rule violated: actor=claude:session:6666... incarnation=claude:invocation:6666...` (wanted the process incarnation). | Drop the nested-session row from the expectation table. Predicted false GREEN. | PASS. | Load-bearing. The top-level binding passes either way; only the child row witnesses the walk. |
+| S-N4 / `TestNativeStateClaimGetsHeartbeatLane` | Claim state without appending the heartbeat lane. Predicted RED. | RED: `native-state-claim-gets-heartbeat-lane rule violated: heartbeats=0 want=1 kinds=[node_observed state_observed]`. | Delete the three-assertion heartbeat block (count, lane identity, authority). Predicted false GREEN. | PASS. | Load-bearing. A single-site weakening cannot green this: with zero heartbeats the identity and authority assertions red on the zero Event, so the whole block had to go. The state-claim assertions alone certify nothing about decay. |
+| S-N5 / `TestNativeExitWindowSkipsStaleTerminals` | `terminalOutsideWindow` returns false, admitting terminals of any age. Predicted RED. | RED: `native-exit-window-skips-stale-terminals rule violated: kind=node_observed actor=claude:session:1111... exitAt=2026-08-31 06:50:00 +0000 UTC`. | Two sites: delete the stale-actor scan AND relax `staleTerminals != 1` to `> 1`. Predicted false GREEN. | PASS. | Load-bearing, and guarded by two orthogonal witnesses. The absence scan and the skip counter must BOTH be weakened, which is the point of the counter: zero events for a stale terminal is otherwise indistinguishable from a dead scanner. |
+| S-N6 / `TestNativeRejectionDoesNotStopRun` | Return early from `publish` on a sink error, so rejections stop being counted. Predicted RED. | RED: `native-rejection-counted rule violated: rejected=0 publishCalls=6`. | Relax `rejected != len(events) \|\| rejected == 0` to `rejected > len(events)`. Predicted false GREEN. | PASS. | Load-bearing. Run keeps looping under this plant, so the continuation assertions stay green; only the counter equality sees a blind disposition path. |
+| S-N6b / `TestNativeRejectionDoesNotStopRun` | Return from `Run` once `Rejected > 0` (the contract violation the test exists for). Predicted RED. | RED: `native-rejection-does-not-stop-run rule violated: scanCalls=1 want>=2 after 3s events=3`. | (production-only supplementary cycle) | n/a | Load-bearing. Proves the loop-continuation half separately from the counting half; the two are guarded by different assertions in one test. |
+| S-N7 / `TestNativeDisplayBoundsAndUTF8` | `maxDisplayBytes` 128 to 120. Events stay valid and control-free, so only the truncation point moves. Predicted RED. | RED: `native-display-rune-boundary rule violated: bytes=120 want=126 validUTF8=true`. | Relax `len != 126` to `len > 128`. Predicted false GREEN. | PASS. | Load-bearing. The exact-byte expectation is the only witness to cutting on a rune boundary; a `<= 128` bound admits any shorter cut. |
+| S-N7b / `TestNativeDisplayBoundsAndUTF8` | `unicode.IsControl(r)` to `unicode.IsSpace(r)`, retaining control runes. Predicted RED. | RED: `native-display-events-validate rule violated: invalid=[node-display rule violated: text-field rule violated: field=ProvenName bytes=128 limit=128 class=control codepoint=U+0000]`. | (production-only supplementary cycle) | n/a | Load-bearing, and it fires through the fake sink's `Validate` call rather than through a bespoke assertion. The recording sink validating exactly as the real Store does is what makes this visible. |
+| S-N8 / `TestNativeDescriptorValid` | Swap `CapabilityState` and `CapabilitySpawn` so the declared capabilities are unsorted. Predicted RED. | RED: `native-descriptor-accepted-by-shadow rule violated: err=collector descriptor capability rule violated: field=Capabilities length=4 class=unsorted`. | Swallow the `NewShadow` error into `_`. Predicted false GREEN. | PASS. | Load-bearing. Descriptor identity assertions pass on a malformed descriptor; only constructing the real Shadow enforces the ordering rules. |
+| S-N9 / `TestNativeSpawnEdgeLandsInRealShadow` | Same `defer` plant as S-N1, judged by the real reconciler instead of a fake sink. Predicted RED. | RED: `native-shadow-spawn-edge rule violated: no edge after 5s nodes=2 edges=0 published=4 rejected=0 scanCalls=1`. | Deadline arm returns instead of `t.Fatalf`. Predicted false GREEN. | PASS. | Load-bearing. Same one-word plant, second independent witness: the fake sink sees a wrong index order, the production reconciler drops the edge outright. |
+
+20 counted cycles (11 production RED, 9 false GREEN). All AS-PREDICTED; tree
+restored porcelain-clean and focused-test green after every cycle.
+
+### Instrument repair found by this epoch (`7f76f4b`)
+
+S-N9's first run came back MISMATCH: the `defer` plant left
+`TestNativeSpawnEdgeLandsInRealShadow` GREEN. The collector polled every 20 ms
+and the test waited five seconds for an edge, so a broken emission order healed
+on the next tick, when the endpoints were already in the store from the
+previous one. The gate had no discriminating power over the exact property it
+was written to certify. Fixed by pinning the interval above the deadline so
+exactly one tick runs (`scanCalls=1` in the RED output proves it), then
+re-running the whole epoch from scratch on the corrected tree.
+
+The same run corrected a second belief: the test asserted `Disp().Rejected == 0`
+as if it could witness a rejected edge. The RED shows `published=4 rejected=0`
+with the edge absent, because endpoint identity is checked in `reconcile.go`
+(`AdmissionEndpointIdentity`), while `Disp()` counts store admission
+dispositions only. That assertion is kept, but it certifies clean admission,
+never endpoint acceptance; the snapshot content is the only witness for that.
