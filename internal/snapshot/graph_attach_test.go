@@ -414,3 +414,35 @@ func TestSchema2WritesUnclaimedStateAsUnknown(t *testing.T) {
 		t.Fatalf("schema-2-unclaimed-state-invents-no-since rule violated: since=%q", state.Since)
 	}
 }
+
+// TestAttachGraphResolvesRelativeHomes pins the rule Task 3 left to the caller.
+// A native sighting's Location is the absolute path of the file the fact came
+// from, and that Location joins the record digest in the event id: a relative
+// home would make a node's identity a function of the process's working
+// directory, so the same session observed from two directories would publish
+// the same fact under two ids and neither would replay against the other.
+//
+// The empty case is the disable switch and must survive untouched, because
+// filepath.Abs("") returns the working directory rather than the empty string,
+// which would register a collector on the repo the operator happens to be in.
+func TestAttachGraphResolvesRelativeHomes(t *testing.T) {
+	got, err := absHome(filepath.Join(".claude", "sessions"))
+	if err != nil {
+		t.Fatalf("attach-home-resolves rule violated: err=%v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Fatalf("attach-home-is-absolute rule violated: home=%q", got)
+	}
+	if !strings.HasSuffix(got, filepath.Join(".claude", "sessions")) {
+		t.Fatalf("attach-home-keeps-what-it-was-given rule violated: home=%q", got)
+	}
+
+	already := t.TempDir()
+	if got, err := absHome(already); err != nil || got != already {
+		t.Fatalf("attach-home-leaves-an-absolute-home-alone rule violated: home=%q want=%q err=%v", got, already, err)
+	}
+
+	if got, err := absHome(""); err != nil || got != "" {
+		t.Fatalf("attach-empty-home-stays-empty rule violated: home=%q err=%v", got, err)
+	}
+}
