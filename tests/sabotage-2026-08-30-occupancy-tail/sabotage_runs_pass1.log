@@ -1,0 +1,166 @@
+
+===== S-T1-prod expect=RED pkg=./internal/graph run=^TestOccupancyEventsFromRowsIdleIsUnknownPassive$
+plant diffstat:
+internal/graph/occupancy.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestOccupancyEventsFromRowsIdleIsUnknownPassive (0.00s)
+    occupancy_test.go:30: occupancy-passive-idle-is-unknown rule violated: state={active 0s }
+FAIL
+FAIL	aitop/internal/graph	0.001s
+FAIL
+S-T1-prod: AS-PREDICTED
+S-T1-prod: restored, focused test green again
+
+===== S-T1-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyEventsFromRowsIdleIsUnknownPassive$
+plant diffstat:
+internal/graph/occupancy.go      | 2 +-
+ internal/graph/occupancy_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0
+ok  	aitop/internal/graph	0.001s
+S-T1-weak: AS-PREDICTED
+S-T1-weak: restored, focused test green again
+
+===== S-T2-prod expect=RED pkg=./internal/graph run=^TestOccupancyEventsFromRowsEmitsPassiveProcessNode$
+plant diffstat:
+internal/graph/occupancy.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestOccupancyEventsFromRowsEmitsPassiveProcessNode (0.00s)
+    occupancy_test.go:80: occupancy-passive-node-id rule violated: actor=proc:43:1001 want=proc:42:1001
+FAIL
+FAIL	aitop/internal/graph	0.001s
+FAIL
+S-T2-prod: AS-PREDICTED
+S-T2-prod: restored, focused test green again
+
+===== S-T2-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyEventsFromRowsEmitsPassiveProcessNode$
+plant diffstat:
+internal/graph/occupancy.go      | 2 +-
+ internal/graph/occupancy_test.go | 4 +---
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+exit=0
+ok  	aitop/internal/graph	0.001s
+S-T2-weak: AS-PREDICTED
+S-T2-weak: restored, focused test green again
+
+===== S-T3-prod expect=RED pkg=./internal/graph run=^TestOccupancyEventsFromRowsSkipsIgnoreAndUnknownRuntime$
+plant diffstat:
+internal/graph/occupancy.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestOccupancyEventsFromRowsSkipsIgnoreAndUnknownRuntime (0.00s)
+    occupancy_test.go:105: occupancy-skip-ignore-unknown-runtime rule violated: events=2 want=0
+FAIL
+FAIL	aitop/internal/graph	0.001s
+FAIL
+S-T3-prod: AS-PREDICTED
+S-T3-prod: restored, focused test green again
+
+===== S-T3-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyEventsFromRowsSkipsIgnoreAndUnknownRuntime$
+plant diffstat:
+internal/graph/occupancy.go      | 2 +-
+ internal/graph/occupancy_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0
+ok  	aitop/internal/graph	0.001s
+S-T3-weak: AS-PREDICTED
+S-T3-weak: restored, focused test green again
+
+===== S-T4-prod expect=RED pkg=./internal/graph run=^TestOccupancyEventsFromRowsWalksChildren$
+plant diffstat:
+internal/graph/occupancy.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1
+--- FAIL: TestOccupancyEventsFromRowsWalksChildren (0.00s)
+    occupancy_test.go:127: occupancy-walks-children rule violated: actors=map[proc:10:10:true] parent=proc:10:10 child=proc:11:11
+FAIL
+FAIL	aitop/internal/graph	0.001s
+FAIL
+S-T4-prod: AS-PREDICTED
+S-T4-prod: restored, focused test green again
+
+===== S-T4-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyEventsFromRowsWalksChildren$
+plant diffstat:
+internal/graph/occupancy.go      | 3 ---
+ internal/graph/occupancy_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0
+ok  	aitop/internal/graph	0.001s
+S-T4-weak: AS-PREDICTED
+S-T4-weak: restored, focused test green again
+
+===== S-T5-prod expect=RED pkg=./internal/graph run=^TestOccupancyEventsFromRowsUsesSessionIDWhenValid$
+plant diffstat:
+internal/graph/occupancy.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestOccupancyEventsFromRowsUsesSessionIDWhenValid (0.00s)
+    occupancy_test.go:153: occupancy-session-id-node rule violated: want actor=claude:session:abc123
+FAIL
+FAIL	aitop/internal/graph	0.001s
+FAIL
+S-T5-prod: AS-PREDICTED
+S-T5-prod: restored, focused test green again
+
+===== S-T5-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyEventsFromRowsUsesSessionIDWhenValid$
+plant diffstat:
+internal/graph/occupancy.go      | 2 +-
+ internal/graph/occupancy_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0
+ok  	aitop/internal/graph	0.001s
+S-T5-weak: AS-PREDICTED
+S-T5-weak: restored, focused test green again
+
+===== S-T6-prod expect=RED pkg=./internal/graph run=^TestOccupancyCollectorPublishesIntoShadow$
+plant diffstat:
+internal/graph/occupancy.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestOccupancyCollectorPublishesIntoShadow (2.00s)
+    occupancy_test.go:200: occupancy-shadow-publish rule violated: nodes still empty after wait snapshot=&{2026-08-30 23:42:35.451086337 -0700 PDT m=+0.000198257 [] [] [] 0 0 0 0}
+FAIL
+FAIL	aitop/internal/graph	2.003s
+FAIL
+S-T6-prod: AS-PREDICTED
+S-T6-prod: restored, focused test green again
+
+===== S-T6-weak expect=GREEN pkg=./internal/graph run=^TestOccupancyCollectorPublishesIntoShadow$
+plant diffstat:
+internal/graph/occupancy.go      | 2 +-
+ internal/graph/occupancy_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0
+ok  	aitop/internal/graph	2.002s
+S-T6-weak: AS-PREDICTED
+S-T6-weak: restored, focused test green again
+
+===== S-T7-prod expect=RED pkg=./cmd/aitop run=^TestProductionCaptureOncePublishesGraph$
+plant diffstat:
+cmd/aitop/main.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1
+--- FAIL: TestProductionCaptureOncePublishesGraph (0.16s)
+    main_test.go:817: production-capture-once-publishes-graph rule violated: mappableRows=28 graphNodes=0
+FAIL
+FAIL	aitop/cmd/aitop	0.160s
+FAIL
+S-T7-prod: AS-PREDICTED
+S-T7-prod: restored, focused test green again
+
+===== S-T7-weak expect=GREEN pkg=./cmd/aitop run=^TestProductionCaptureOncePublishesGraph$
+plant diffstat:
+cmd/aitop/main.go      |  2 +-
+ cmd/aitop/main_test.go | 12 ++++--------
+ 2 files changed, 5 insertions(+), 9 deletions(-)
+exit=1
+--- FAIL: TestProductionCaptureOncePublishesGraph (0.16s)
+    main_test.go:817: production-capture-once-publishes-graph rule violated: mappableRows=28 graphNodes=0
+FAIL
+FAIL	aitop/cmd/aitop	0.160s
+FAIL
+S-T7-weak: MISMATCH
+S-T7-weak: restored, focused test green again
+STOP on mismatch for inspection

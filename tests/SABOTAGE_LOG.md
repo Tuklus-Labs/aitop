@@ -2031,3 +2031,29 @@ never `git checkout --` of uncommitted implementation.
 
 Every topic has a named production/assertion pair in the archive. No summary-only
 rows remain on the minimum list. Task 12 planted 0 additional pairs.
+
+## Addendum 2026-08-30: occupancy wiring tail (post-Task-12 commits da342c0, 06b0f01, ae33062)
+
+The three tail commits added eight tests (`internal/graph/occupancy_test.go`,
+`cmd/aitop/main_test.go` occupancy pair) after the Task 12 evidence commit, so
+they carried no sabotage proof. Two physical mutations per test, run focused
+with `-count=1`, plant proven by exact-match replace (count=1) plus non-empty
+`git diff`, restored with `git checkout --` and porcelain-empty check, focused
+test re-run green after every restore. Driver and raw logs:
+`sabotage_driver.py`, `sabotage_runs_pass1.log`, `sabotage_runs_pass2.log`
+(archived in `tests/sabotage-2026-08-30-occupancy-tail/`).
+
+| ID / test | production mutation | observed | weakened assertion | observed | conclusion |
+|---|---|---|---|---|---|
+| S-T1 / `TestOccupancyEventsFromRowsIdleIsUnknownPassive` | `occupancyState` default returns `StateActive`. Predicted RED. | RED: `occupancy-passive-idle-is-unknown rule violated: state={active 0s }`. | `\|\|` to `&&` in the type/state condition. Predicted false GREEN. | PASS. | Load-bearing. Passive idle must stay unknown; nothing else asserts the default arm. |
+| S-T2 / `TestOccupancyEventsFromRowsEmitsPassiveProcessNode` | `PassiveProcessID(PID+1, start)` in `occupancyIdentity`. Predicted RED here plus collateral in walks-children and collector-shadow (shared claim). | RED: `occupancy-passive-node-id rule violated`. | Delete the actor-equality block. Predicted false GREEN. | PASS. | Load-bearing. Mode/authority/validate cannot pin the actor identity. |
+| S-T3 / `TestOccupancyEventsFromRowsSkipsIgnoreAndUnknownRuntime` | Drop `!validRole(role)` from the skip guard. Predicted RED. | RED: `occupancy-skip-ignore-unknown-runtime rule violated: events=2 want=0`. | Weaken `!= 0` to `> 3`. Predicted false GREEN (ignore row emits 2). | PASS. | Load-bearing. The zero-events bound is the only role-skip witness. |
+| S-T4 / `TestOccupancyEventsFromRowsWalksChildren` | Remove the recursive `walk(row.Children)`. Predicted RED. | RED: `occupancy-walks-children rule violated`. | Drop the child actor from the condition. Predicted false GREEN. | PASS. | Load-bearing. Parent-only assertion cannot see subagent rows. |
+| S-T5 / `TestOccupancyEventsFromRowsUsesSessionIDWhenValid` | Invert session guard to `SessionID == ""`. Predicted RED. | RED: `occupancy-session-id-node rule violated`. | Drop `ev.Actor == want` from the found criteria. Predicted false GREEN. | PASS. | Load-bearing. A node existing is not the session-identity claim. |
+| S-T6 / `TestOccupancyCollectorPublishesIntoShadow` | `publish` drops `sink.Publish`. Predicted RED after the 2s deadline. | RED: `occupancy-shadow-publish rule violated: nodes still empty after wait`. | Deadline arm returns instead of Fatalf. Predicted false GREEN. | PASS. | Load-bearing. A silent timeout would certify a dead collector-to-shadow pipe. |
+| S-T7 / `TestProductionCaptureOncePublishesGraph` | Drop `snap.Graph = shadow.Snapshot()` reassignment in `productionCaptureOnce`. Predicted RED. | RED: `production-capture-once-publishes-graph rule violated: mappableRows=28 graphNodes=0`. | Attempt 1: guard nil-graph derefs defensively; predicted false GREEN, observed RED on the same mappable-rows site (informative: the engine also publishes a graph pointer per tick, so `snap.Graph` stays non-nil and only the row-to-node cardinality assertion sees the dropped reassignment). Attempt 2: delete the mappable-rows assertion; predicted false GREEN. | Attempt 1 RED; attempt 2 PASS. | Load-bearing, and the load sits on `mappableRows>0 && nodes==0`, not on the nil checks. |
+| S-T8 / `TestProductionRunInteractiveRegistersGraph` | Always take the goroutine fallback, never `reg.Go("graph", ...)`. Predicted RED. | RED: `production-run-interactive-registers-graph rule violated: n=0`. | Delete the registrar assertion, keep the timeout branch. Predicted false GREEN. | PASS. | Load-bearing. Prompt return on cancel does not prove supervisor ownership of the shadow task. |
+
+16 counted cycles (8 production RED, 8 false GREEN, one recorded informative
+RED before S-T7's corrected weakening). All AS-PREDICTED; tree restored clean
+after every cycle.

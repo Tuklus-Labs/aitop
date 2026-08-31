@@ -3612,3 +3612,14 @@ timeout/name/control state.
 Task 12 loudness result: 102 Task-10/unaudited sites PASS after 11
 assertion-message repairs, zero failures, zero exemptions. Prior-task
 audits remain the record for already-closed graph/JSON files.
+
+## Addendum 2026-08-30: occupancy wiring tail
+
+Audited files and sites (post-Task-12 commits, not covered above):
+`internal/graph/occupancy_test.go` lines 26, 30, 34, 58, 70, 73, 77, 80, 83,
+86, 90, 93, 105, 127, 141, 148, 153, 166, 182, 188, 194, 200, 202 (23 sites);
+`cmd/aitop/main_test.go` lines 808, 811, 814, 817, 825, 841, 844 (7 sites,
+the two occupancy tests added at the tail). Every failure path names a
+present-tense rule with a unique greppable phrase and prints the offending
+state (actor/want, event counts, node counts, mappable-row cardinality,
+registrar counters). 30 sites PASS, zero repairs, zero exemptions.

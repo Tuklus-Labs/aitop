@@ -1,0 +1,39 @@
+
+===== S-T7-weak expect=GREEN pkg=./cmd/aitop run=^TestProductionCaptureOncePublishesGraph$
+plant diffstat:
+cmd/aitop/main.go      | 2 +-
+ cmd/aitop/main_test.go | 3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0
+ok  	aitop/cmd/aitop	0.159s
+S-T7-weak: AS-PREDICTED
+S-T7-weak: restored, focused test green again
+
+===== S-T8-prod expect=RED pkg=./cmd/aitop run=^TestProductionRunInteractiveRegistersGraph$
+plant diffstat:
+cmd/aitop/main.go | 8 +-------
+ 1 file changed, 1 insertion(+), 7 deletions(-)
+exit=1
+--- FAIL: TestProductionRunInteractiveRegistersGraph (0.04s)
+    main_test.go:841: production-run-interactive-registers-graph rule violated: n=0 name= runNil=true err=could not open a new TTY: open /dev/tty: no such device or address
+FAIL
+FAIL	aitop/cmd/aitop	0.046s
+FAIL
+S-T8-prod: AS-PREDICTED
+S-T8-prod: restored, focused test green again
+
+===== S-T8-weak expect=GREEN pkg=./cmd/aitop run=^TestProductionRunInteractiveRegistersGraph$
+plant diffstat:
+cmd/aitop/main.go      | 8 +-------
+ cmd/aitop/main_test.go | 4 +---
+ 2 files changed, 2 insertions(+), 10 deletions(-)
+exit=0
+ok  	aitop/cmd/aitop	0.047s
+S-T8-weak: AS-PREDICTED
+S-T8-weak: restored, focused test green again
+
+===== SUMMARY
+S-T7-weak: AS-PREDICTED
+S-T8-prod: AS-PREDICTED
+S-T8-weak: AS-PREDICTED
+total=3 as_predicted=3
