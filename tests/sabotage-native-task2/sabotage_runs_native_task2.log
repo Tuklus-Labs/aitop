@@ -1,0 +1,478 @@
+head: ee13dc73522cd71173b2ec704b97fdec5326f600
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+
+===== S-C1a-prod expect=RED run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerFindsSidecarPrimaries (0.00s)
+    claude_test.go:188: claude-sidecar-primary-count rule violated: nodes=0 want=2 ids=[]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C1a-prod: AS-PREDICTED
+S-C1a-prod: restored, porcelain clean, focused test green again
+
+===== S-C1b-prod expect=RED run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerFindsSidecarPrimaries (0.00s)
+    claude_test.go:206: claude-sidecar-location-is-source-file rule violated: location="/tmp/TestClaudeScannerFindsSidecarPrimaries1296091307/001/sessions" want="/tmp/TestClaudeScannerFindsSidecarPrimaries1296091307/001/sessions/1450932.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C1b-prod: AS-PREDICTED
+S-C1b-prod: restored, porcelain clean, focused test green again
+
+===== S-C1b-weak expect=GREEN run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-C1b-weak: AS-PREDICTED
+S-C1b-weak: restored, porcelain clean, focused test green again
+
+===== S-C1c-prod expect=RED run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerFindsSidecarPrimaries (0.00s)
+    claude_test.go:209: claude-sidecar-startedat-from-epoch-ms rule violated: startedAt=58633-10-21 04:33:21 +0000 UTC want=1788136922001
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C1c-prod: AS-PREDICTED
+S-C1c-prod: restored, porcelain clean, focused test green again
+
+===== S-C1c-weak expect=GREEN run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C1c-weak: AS-PREDICTED
+S-C1c-weak: restored, porcelain clean, focused test green again
+
+===== S-C1d-prod expect=RED run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeScannerFindsSidecarPrimaries (0.00s)
+    claude_test.go:191: claude-sidecar-skips-counted rule violated: skippedSidecars=0 want=2 ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:session:8ad6c366-70de-429c-98bf-a1c350d6ac31]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C1d-prod: AS-PREDICTED
+S-C1d-prod: restored, porcelain clean, focused test green again
+
+===== S-C1d-weak expect=GREEN run=^TestClaudeScannerFindsSidecarPrimaries$
+plant diffstat:
+internal/native/claude.go      | 1 -
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-C1d-weak: AS-PREDICTED
+S-C1d-weak: restored, porcelain clean, focused test green again
+
+===== S-C2a-prod expect=RED run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeScannerEmitsAgentSpawnChain (0.00s)
+    claude_test.go:312: claude-spawn-parent-from-parentagentid rule violated: parentID="claude:session:8ad6c366-70de-429c-98bf-a1c350d6ac31" parentSessionID="alane1r-architect-b8b06ac8c091add8" want="claude:agent:8ad6c366-70de-429c-98bf-a1c350d6ac31:alane1r-architect-b8b06ac8c091add8"/"alane1r-architect-b8b06ac8c091add8"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C2a-prod: AS-PREDICTED
+S-C2a-prod: restored, porcelain clean, focused test green again
+
+===== S-C2a-weak expect=GREEN run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go      | 3 ---
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.003s
+S-C2a-weak: AS-PREDICTED
+S-C2a-weak: restored, porcelain clean, focused test green again
+
+===== S-C2b-prod expect=RED run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeScannerEmitsAgentSpawnChain (0.00s)
+    claude_test.go:285: claude-agent-name-falls-back-to-type rule violated: name="" model="" want="Explore"/""
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C2b-prod: AS-PREDICTED
+S-C2b-prod: restored, porcelain clean, focused test green again
+
+===== S-C2b-weak expect=GREEN run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-C2b-weak: AS-PREDICTED
+S-C2b-weak: restored, porcelain clean, focused test green again
+
+===== S-C2c-prod expect=RED run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerEmitsAgentSpawnChain (0.00s)
+    claude_test.go:297: claude-spawn-relationship-is-agent-id rule violated: relationship="claude:agent:8ad6c366-70de-429c-98bf-a1c350d6ac31:alane1r-architect-b8b06ac8c091add8" childSessionID="alane1r-architect-b8b06ac8c091add8" want="alane1r-architect-b8b06ac8c091add8"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C2c-prod: AS-PREDICTED
+S-C2c-prod: restored, porcelain clean, focused test green again
+
+===== S-C2c-weak expect=GREEN run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-C2c-weak: AS-PREDICTED
+S-C2c-weak: restored, porcelain clean, focused test green again
+
+===== S-C2c-shadow expect=RED run=^TestClaudeCollectorLandsChainInRealShadow$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=5.2s
+--- FAIL: TestClaudeCollectorLandsChainInRealShadow (5.01s)
+    claude_test.go:603: claude-shadow-spawn-chain rule violated: fewer than 2 edges after 5s nodes=3 edges=0 published=4 rejected=0
+FAIL
+FAIL	aitop/internal/native	5.011s
+FAIL
+S-C2c-shadow: AS-PREDICTED
+S-C2c-shadow: restored, porcelain clean, focused test green again
+
+===== S-C2d-prod expect=RED run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerEmitsAgentSpawnChain (0.00s)
+    claude_test.go:272: claude-agent-project-from-live-parent rule violated: project="" want="aitop"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C2d-prod: AS-PREDICTED
+S-C2d-prod: restored, porcelain clean, focused test green again
+
+===== S-C2d-weak expect=GREEN run=^TestClaudeScannerEmitsAgentSpawnChain$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C2d-weak: AS-PREDICTED
+S-C2d-weak: restored, porcelain clean, focused test green again
+
+===== S-C3a-prod expect=RED run=^TestClaudeScannerHorizonSkipsStale$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerHorizonSkipsStale (0.00s)
+    claude_test.go:356: claude-horizon-admits-recent-activity rule violated: id=claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:amixed00000000000 absent ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:anojsonl000000000]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C3a-prod: AS-PREDICTED
+S-C3a-prod: restored, porcelain clean, focused test green again
+
+===== S-C3a-weak expect=GREEN run=^TestClaudeScannerHorizonSkipsStale$
+plant diffstat:
+internal/native/claude.go      | 3 ---
+ internal/native/claude_test.go | 5 +----
+ 2 files changed, 1 insertion(+), 7 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C3a-weak: AS-PREDICTED
+S-C3a-weak: restored, porcelain clean, focused test green again
+
+===== S-C3b-prod expect=RED run=^TestClaudeScannerHorizonSkipsStale$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerHorizonSkipsStale (0.00s)
+    claude_test.go:365: claude-horizon-skips-stale rule violated: id=claude:session:8ad6c366-70de-429c-98bf-a1c350d6ac31 present horizon=1h0m0s ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:session:8ad6c366-70de-429c-98bf-a1c350d6ac31 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:amixed00000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:anojsonl000000000]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C3b-prod: AS-PREDICTED
+S-C3b-prod: restored, porcelain clean, focused test green again
+
+===== S-C3b-weak expect=GREEN run=^TestClaudeScannerHorizonSkipsStale$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 3 +--
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C3b-weak: AS-PREDICTED
+S-C3b-weak: restored, porcelain clean, focused test green again
+
+===== S-C3c-prod expect=RED run=^TestClaudeScannerHorizonSkipsStale$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerHorizonSkipsStale (0.00s)
+    claude_test.go:365: claude-horizon-skips-stale rule violated: id=claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:astale00000000000 present horizon=1h0m0s ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:amixed00000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:anojsonl000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:astale00000000000]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C3c-prod: AS-PREDICTED
+S-C3c-prod: restored, porcelain clean, focused test green again
+
+===== S-C4a-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:414: claude-quiet-child-makes-no-claim rule violated: state="active" exit="" window=5m0s
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C4a-prod: AS-PREDICTED
+S-C4a-prod: restored, porcelain clean, focused test green again
+
+===== S-C4a-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C4a-weak: AS-PREDICTED
+S-C4a-weak: restored, porcelain clean, focused test green again
+
+===== S-C4b-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:425: claude-orphan-exitat-is-last-activity rule violated: exitAt=2026-08-30 23:54:00 -0700 PDT want=2026-08-31 06:59:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C4b-prod: AS-PREDICTED
+S-C4b-prod: restored, porcelain clean, focused test green again
+
+===== S-C4b-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-C4b-weak: AS-PREDICTED
+S-C4b-weak: restored, porcelain clean, focused test green again
+
+===== S-C4c-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:422: claude-orphan-child-vanishes rule violated: exit="" state="" want="vanished"/""
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C4c-prod: AS-PREDICTED
+S-C4c-prod: restored, porcelain clean, focused test green again
+
+===== S-C5a-prod expect=RED run=^TestClaudeScannerAgentIDFromFilename$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerAgentIDFromFilename (0.00s)
+    claude_test.go:493: claude-agent-id-from-filename rule violated: sessionID="9646f67b-0120-4d1e-836e-2e21fc16d80c" want="aapi-scout-d8c49c78d4a1fab2" id=claude:agent:9646f67b-0120-4d1e-836e-2e21fc16d80c:aapi-scout-d8c49c78d4a1fab2
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C5a-prod: AS-PREDICTED
+S-C5a-prod: restored, porcelain clean, focused test green again
+
+===== S-C5a-weak expect=GREEN run=^TestClaudeScannerAgentIDFromFilename$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 5 +----
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C5a-weak: AS-PREDICTED
+S-C5a-weak: restored, porcelain clean, focused test green again
+
+===== S-C5b-prod expect=RED run=^TestClaudeScannerAgentIDFromFilename$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerAgentIDFromFilename (0.00s)
+    claude_test.go:490: claude-agent-id-from-filename rule violated: agent=aapi-scout-d8c49c78d4a1fab2 absent ids=[claude:session:9646f67b-0120-4d1e-836e-2e21fc16d80c claude:agent:9646f67b-0120-4d1e-836e-2e21fc16d80c:agent-a2045f6a2f6cc8f6a claude:agent:9646f67b-0120-4d1e-836e-2e21fc16d80c:agent-aapi-scout-d8c49c78d4a1fab2]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C5b-prod: AS-PREDICTED
+S-C5b-prod: restored, porcelain clean, focused test green again
+
+===== S-C5c-prod expect=RED run=^TestClaudeScannerAgentIDFromFilename$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerAgentIDFromFilename (0.00s)
+    claude_test.go:490: claude-agent-id-from-filename rule violated: agent=aapi-scout-d8c49c78d4a1fab2 absent ids=[claude:session:9646f67b-0120-4d1e-836e-2e21fc16d80c claude:session:9646f67b-0120-4d1e-836e-2e21fc16d80c claude:session:9646f67b-0120-4d1e-836e-2e21fc16d80c]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C5c-prod: AS-PREDICTED
+S-C5c-prod: restored, porcelain clean, focused test green again
+
+===== S-C6a-prod expect=RED run=^TestClaudeCollectorLandsChainInRealShadow$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeCollectorLandsChainInRealShadow (0.11s)
+    claude_test.go:585: claude-shadow-spawn-chain rule violated: child=claude:agent:8ad6c366-70de-429c-98bf-a1c350d6ac31:a2045f6a2f6cc8f6a source=claude:session:8ad6c366-70de-429c-98bf-a1c350d6ac31 type=spawn provenance=native wantSource=claude:agent:8ad6c366-70de-429c-98bf-a1c350d6ac31:alane1r-architect-b8b06ac8c091add8
+FAIL
+FAIL	aitop/internal/native	0.112s
+FAIL
+S-C6a-prod: AS-PREDICTED
+S-C6a-prod: restored, porcelain clean, focused test green again
+
+===== S-C6a-weak expect=GREEN run=^TestClaudeCollectorLandsChainInRealShadow$
+plant diffstat:
+internal/native/claude.go      | 3 ---
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.112s
+S-C6a-weak: AS-PREDICTED
+S-C6a-weak: restored, porcelain clean, focused test green again
+
+===== S-C6b-prod expect=RED run=^TestClaudeCollectorLandsChainInRealShadow$
+plant diffstat:
+internal/native/claude.go | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeCollectorLandsChainInRealShadow (0.11s)
+    claude_test.go:593: claude-shadow-node-content rule violated: role="subagent" provenName="lane1r-architect" state="" want="subagent"/"lane1r-architect"/"active"
+FAIL
+FAIL	aitop/internal/native	0.112s
+FAIL
+S-C6b-prod: AS-PREDICTED
+S-C6b-prod: restored, porcelain clean, focused test green again
+
+===== S-C6b-weak expect=GREEN run=^TestClaudeCollectorLandsChainInRealShadow$
+plant diffstat:
+internal/native/claude.go      | 4 +---
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.111s
+S-C6b-weak: AS-PREDICTED
+S-C6b-weak: restored, porcelain clean, focused test green again
+
+===== S-C7a-prod expect=RED run=^TestNativeSpawnRelationshipSeamGuard$
+plant diffstat:
+internal/native/native.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestNativeSpawnRelationshipSeamGuard (0.00s)
+    native_test.go:667: native-spawn-relationship-seam-guard rule violated: relationshipEvents=2 want=1 kinds=[node_observed node_observed relationship_observed relationship_observed]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C7a-prod: AS-PREDICTED
+S-C7a-prod: restored, porcelain clean, focused test green again
+
+===== S-C7a-weak expect=GREEN run=^TestNativeSpawnRelationshipSeamGuard$
+plant diffstat:
+internal/native/native.go      | 2 +-
+ internal/native/native_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-C7a-weak: AS-PREDICTED
+S-C7a-weak: restored, porcelain clean, focused test green again
+
+===== S-C7b-prod expect=RED run=^TestNativeSpawnRelationshipSeamGuard$
+plant diffstat:
+internal/native/native.go | 4 ----
+ 1 file changed, 4 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestNativeSpawnRelationshipSeamGuard (0.00s)
+    native_test.go:664: native-emitted-events-validate rule violated: invalid=[relationship-id rule violated: field=Relationship bytes=0 limit=64 class=empty relationship-id rule violated: field=Relationship bytes=65 limit=64 class=too-long] kinds=[node_observed node_observed relationship_observed relationship_observed relationship_observed relationship_observed]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-C7b-prod: AS-PREDICTED
+S-C7b-prod: restored, porcelain clean, focused test green again
+
+===== SUMMARY
+S-C1a-prod: AS-PREDICTED
+S-C1b-prod: AS-PREDICTED
+S-C1b-weak: AS-PREDICTED
+S-C1c-prod: AS-PREDICTED
+S-C1c-weak: AS-PREDICTED
+S-C1d-prod: AS-PREDICTED
+S-C1d-weak: AS-PREDICTED
+S-C2a-prod: AS-PREDICTED
+S-C2a-weak: AS-PREDICTED
+S-C2b-prod: AS-PREDICTED
+S-C2b-weak: AS-PREDICTED
+S-C2c-prod: AS-PREDICTED
+S-C2c-weak: AS-PREDICTED
+S-C2c-shadow: AS-PREDICTED
+S-C2d-prod: AS-PREDICTED
+S-C2d-weak: AS-PREDICTED
+S-C3a-prod: AS-PREDICTED
+S-C3a-weak: AS-PREDICTED
+S-C3b-prod: AS-PREDICTED
+S-C3b-weak: AS-PREDICTED
+S-C3c-prod: AS-PREDICTED
+S-C4a-prod: AS-PREDICTED
+S-C4a-weak: AS-PREDICTED
+S-C4b-prod: AS-PREDICTED
+S-C4b-weak: AS-PREDICTED
+S-C4c-prod: AS-PREDICTED
+S-C5a-prod: AS-PREDICTED
+S-C5a-weak: AS-PREDICTED
+S-C5b-prod: AS-PREDICTED
+S-C5c-prod: AS-PREDICTED
+S-C6a-prod: AS-PREDICTED
+S-C6a-weak: AS-PREDICTED
+S-C6b-prod: AS-PREDICTED
+S-C6b-weak: AS-PREDICTED
+S-C7a-prod: AS-PREDICTED
+S-C7a-weak: AS-PREDICTED
+S-C7b-prod: AS-PREDICTED
+total=37 as_predicted=37
