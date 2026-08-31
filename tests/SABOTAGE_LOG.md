@@ -2344,7 +2344,8 @@ reads apart), and that `meta.json`'s mtime matches `completed_at` on all 228 and
 | S-G16b / `SpawnEdges` | Anchor on a child whose terminal is outside the exit window. Predicted RED. | RED: `grok-skipped-child-synthesizes-no-parent rule violated: session=01a0557d-... reason="its only child is inside the horizon but outside the exit window, so the core drops that child"`. | Two sites: absence list, node count. Predicted false GREEN. | PASS. | Load-bearing, and it is the only fixture where the horizon and the exit window disagree. The synthesized parent would outlive the single child it exists for, with no edge, no state and no terminal, and the reconciler's sweep only ever considers nodes carrying a terminal. |
 | S-G17a / `CWDEncoding` | Encode the cwd as a Claude project slug. Predicted RED. | RED: `grok-roster-path-is-percent-encoded-cwd rule violated: location=".../sessions/-home-x/..."`. | Two sites: location, content. Predicted false GREEN. | PASS. | Load-bearing, and the fixture is why: a decoy summary sits at the slug path with a DECOY model, so a wrong encoding finds a session with the right id and the wrong content, which no presence check can see. |
 | S-G17b / `CWDEncoding` | Drop the leading slash before encoding. Predicted RED. | RED: `grok-roster-path-is-percent-encoded-cwd rule violated: location=".../sessions/home%2Fx/..."`. | Same two sites. Predicted false GREEN. | PASS. | Load-bearing, second decoy, same shape. |
-| S-G17c / `CWDEncoding` | Slash-only encoding, the form the amendment replaced. Predicted RED. | RED: `grok-spaced-cwd-is-reachable-by-roster-path rule violated: session=01a0557d-... absent cwd="/home/x/Obsidian Vault" want dir="%2Fhome%2Fx%2FObsidian%20Vault"`. | Four sites: presence, content, skip counter, node count. Predicted false GREEN. | PASS (after correction, below). | Load-bearing. grok escapes spaces as well as slashes (149 `%2F` and 2 `%20` across 28 bucket names), and slash-only encoding loses 1 of the 434 sessions on the live box on the roster route.
+| S-G17c / `ChildLifecycle` | Slash-only encoding, re-aimed after the visit-seam fix. Predicted RED. | RED: `grok-long-running-child-stays-visible rule violated: child=019fda7f-... absent metaAge=90m`. | (production-only) | n/a | Load-bearing, and it is where the encoder still costs something after the seam fix. Finding a running child's second activity signal means computing a path from `child_cwd`, and no walk can correct that: get the escape wrong and a live child ages out mid-flight. The fixture's child cwd carries a space for exactly this reason. |
+| S-G17c-decoupled / `CWDEncoding` | The same slash-only plant against the encoding test. Predicted GREEN, and recorded as a green on purpose. | GREEN. | (this IS the negative claim) | n/a | The decoupling, proved the only way a decoupling can be. Before the seam fix this plant reddened that test; after it, the walk finds the session and the roster follows it, so an incomplete encoder costs discovery and liveness nothing. A green has two readings, so the other half is recorded above: S-G17c is what still fails when the encoder moves, and it is a different test rather than nothing. |
 | S-G17d / `CWDEncoding` | Stop counting a roster entry whose summary cannot be opened. Predicted RED. | RED: `grok-unreadable-roster-summary-counted rule violated: skippedSummaries=0 want=1 (the entry with no summary.json, and NOT the spaced cwd)`. | Relax the counter. Predicted false GREEN. | PASS. | Load-bearing. Without it, an unreachable roster session and a session that was never listed are the same silence, which is exactly how the encoding limit above would have gone unnoticed. |
 | S-G18a / `ToleratesRosterShapes` | Drop the map-form retry. Predicted RED. | RED: `grok-map-roster-parses rule violated: child present=true state="" want="active"`. | Two sites: the state check, the skip counter. Predicted false GREEN. | PASS. | Load-bearing at two sites, mirroring the tolerance in `internal/overlay/grok`. Note the failure shape: coverage survives (the child is still present) and only the CLAIM is lost. |
 | S-G18b / `ToleratesRosterShapes` | Count a missing roster as an unreadable one. Predicted RED. | RED: `grok-unreadable-roster-counted rule violated: case="missing" skippedRoster=1 want=0`. | Two sites: the per-case counter AND the empty-home assertion. Predicted false GREEN. | PASS (after correction, below). | Load-bearing at two sites. A box with no grok on it is ordinary; a corrupt roster is not, and a counter that cannot tell them apart reports a fault on every machine that has never run grok. |
@@ -2354,16 +2355,19 @@ reads apart), and that `meta.json`'s mtime matches `completed_at` on all 228 and
 | S-G19a-shadow / `LandsSubagentInRealShadow` | Relationship from the parent session, judged by the production reconciler. Predicted RED. | RED: `grok-shadow-relationship-is-subagent-id rule violated: child=grok:session:019fc18b-... relationship="01a05553-..."`. | (production-only supplementary cycle) | n/a | Load-bearing, second independent witness through the real store. |
 | S-G19b-shadow / `LandsSubagentInRealShadow` | Never synthesize a parent, judged by the production reconciler. Predicted RED. | RED: `grok-shadow-spawn-edge rule violated: fewer than 3 edges after 3s nodes=4 edges=2 published=8 rejected=0`. | (production-only supplementary cycle) | n/a | Load-bearing, and the numbers are the whole finding: `published=8 rejected=0` with one edge missing means the reconciler dropped it for an unknown endpoint without anything appearing in the dispositions. That failure is invisible from inside this package. |
 | S-G19c-shadow / `LandsSubagentInRealShadow` | Never claim liveness, judged by the production reconciler. Predicted RED. | RED: `grok-shadow-node-content rule violated: state="" want="active"`. | (production-only supplementary cycle) | n/a | Load-bearing, and it covers the seam the scanner-level state assertions cannot: the claim has to survive the reconciler's 6s freshness window with a heartbeat lane behind it. |
+| S-G20a / `CWDEncoding` | Key visits on the joined PATH, the pre-fix dedupe. Predicted RED. | RED: `grok-state-rule-does-not-depend-on-the-encoder rule violated: state="" location=".../sessions/%2Fhome%2Fx%2Fws%3A1/019ffdf5-.../subagents/..."`. | Two sites: the state claim and the skip counter. Predicted false GREEN. | PASS. | Load-bearing at two sites, and this is the review finding made mechanical. The session is published either way, so no presence check can see it; what is lost is the CLAIM, because the visit the disk found carries no roster entry and the state rule needs a rostered parent. The `state=""` in the message is the whole defect. |
+| S-G20b / `CWDEncoding` | Half the fix: key on the session id, but let the roster's computed path stand whether or not it exists. Predicted RED. | RED: `grok-unencodable-cwd-is-still-observed rule violated: session=019ffdf5-... absent bucket="%2Fhome%2Fx%2Fws%3A1"`. | Six sites: presence, location, child presence, state, skip counter, node count. Predicted false GREEN. | PASS. | Load-bearing at six sites. Keying on the id is only half of it: without preferring the directory that actually exists, one visit survives and it points at nothing, which is strictly worse than the two-visit bug it replaced. |
 
-96 counted cycles (52 production RED, 44 false GREEN). All AS-PREDICTED; tree
+100 counted cycles (54 production RED, 46 false GREEN). All AS-PREDICTED; tree
 restored porcelain-clean and focused-test green after every cycle. Every cycle
 above comes from one clean run of the final driver: the epoch was re-run from
 scratch after each correction rather than patched mid-flight. The table reflects
-the amended scanner (HEAD `591d4b9`); the three rows S-G3a/c/d and the flipped
-S-G17c replace the cycles that certified the bucket-mtime bound and the
-slash-only encoder, both of which the controller ruled out.
+the scanner at HEAD `3f10b4d`, after the controller's two amendments and the
+round-1 review fix; S-G3a/c/d replace the cycles that certified the bucket-mtime
+bound, S-G20a/b cover the visit seam, and S-G17c was re-aimed once the seam fix
+decoupled the encoding test from the encoder.
 
-### Four predictions corrected during this epoch
+### Six predictions corrected during this epoch
 
 **S-G12a had a second witness nobody predicted.** Publishing mains before
 children was predicted to move exactly one assertion, the one about a child
@@ -2396,7 +2400,23 @@ presence assertion's discriminating power. The general lesson is worth keeping:
 widening a discovery path can silently disarm a test of a different path that
 happened to share a fixture.
 
-All four corrections are the same lesson as Task 3's S-X8a, arrived at
+**S-G17c went green because a later fix removed the coupling it tested.** Keying
+visits on the session id decoupled discovery and the state rule from the encoder,
+so the slash-only plant stopped reddening the encoding test entirely. A green
+there is not automatically good news: it reads identically to "nothing tests this
+any more". The rule for that case is to ask what still fails when the freed value
+moves, and there is an answer -- the child-activity fallback computes a path from
+`child_cwd` and no walk can correct it -- so the plant was re-aimed at a
+long-running child whose cwd carries a space, and the green in the encoding test
+was KEPT as a recorded cycle rather than deleted.
+
+**S-G20a reddened the corroborating assertion before the headline one.** The
+path-keyed-visit plant moves both the state claim and the skip counter, and the
+counter was written earlier in the test, so the failure named a counter rather
+than the claim the finding is about. The assertions were reordered; nothing about
+the plant or the code changed.
+
+All six corrections are the same lesson as Task 3's S-X8a, arrived at
 independently: a mutation's blast radius is a claim, and the honest way to test
 it is to run the mutation rather than to reason about which assertion it should
 touch.

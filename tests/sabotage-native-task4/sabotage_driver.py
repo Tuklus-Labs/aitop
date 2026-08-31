@@ -269,6 +269,28 @@ P_EMPTY_HOME_ERRORS = (GRK,
                        "\tvisits := s.visits(now)",
                        "\tvisits := s.visits(now)\n\tif len(visits) == 0 {\n\t\treturn nil, nil, os.ErrNotExist\n\t}")
 
+
+# --- production mutations: the visit seam (review finding, round 1) --------
+
+# The pre-fix dedupe: key visits on the joined PATH. Whenever the encoder is
+# incomplete the roster route and the walk compute different paths for one
+# session, so it becomes two visits and the one the disk found carries no roster
+# entry. Two patches because it is one authoring choice: the map's key and both
+# sites that read it move together.
+P_VISITS_KEYED_BY_PATH_A = (GRK,
+                            "\t\tif _, ok := at[entry.SessionID]; ok {\n\t\t\tcontinue\n\t\t}\n\t\tat[entry.SessionID] = len(visits)\n\t\tvisits = append(visits, grokVisit{\n\t\t\tsession: entry.SessionID,\n\t\t\tdir:     filepath.Join(sessions, grokEncodeCWD(entry.CWD), entry.SessionID),\n\t\t\troster:  entry,\n\t\t})",
+                            "\t\tdir := filepath.Join(sessions, grokEncodeCWD(entry.CWD), entry.SessionID)\n\t\tif _, ok := at[dir]; ok {\n\t\t\tcontinue\n\t\t}\n\t\tat[dir] = len(visits)\n\t\tvisits = append(visits, grokVisit{\n\t\t\tsession: entry.SessionID,\n\t\t\tdir:     dir,\n\t\t\troster:  entry,\n\t\t})")
+P_VISITS_KEYED_BY_PATH_B = (GRK,
+                            "\t\t\tknown, ok := at[entry.Name()]\n\t\t\tif !ok {\n\t\t\t\tat[entry.Name()] = len(visits)",
+                            "\t\t\tknown, ok := at[dir]\n\t\t\tif !ok {\n\t\t\t\tat[dir] = len(visits)")
+
+# Half the fix: key on the session id, but let the roster's computed path stand
+# whether or not it exists, so the session is reached only by a visit whose
+# directory is not there.
+P_ROSTER_PATH_ALWAYS_WINS = (GRK,
+                             "\t\t\tif _, err := os.Stat(visits[known].dir); err != nil {\n\t\t\t\tvisits[known].dir = dir\n\t\t\t}",
+                             "\t\t\tif false {\n\t\t\t\tvisits[known].dir = dir\n\t\t\t}")
+
 # --- weakened assertions --------------------------------------------------
 #
 # Every weakening keeps its original condition and its init statement, guarded
@@ -307,8 +329,8 @@ W_MAINS_ABSENT = (GRKT,
                   '\t\tif seen := countNodeID(nodes, mustGrokID(t, absent.session)); seen != 0 {\n\t\t\tt.Fatalf("grok-dark-walk-admits-only-live-mains',
                   '\t\tif seen := countNodeID(nodes, mustGrokID(t, absent.session)); false && seen != 0 {\n\t\t\tt.Fatalf("grok-dark-walk-admits-only-live-mains')
 W_MAINS_NODECOUNT = (GRKT,
-                     "\tif len(nodes) != 5 {",
-                     "\tif false && len(nodes) != 5 {")
+                     "\tif len(nodes) != 5 {\n\t\tt.Fatalf(\"grok-dark-walk-admits-only-live-mains",
+                     "\tif false && len(nodes) != 5 {\n\t\tt.Fatalf(\"grok-dark-walk-admits-only-live-mains")
 W_MAINS_SKIPCOUNT = (GRKT,
                      "\tif skipped := scanner.skippedSummaries.Load(); skipped != 0 {",
                      "\tif skipped := scanner.skippedSummaries.Load(); false && skipped != 0 {")
@@ -470,8 +492,20 @@ W_ENC_SKIPCOUNT = (GRKT,
                    "\tif skipped := scanner.skippedSummaries.Load(); skipped != 1 {",
                    "\tif skipped := scanner.skippedSummaries.Load(); false && skipped != 1 {")
 W_ENC_NODECOUNT = (GRKT,
-                   "\tif len(nodes) != 3 {",
-                   "\tif false && len(nodes) != 3 {")
+                   "\tif len(nodes) != 5 {\n\t\tt.Fatalf(\"grok-encoding-fixture-node-count",
+                   "\tif false && len(nodes) != 5 {\n\t\tt.Fatalf(\"grok-encoding-fixture-node-count")
+W_COLON_PRESENT = (GRKT,
+                   "\tcolon, ok := nodeByID(nodes, mustGrokID(t, grokColonSession))\n\tif !ok {",
+                   "\tcolon, ok := nodeByID(nodes, mustGrokID(t, grokColonSession))\n\tif false && !ok {")
+W_COLON_LOCATION = (GRKT,
+                    "\tif colon.Location != colonPath {",
+                    "\tif false && colon.Location != colonPath {")
+W_COLON_CHILD_PRESENT = (GRKT,
+                         "\tcolonChild, ok := nodeByID(nodes, mustGrokID(t, grokRunningChild))\n\tif !ok {",
+                         "\tcolonChild, ok := nodeByID(nodes, mustGrokID(t, grokRunningChild))\n\tif false && !ok {")
+W_COLON_STATE = (GRKT,
+                 "\tif colonChild.State != graph.StateActive || colonChild.Location != colonChildPath {",
+                 "\tif false && (colonChild.State != graph.StateActive || colonChild.Location != colonChildPath) {")
 
 W_MAP_ROSTER_STATE = (GRKT,
                       "\t\tif !ok || child.State != graph.StateActive {\n\t\t\tt.Fatalf(\"grok-map-roster-parses",
@@ -583,8 +617,13 @@ CYCLES = [
     ("S-G17a-weak", [P_CLAUDE_SLUG, W_ENC_LOCATION, W_ENC_CONTENT, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
     ("S-G17b-prod", [P_DROP_LEADING_SLASH], T_ENC, "RED", "grok-roster-path-is-percent-encoded-cwd rule violated"),
     ("S-G17b-weak", [P_DROP_LEADING_SLASH, W_ENC_LOCATION, W_ENC_CONTENT, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
-    ("S-G17c-prod", [P_SLASH_ONLY], T_ENC, "RED", "grok-spaced-cwd-is-reachable-by-roster-path rule violated"),
-    ("S-G17c-weak", [P_SLASH_ONLY, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
+    # Re-aimed after the visit-seam fix. Slash-only encoding no longer costs the
+    # spaced session anything, because the walk finds it and the roster follows;
+    # that green is the decoupling, recorded in the log. What still moves when
+    # the encoder moves is the CHILD-activity fallback, which is the one place
+    # left that computes a path from a cwd and cannot be corrected by a walk.
+    ("S-G17c-prod", [P_SLASH_ONLY], T_LIFE, "RED", "grok-long-running-child-stays-visible rule violated"),
+    ("S-G17c-decoupled", [P_SLASH_ONLY], T_ENC, "GREEN", None),
     ("S-G17d-prod", [P_NO_ROSTER_MISS_COUNT], T_ENC, "RED", "grok-unreadable-roster-summary-counted rule violated"),
     ("S-G17d-weak", [P_NO_ROSTER_MISS_COUNT, W_ENC_SKIPCOUNT], T_ENC, "GREEN", None),
 
@@ -603,6 +642,12 @@ CYCLES = [
     ("S-G19a-shadow-prod", [P_REL_FROM_PARENT], T_SHADOW, "RED", "grok-shadow-relationship-is-subagent-id rule violated"),
     ("S-G19b-shadow-prod", [P_NEVER_SYNTHESIZE], T_SHADOW, "RED", "grok-shadow-spawn-edge rule violated"),
     ("S-G19c-shadow-prod", [P_NEVER_ACTIVE], T_SHADOW, "RED", "grok-shadow-node-content rule violated"),
+
+    # --- the visit seam: one session is one visit, whatever the encoder says ---
+    ("S-G20a-prod", [P_VISITS_KEYED_BY_PATH_A, P_VISITS_KEYED_BY_PATH_B], T_ENC, "RED", "grok-state-rule-does-not-depend-on-the-encoder rule violated"),
+    ("S-G20a-weak", [P_VISITS_KEYED_BY_PATH_A, P_VISITS_KEYED_BY_PATH_B, W_COLON_STATE, W_ENC_SKIPCOUNT], T_ENC, "GREEN", None),
+    ("S-G20b-prod", [P_ROSTER_PATH_ALWAYS_WINS], T_ENC, "RED", "grok-unencodable-cwd-is-still-observed rule violated"),
+    ("S-G20b-weak", [P_ROSTER_PATH_ALWAYS_WINS, W_COLON_PRESENT, W_COLON_LOCATION, W_COLON_CHILD_PRESENT, W_COLON_STATE, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
 ]
 
 

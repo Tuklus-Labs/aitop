@@ -1,15 +1,15 @@
-aitop native provenance Task 4 tally (post-amendment)
-date: 2026-08-31T02:47:28-07:00
+aitop native provenance Task 4 tally (post-amendment, post-review-fix-1)
+date: 2026-08-31T03:04:45-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-parent_commit: 591d4b96365cb95cee9e681ae02762b2af75dd8a
-note: certifies the working tree carrying the Task 4 grok scanner as
-note: AMENDED by the controller (walk gated on each session's summary
-note: rather than on its cwd bucket; cwd encoding widened to slashes and
-note: spaces), its tests, and the sabotage evidence. Measured after the
-note: sabotage epoch and before the SABOTAGE_LOG/tally commit.
-note: supersedes the pre-amendment numbers taken against 6123bc9.
+parent_commit: 3f10b4d13edd9350b6abfefb39a9818fe91e36ac
+note: certifies the Task 4 grok scanner after the controller's two
+note: amendments (walk gated on each session's summary, cwd encoding
+note: widened) and the round-1 review fix (visits keyed on session id
+note: so the roster entry follows its session to the directory that
+note: exists). Measured after the sabotage epoch, before the
+note: SABOTAGE_LOG/tally commit. Supersedes 6123bc9 and 591d4b9.
 
 commands (exact, from worktree root):
   gofmt -l internal/native/
@@ -26,11 +26,11 @@ commands (exact, from worktree root):
 vet_exit=0
 
 == go test ./internal/native -count=1 ==
-ok  	aitop/internal/native	0.452s
+ok  	aitop/internal/native	0.431s
 test_exit=0
 
 == go test ./internal/native -count=1 -race ==
-ok  	aitop/internal/native	1.488s
+ok  	aitop/internal/native	1.482s
 race_exit=0
 
 == go build ./... ==
@@ -38,51 +38,29 @@ build_exit=0
 
 == go test ./... -count=1 ==
 packages_reporting=25 non_ok_lines=0 all_exit=0
-note: all_exit is go test's own status, not a grep's; non_ok_lines counts
-note: lines that do not start with "ok", so 0 is the only clean reading.
 
 == test function inventory (authoritative count) ==
 28
-func TestNativeEmitOrderNodesBeforeEdges
-func TestNativeEventIDsDeterministicAcrossTicks
-func TestNativeIncarnationPrefersLiveProcess
-func TestNativeStateClaimGetsHeartbeatLane
-func TestNativeExitWindowSkipsStaleTerminals
-func TestNativeRejectionDoesNotStopRun
-func TestNativeDisplayBoundsAndUTF8
-func TestNativeDescriptorValid
-func TestNativeSpawnRelationshipSeamGuard
-func TestNativeSpawnEdgeLandsInRealShadow
-func TestCodexScannerNodeUsesOwnThreadID
-func TestCodexScannerSpawnFromParentThreadID
-func TestCodexScannerSkipsMalformedAndStale
-func TestCodexScannerScansOnlyRecentDateDirs
-func TestCodexCollectorMakesNoStateOrTerminalClaims
-func TestCodexCollectorLandsForkInRealShadow
+== Task 4 tests only ==
+6
 func TestGrokScannerRosterAndDarkMains
 func TestGrokScannerChildLifecycle
 func TestGrokScannerSpawnEdges
 func TestGrokScannerCWDEncoding
 func TestGrokScannerToleratesRosterShapes
 func TestGrokCollectorLandsSubagentInRealShadow
-func TestClaudeScannerFindsSidecarPrimaries
-func TestClaudeScannerEmitsAgentSpawnChain
-func TestClaudeScannerHorizonSkipsStale
-func TestClaudeScannerVanishesOrphanedChildren
-func TestClaudeScannerAgentIDFromFilename
-func TestClaudeCollectorLandsChainInRealShadow
 
-== Task 4 tests only ==
-6
-
-== sabotage epoch (post-amendment, re-run from scratch) ==
-total=96 as_predicted=96
-production_RED=52 false_GREEN=44 mismatches=0
+== sabotage epoch (post-fix, re-run from scratch) ==
+total=100 as_predicted=100
+production_RED=54 false_GREEN=46 mismatches=0
+note: one of the 46 greens (S-G17c-decoupled) is a RECORDED decoupling
+note: green, not a weakened-assertion cycle: it proves an incomplete
+note: encoder no longer costs discovery or liveness anything.
 log: tests/sabotage-native-task4/sabotage_runs_native_task4.log
 driver: tests/sabotage-native-task4/sabotage_driver.py
-epoch_head: 591d4b96365cb95cee9e681ae02762b2af75dd8a
+epoch_head: 3f10b4d13edd9350b6abfefb39a9818fe91e36ac
 
 == live smoke, real ~/.grok, via go test -overlay (nothing written to the repo) ==
-pre-amendment  wall=824us   nodes=1  (bucket-bounded walk read 0 summaries)
-post-amendment wall=5.62ms  nodes=1  (434 stats, 1 summary read)
-note: 5.62ms is 0.28% of the 2s poll interval.
+pre-amendment   wall=824us   nodes=1  (bucket-bounded walk read 0 summaries)
+post-amendment  wall=5.62ms  nodes=1  (434 stats, 1 summary read)
+post-fix        wall=5.53ms  nodes=1  (all skip counters 0)
