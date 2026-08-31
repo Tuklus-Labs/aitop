@@ -258,7 +258,7 @@ W_COD_SELECT = (CODT,
                 "\tif false {")
 W_COD_SKIP = (CODT,
               "\tif n := scanner.skippedRollouts.Load(); n != 0 {",
-              "\tif false {")
+              "\tif n := scanner.skippedRollouts.Load(); false {")
 
 W_GRK_PRESENT = (GRKT,
                  "\tnode, ok := nodeByID(nodes, id)\n\tif !ok {\n\t\tt.Fatalf(\"grok-live-session-is-inside-horizon",
@@ -274,17 +274,17 @@ W_GRK_NOCLAIM = (GRKT,
                  "\tif false {\n\t\tt.Fatalf(\"grok-live-session-makes-no-state-or-terminal-claim")
 W_GRK_SKIP = (GRKT,
               "\tif n := scanner.skippedSummaries.Load(); n != 0 {",
-              "\tif false {")
+              "\tif n := scanner.skippedSummaries.Load(); false {")
 W_GRK_ABSENT = (GRKT,
                 "\tif _, ok := nodeByID(nodes, id); ok {\n\t\tt.Fatalf(\"grok-cold-session-with-no-process-is-not-observed",
                 "\tif false {\n\t\tt.Fatalf(\"grok-cold-session-with-no-process-is-not-observed")
 
 W_SID_RT = (SIDT,
             '\tif got := decoded["runtime"]; got != string(types.RuntimeClaude) {',
-            "\tif false {")
+            '\tif got := decoded["runtime"]; false {')
 W_SID_FOLLOW = (SIDT,
                 "\t\tif got := decoded[\"runtime\"]; got != string(runtime) {",
-                "\t\tif false {")
+                "\t\tif got := decoded[\"runtime\"]; false {")
 
 W_FRK_OVERLAY = (FRKT,
                  "\tif ovs[0].Runtime != types.RuntimeClaude {",
@@ -298,10 +298,10 @@ W_FRK_GRAPH = (FRKT,
 
 W_JOIN_ROLE = (JOIT,
                "\tif got := byID[\"C\"].Process.Role; got != types.RoleSubagent {",
-               "\tif false {")
+               "\tif got := byID[\"C\"].Process.Role; false {")
 W_JOIN_SLOT = (JOIT,
                "\tif got := byID[\"S\"].Process.Role; got != types.RoleDrop {",
-               "\tif false {")
+               "\tif got := byID[\"S\"].Process.Role; false {")
 W_JOIN_PROC = (JOIT,
                "\tif byID[\"C\"].Process.PID != 0 || byID[\"C\"].Process.StartTime != 0 || !byID[\"C\"].OverlayOnly {",
                "\tif false {")
@@ -311,7 +311,7 @@ W_ATT_REG = (ATTT,
              "\tif false {\n\t\tt.Fatalf(\"attach-graph-registers-native-collectors")
 W_ATT_EMPTY = (ATTT,
                "\t\tif snap := shadow.Snapshot(); hasPrefix(snap, \"claude:session:\") {",
-               "\t\tif false {")
+               "\t\tif snap := shadow.Snapshot(); false && hasPrefix(snap, \"claude:session:\") {")
 W_ATT_AGENT = (ATTT,
                "\tagent, ok := nodeByGraphID(snap, agentID)\n\tif !ok {",
                "\tagent, ok := nodeByGraphID(snap, agentID)\n\tif false && !ok {")
@@ -336,7 +336,7 @@ W_ATT_ABS = (ATTT,
              "\tif false {")
 W_ATT_ABS_EMPTY = (ATTT,
                    '\tif got, err := absHome(""); err != nil || got != "" {',
-                   "\tif false {")
+                   '\tif got, err := absHome(""); false {')
 
 W_SCHEMA_WRITE = (ATTT,
                   "\tif err := WriteJSON(snap, &out, snap.At); err != nil {",

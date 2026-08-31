@@ -1,0 +1,100 @@
+head: 9d8327f3908ebe27f50f40e3cad6c06e95cde196
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+
+===== S-T5-01-prod expect=RED pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
+    claude_test.go:698: claude-live-session-is-inside-horizon rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 absent sidecarAge=3h0m0s liveSet=[84a06b9a-0873-4655-9eb9-d7cf99554b05] nodes=0
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-01-prod: AS-PREDICTED
+S-T5-01-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-01-weak expect=GREEN pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.001s
+S-T5-01-weak: AS-PREDICTED
+S-T5-01-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-02-prod expect=RED pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
+    claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-T5-02-prod: AS-PREDICTED
+S-T5-02-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-02-weak expect=GREEN pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.001s
+S-T5-02-weak: AS-PREDICTED
+S-T5-02-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-03-prod expect=RED pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
+    claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-03-prod: AS-PREDICTED
+S-T5-03-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-03-weak expect=GREEN pkg=./internal/native run=^TestClaudeScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.001s
+S-T5-03-weak: AS-PREDICTED
+S-T5-03-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-04-prod expect=RED pkg=./internal/native run=^TestCodexScannerLiveThreadIsInsideHorizon$
+plant diffstat:
+internal/native/codex.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.3s
+--- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
+    codex_test.go:816: codex-live-thread-is-inside-horizon rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 absent rolloutAge=3h0m0s liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2] nodes=0
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-04-prod: AS-PREDICTED
+S-T5-04-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-04-weak expect=GREEN pkg=./internal/native run=^TestCodexScannerLiveThreadIsInsideHorizon$
+plant diffstat:
+internal/native/codex.go      | 2 +-
+ internal/native/codex_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=1 wall=0.1s
+FAIL	aitop/internal/native [build failed]
+FAIL
+# aitop/internal/native [aitop/internal/native.test]
+internal/native/codex_test.go:813:12: declared and not used: scanner
+internal/native/codex_test.go:829:81: undefined: n
+S-T5-04-weak: MISMATCH
+S-T5-04-weak: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection
