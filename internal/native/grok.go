@@ -205,19 +205,33 @@ func (s *grokScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, erro
 // costs one ReadDir of its subagents store, which is how a live child under a
 // parent whose own summary has gone quiet still reaches the graph; only visits
 // that pass the summary gate cost a read.
+//
+// One session is one visit, keyed by SESSION ID and never by the path the two
+// routes computed for it. The roster route builds a path from a cwd, so it is
+// only as good as the encoder; the walk reads the path off the disk, so it is
+// always right. Keying on the path would file those as two visits whenever the
+// encoder is incomplete, and the one the disk found would carry no roster entry
+// -- which quietly costs the session's running children their state claim,
+// because that claim requires a rostered parent. Keying on the id keeps the
+// roster entry attached to whichever directory actually exists, so nothing about
+// liveness depends on the encoder being complete. (0 of the 434 sessions on the
+// live box appear under two buckets, so collapsing on the id loses no store.)
 func (s *grokScanner) visits(now time.Time) []grokVisit {
 	sessions := filepath.Join(s.home, grokSessionsDir)
 	roster := s.readRoster()
 	visits := make([]grokVisit, 0, len(roster))
-	seen := make(map[string]bool, len(roster))
+	at := make(map[string]int, len(roster))
 	for i := range roster {
 		entry := &roster[i]
-		dir := filepath.Join(sessions, grokEncodeCWD(entry.CWD), entry.SessionID)
-		if seen[dir] {
+		if _, ok := at[entry.SessionID]; ok {
 			continue
 		}
-		seen[dir] = true
-		visits = append(visits, grokVisit{session: entry.SessionID, dir: dir, roster: entry})
+		at[entry.SessionID] = len(visits)
+		visits = append(visits, grokVisit{
+			session: entry.SessionID,
+			dir:     filepath.Join(sessions, grokEncodeCWD(entry.CWD), entry.SessionID),
+			roster:  entry,
+		})
 	}
 
 	buckets, err := os.ReadDir(sessions)
@@ -237,11 +251,22 @@ func (s *grokScanner) visits(now time.Time) []grokVisit {
 				continue
 			}
 			dir := filepath.Join(sessions, bucket.Name(), entry.Name())
-			if seen[dir] {
+			known, ok := at[entry.Name()]
+			if !ok {
+				at[entry.Name()] = len(visits)
+				visits = append(visits, grokVisit{session: entry.Name(), dir: dir})
 				continue
 			}
-			seen[dir] = true
-			visits = append(visits, grokVisit{session: entry.Name(), dir: dir})
+			if visits[known].dir == dir {
+				continue // the roster's path was right, which is the usual case
+			}
+			// Two paths for one session: the roster computed one and the disk
+			// holds another. The disk wins unless the computed path is also real,
+			// which keeps the roster's cwd authoritative when both exist. The stat
+			// runs only on the disagreement, never on the common path.
+			if _, err := os.Stat(visits[known].dir); err != nil {
+				visits[known].dir = dir
+			}
 		}
 	}
 	return visits
@@ -528,15 +553,18 @@ func (s *grokScanner) childActivity(meta grokChildMeta, metaModTime time.Time, n
 // 2026-08-31 rather than taken from the contract: the 28 bucket names there
 // carry 149 %2F and 2 %20, so the scheme escapes spaces as well as slashes.
 //
-// Slash-only encoding, which is what internal/overlay/grok still does, resolves
-// a spaced cwd to a path that does not exist and loses the session entirely on
-// the roster route: 1 of the 434 sessions on that box, under
-// /home/aegis/Documents/Obsidian Vault. That gap is still open in the overlay
-// package and is ledgered for review; nothing in this package depends on it.
-//
 // Only these two escapes are claimed. No other character has been observed
 // escaped in a bucket name, and guessing at a wider set from two samples would
-// be inventing a scheme rather than matching one.
+// be inventing a scheme rather than matching one. This function is therefore
+// KNOWN to be incomplete, and the rest of the scanner is built to tolerate that
+// rather than to depend on it: a cwd carrying anything else resolves to a path
+// that does not exist, the walk finds the session anyway by reading the name off
+// the disk, and visits() attaches the roster entry to the directory that is
+// really there. The encoder is a fast path to a known location, never the only
+// way in and never a precondition for a liveness claim.
+//
+// The same slash-only gap is still open in internal/overlay/grok, where it does
+// lose the session; that is ledgered for review and nothing here depends on it.
 func grokEncodeCWD(cwd string) string {
 	if cwd == "" {
 		return ""

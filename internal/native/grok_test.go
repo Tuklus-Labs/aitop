@@ -52,6 +52,9 @@ const (
 	grokQuietFileSession = "01a01639-60c4-7fd0-82a9-b20e11c2885c"
 	// A roster entry whose session directory has no summary.json yet.
 	grokNoSummarySession = "019ffdf5-2c64-7ad0-ae70-fac78cb7718c"
+	// A rostered session whose cwd carries a character the encoder does not
+	// escape, so the two routes to it compute different paths.
+	grokColonSession = "019ffdf5-2c64-7ad0-ae70-fade5a965ce7"
 
 	// Children, all real child_session_ids off the live box.
 	grokRunningChild    = "019fc18b-9518-7283-900c-e9e6450ba842"
@@ -164,6 +167,14 @@ func (tree *grokTree) summary(cwd, session string, fields map[string]any, mod ti
 func (tree *grokTree) rawSummary(bucket, session string, fields map[string]any, mod time.Time) string {
 	tree.t.Helper()
 	return tree.write(filepath.Join(tree.home, "sessions", bucket, session, "summary.json"), tree.encode(fields), mod)
+}
+
+// rawMeta writes a child record under a literal bucket name, for a session whose
+// on-disk path the scanner's encoder does not compute.
+func (tree *grokTree) rawMeta(bucket, parent, child string, fields map[string]any, mod time.Time) string {
+	tree.t.Helper()
+	path := filepath.Join(tree.home, "sessions", bucket, parent, "subagents", child, "meta.json")
+	return tree.write(path, tree.encode(fields), mod)
 }
 
 func (tree *grokTree) meta(parentCWD, parent, child string, fields map[string]any, mod time.Time) string {
@@ -949,12 +960,36 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 			now.Add(-25*time.Minute), now.Add(-4*time.Minute)),
 		now.Add(-4*time.Minute))
 
+	// The encoder is KNOWN incomplete: it claims the two escapes the corpus
+	// proves and no more. This session's cwd carries a colon, so the roster route
+	// computes a path that is not where the session lives. Whatever escape grok
+	// really uses here does not matter to the test; what matters is that it is
+	// not the one the encoder computes, which is the general shape of every
+	// character the corpus never showed us.
+	//
+	// The walk finds it regardless. What must ALSO survive is the roster entry
+	// following the session to the directory that exists, because the state rule
+	// needs a rostered parent: this child is what would silently stop being
+	// claimed if the two routes filed two visits.
+	const colonCWD = "/home/x/ws:1"
+	const colonBucket = "%2Fhome%2Fx%2Fws%3A1"
+	colonPath := tree.rawSummary(colonBucket, grokColonSession,
+		grokMainFields(grokColonSession, colonCWD, grokBuildAgent, grokModel, "colon cwd",
+			now.Add(-30*time.Minute), now.Add(-2*time.Minute)),
+		now.Add(-2*time.Minute))
+	colonChildPath := tree.rawMeta(colonBucket, grokColonSession, grokRunningChild,
+		grokMetaFields(grokColonSession, grokRunningChild, "general-purpose", grokChildModel, "child of a colon cwd",
+			"running", colonCWD, now.Add(-5*time.Minute), ""),
+		now.Add(-5*time.Minute))
+	tree.sealRaw(colonBucket, now.Add(-3*time.Hour))
+
 	// A roster entry whose session directory holds no summary.json: what the
 	// window between opening a session and writing its first summary looks like,
 	// and the only thing in this fixture that may move the skip counter.
 	tree.roster([]map[string]any{
 		grokRosterEntryFields(grokLiveSession, plainCWD, now.Add(-20*time.Minute)),
 		grokRosterEntryFields(grokSecondSession, spacedCWD, now.Add(-18*time.Minute)),
+		grokRosterEntryFields(grokColonSession, colonCWD, now.Add(-15*time.Minute)),
 		grokRosterEntryFields(grokNoSummarySession, plainCWD, now.Add(-1*time.Minute)),
 	}, now.Add(-18*time.Minute))
 	tree.seal(plainCWD, now.Add(-3*time.Hour))
@@ -1005,11 +1040,32 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 	if walked.Location != walkedPath || walked.Project != "Heph Journal" {
 		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: location=%q project=%q want=%q/%q", walked.Location, walked.Project, walkedPath, "Heph Journal")
 	}
-	// Three, not five: the two decoy buckets hold the same session id as the real
+	// The finding this fixture exists for. The session is found either way, so a
+	// presence check proves nothing; the loss an incomplete encoder used to cause
+	// was the CLAIM, because the roster entry stayed behind on a visit pointing
+	// at a directory that does not exist and the child's parent then read as
+	// unrostered.
+	colon, ok := nodeByID(nodes, mustGrokID(t, grokColonSession))
+	if !ok {
+		t.Fatalf("grok-unencodable-cwd-is-still-observed rule violated: session=%s absent bucket=%q ids=%v", grokColonSession, colonBucket, nodeIDs(nodes))
+	}
+	if colon.Location != colonPath {
+		t.Fatalf("grok-unencodable-cwd-is-still-observed rule violated: location=%q want=%q", colon.Location, colonPath)
+	}
+	colonChild, ok := nodeByID(nodes, mustGrokID(t, grokRunningChild))
+	if !ok {
+		t.Fatalf("grok-unencodable-cwd-keeps-its-children rule violated: child=%s absent parent=%s ids=%v", grokRunningChild, grokColonSession, nodeIDs(nodes))
+	}
+	if colonChild.State != graph.StateActive || colonChild.Location != colonChildPath {
+		t.Fatalf("grok-state-rule-does-not-depend-on-the-encoder rule violated: state=%q location=%q want=%q/%q (the roster entry must follow its session to the directory that exists)",
+			colonChild.State, colonChild.Location, graph.StateActive, colonChildPath)
+	}
+
+	// Five, not seven: the two decoy buckets hold the same session id as the real
 	// one, so a scanner that read them all would still publish one node, and only
 	// the location and content assertions above can tell which file it read.
-	if len(nodes) != 3 {
-		t.Fatalf("grok-encoding-fixture-node-count rule violated: nodes=%d want=3 ids=%v", len(nodes), nodeIDs(nodes))
+	if len(nodes) != 5 {
+		t.Fatalf("grok-encoding-fixture-node-count rule violated: nodes=%d want=5 ids=%v", len(nodes), nodeIDs(nodes))
 	}
 }
 
