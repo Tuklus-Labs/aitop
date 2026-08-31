@@ -631,6 +631,60 @@ func TestNativeDescriptorValid(t *testing.T) {
 	}
 }
 
+// TestNativeSpawnRelationshipSeamGuard covers the seam between a scanner and
+// the store. A RelationshipID must be the child's own short id; a canonical
+// NodeID handed over instead is the failure this seam is here to catch, and it
+// is the one the store cannot see for itself, because a session NodeID is 51
+// bytes and passes every bound Event.Validate applies.
+func TestNativeSpawnRelationshipSeamGuard(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC)
+	parent := mustSessionID(t, testParentSession)
+	child := mustAgentID(t, testParentSession, testChildAgent)
+
+	empty := spawnSighting(parent, child)
+	empty.Relationship = ""
+	long := spawnSighting(parent, child)
+	long.Relationship = graph.RelationshipID(strings.Repeat("x", 65))
+	canonical := spawnSighting(parent, child)
+	canonical.Relationship = graph.RelationshipID(parent)
+	if len(canonical.Relationship) == 0 || len(canonical.Relationship) > 64 {
+		t.Fatalf("native-spawn-relationship-seam-fixture rule violated: canonical relationship bytes=%d must sit inside the 1..64 bound or this case tests the length rule instead of the id-shape rule", len(canonical.Relationship))
+	}
+
+	sc := &fakeScanner{
+		nodes:  []NodeSighting{parentSighting(parent), childSighting(child)},
+		spawns: []SpawnSighting{empty, long, canonical, spawnSighting(parent, child)},
+	}
+	sink := &recordingSink{}
+	c := newTestCollector(sc, nil, now)
+	c.tick(sink)
+
+	events, invalid := sink.snapshot()
+	if len(invalid) != 0 {
+		t.Fatalf("native-emitted-events-validate rule violated: invalid=%v kinds=%v", invalid, kindsOf(events))
+	}
+	if edges := countKind(events, graph.EventRelationshipObserved); edges != 1 {
+		t.Fatalf("native-spawn-relationship-seam-guard rule violated: relationshipEvents=%d want=1 kinds=%v", edges, kindsOf(events))
+	}
+	edge, ok := firstOfKind(events, graph.EventRelationshipObserved, parent)
+	if !ok {
+		t.Fatalf("native-spawn-relationship-seam-guard rule violated: the well-formed edge was dropped too kinds=%v", kindsOf(events))
+	}
+	data, isEdge := edge.Data.(graph.RelationshipObserved)
+	if !isEdge || data.Relationship != graph.RelationshipID(testChildAgent) {
+		t.Fatalf("native-spawn-relationship-seam-guard rule violated: relationship=%+v want=%q", edge.Data, testChildAgent)
+	}
+	if dropped := c.malformedRelationships.Load(); dropped != 3 {
+		t.Fatalf("native-spawn-relationship-drops-counted rule violated: malformedRelationships=%d want=3 relationshipEvents=%d", dropped, countKind(events, graph.EventRelationshipObserved))
+	}
+	// A drop must never reach the store: rejections are expected noise on this
+	// lane (endpoint incarnations rotate under us), so a malformed relationship
+	// counted as a rejection is a malformed relationship nobody will ever find.
+	if rejected := c.Disp().Rejected.Load(); rejected != 0 {
+		t.Fatalf("native-spawn-relationship-guard-precedes-store rule violated: rejected=%d want=0 malformed=%d", rejected, c.malformedRelationships.Load())
+	}
+}
+
 func TestNativeSpawnEdgeLandsInRealShadow(t *testing.T) {
 	parent := mustSessionID(t, testParentSession)
 	child := mustAgentID(t, testParentSession, testChildAgent)

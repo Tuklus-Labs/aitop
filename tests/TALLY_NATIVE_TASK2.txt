@@ -1,0 +1,81 @@
+aitop native provenance Task 2 tally
+date: 2026-08-31T00:51:57-07:00
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
+branch: native-provenance
+parent_commit: 35af7bce5fb68728ecd541acf9b306c4d379215a
+note: certifies the working tree carrying both Task 2 code changes (the Claude
+note: scanner and the spawn-relationship seam guard), measured before they were
+note: committed; parent_commit is the Task 1 evidence commit they sit on.
+
+commands (exact, from worktree root):
+  gofmt -l internal/native/
+  go vet ./internal/native
+  go test ./internal/native -count=1
+  go test ./internal/native -count=1 -race
+  go build ./...
+  go test ./... -count=1
+
+== gofmt -l internal/native/ ==
+(empty above = formatted)
+
+== go vet ./internal/native ==
+vet_exit=0
+
+== go test ./internal/native -count=1 ==
+ok  	aitop/internal/native	0.216s
+test_exit=0
+
+== go test ./internal/native -count=1 -race ==
+ok  	aitop/internal/native	1.234s
+race_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+ok  	aitop/cmd/aitop	0.366s
+ok  	aitop/internal/act	0.085s
+ok  	aitop/internal/act/claude	0.005s
+ok  	aitop/internal/act/codex	0.005s
+ok  	aitop/internal/act/grok	0.004s
+ok  	aitop/internal/act/local	0.005s
+ok  	aitop/internal/classify	0.004s
+ok  	aitop/internal/graph	1.918s
+ok  	aitop/internal/join	0.008s
+ok  	aitop/internal/native	0.214s
+ok  	aitop/internal/overlay/claude	0.069s
+ok  	aitop/internal/overlay/codex	0.012s
+ok  	aitop/internal/overlay/forks	0.004s
+ok  	aitop/internal/overlay/grok	0.008s
+ok  	aitop/internal/overlay/heartbeat	0.004s
+ok  	aitop/internal/overlay/inference	0.416s
+ok  	aitop/internal/overlay/local	0.005s
+ok  	aitop/internal/present	0.010s
+ok  	aitop/internal/price	0.010s
+ok  	aitop/internal/proc	0.064s
+ok  	aitop/internal/snapshot	0.313s
+ok  	aitop/internal/supervisor	0.004s
+ok  	aitop/internal/theme	0.014s
+ok  	aitop/internal/types	0.011s
+ok  	aitop/internal/ui	0.021s
+all_exit=0
+
+== test function inventory (authoritative count) ==
+16
+func TestNativeEmitOrderNodesBeforeEdges
+func TestNativeEventIDsDeterministicAcrossTicks
+func TestNativeIncarnationPrefersLiveProcess
+func TestNativeStateClaimGetsHeartbeatLane
+func TestNativeExitWindowSkipsStaleTerminals
+func TestNativeRejectionDoesNotStopRun
+func TestNativeDisplayBoundsAndUTF8
+func TestNativeDescriptorValid
+func TestNativeSpawnRelationshipSeamGuard
+func TestNativeSpawnEdgeLandsInRealShadow
+func TestClaudeScannerFindsSidecarPrimaries
+func TestClaudeScannerEmitsAgentSpawnChain
+func TestClaudeScannerHorizonSkipsStale
+func TestClaudeScannerVanishesOrphanedChildren
+func TestClaudeScannerAgentIDFromFilename
+func TestClaudeCollectorLandsChainInRealShadow

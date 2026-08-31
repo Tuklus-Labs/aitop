@@ -39,6 +39,8 @@ const (
 
 	// maxDisplayBytes mirrors the graph package's own display bound.
 	maxDisplayBytes = 128
+	// maxRelationshipBytes mirrors the graph package's relationship id bound.
+	maxRelationshipBytes = 64
 
 	recordIDDomain = "aitop.native.record-id.v1"
 	schemaName     = "aitop-native"
@@ -99,10 +101,11 @@ type Collector struct {
 	disp Dispositions
 	// Counters below record decisions that publish nothing, so a silent tick
 	// and a tick that deliberately emitted nothing are distinguishable.
-	scanErrors      atomic.Uint64
-	identityErrors  atomic.Uint64
-	staleTerminals  atomic.Uint64
-	heartbeatErrors atomic.Uint64
+	scanErrors             atomic.Uint64
+	identityErrors         atomic.Uint64
+	staleTerminals         atomic.Uint64
+	heartbeatErrors        atomic.Uint64
+	malformedRelationships atomic.Uint64
 }
 
 func newCollector(id graph.SourceID, rt types.Runtime, sc scanner, latest func() []types.Row) *Collector {
@@ -213,6 +216,10 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, nodes []NodeSighti
 	}
 
 	for _, spawn := range spawns {
+		if !usableRelationship(spawn.Relationship) {
+			c.malformedRelationships.Add(1)
+			continue
+		}
 		// Both endpoints must have been published this tick with the exact
 		// incarnations the edge names, or the reconciler rejects the edge.
 		parentIncarnation, parentOK := published[spawn.ParentID]
@@ -275,6 +282,19 @@ func (c *Collector) terminalOutsideWindow(sighting NodeSighting, now time.Time) 
 		return true
 	}
 	return now.Sub(*sighting.ExitAt) > nativeExitWindow
+}
+
+// usableRelationship guards the seam between a scanner and the store. A
+// relationship is the child's own short id; a canonical NodeID handed over in
+// its place carries a ':' and is only 51 bytes for a session, so no length
+// bound can see it and the store would accept the edge under a wrong label.
+// Dropping it here also keeps it out of the rejection counters, where endpoint
+// churn is expected noise and a malformed label would never be found.
+func usableRelationship(relationship graph.RelationshipID) bool {
+	if len(relationship) == 0 || len(relationship) > maxRelationshipBytes {
+		return false
+	}
+	return !strings.Contains(string(relationship), ":")
 }
 
 // claimableState gates what native is allowed to assert. Terminal states go
