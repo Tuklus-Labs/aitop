@@ -175,9 +175,13 @@ P_JOIN_ROLE_PRIMARY = (JOI,
 # A synthetic process invented alongside the role, which is the natural next
 # step for anyone filling in a Process struct and puts a pid of 0 into every
 # consumer that reads the spine.
+# The child given its parent's process, which is the natural way to "attach"
+# a child that has none and would hand it the parent's occupancy identity.
+# The first attempt copied c.PID instead, and went green: a fork overlay's PID
+# is always 0, so the plant wrote the value the assertion already expected.
 P_JOIN_FAKE_PROC = (JOI,
                     "\t\t\t\t\tcr.Process.Role = types.RoleSubagent",
-                    "\t\t\t\t\tcr.Process.Role = types.RoleSubagent\n\t\t\t\t\tcr.Process.Runtime = c.Runtime\n\t\t\t\t\tcr.Process.PID = c.PID")
+                    "\t\t\t\t\tcr.Process = r.Process\n\t\t\t\t\tcr.Process.Role = types.RoleSubagent")
 
 # --- the attach ------------------------------------------------------------
 
