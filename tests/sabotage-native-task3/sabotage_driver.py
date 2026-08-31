@@ -267,6 +267,12 @@ W_DIRS_ABSENT = (CODT,
 W_DIRS_NODECOUNT = (CODT,
                     "\tif len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-walk-skips-old-date-dirs rule violated:",
                     "\tif false && len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-walk-skips-old-date-dirs rule violated:")
+# Added after the first run of S-X8a: a widened walk moves the helper's entry
+# COUNT as well as the fixture's node count, and the two are independent
+# witnesses of one rule. Predicting one and meeting the other is the finding.
+W_DIRS_BOUNDED = (CODT,
+                  "\t\tif len(dirs) < 2 || len(dirs) > 4 {",
+                  "\t\tif false && (len(dirs) < 2 || len(dirs) > 4) {")
 W_DIRS_COVER = (CODT,
                 "\t\t\tif !seen[dir] {",
                 "\t\t\tif false && !seen[dir] {")
@@ -336,7 +342,7 @@ CYCLES = [
 
     # --- the walk bound -----------------------------------------------------
     ("S-X8a-prod", [P_WIDE_WALK], T_DIRS, "RED", "codex-walk-skips-old-date-dirs rule violated"),
-    ("S-X8a-weak", [P_WIDE_WALK, W_DIRS_ABSENT, W_DIRS_NODECOUNT], T_DIRS, "GREEN", None),
+    ("S-X8a-weak", [P_WIDE_WALK, W_DIRS_ABSENT, W_DIRS_NODECOUNT, W_DIRS_BOUNDED], T_DIRS, "GREEN", None),
     ("S-X8b-prod", [P_LOCAL_ONLY], T_DIRS, "RED", "codex-date-dirs-cover-utc-and-local rule violated"),
     ("S-X8b-weak", [P_LOCAL_ONLY, W_DIRS_COVER], T_DIRS, "GREEN", None),
     ("S-X8c-prod", [P_UTC_ONLY], T_DIRS, "RED", "codex-date-dirs-cover-utc-and-local rule violated"),
