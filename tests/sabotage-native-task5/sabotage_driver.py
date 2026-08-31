@@ -272,7 +272,7 @@ W_COD_ABSENT = (CODT,
                 "\tif false {\n\t\tt.Fatalf(\"codex-cold-thread-with-no-process-is-not-observed")
 W_COD_SELECT = (CODT,
                 "\tif _, ok := nodeByID(nodes, deadID); ok {",
-                "\tif false && (_, ok := nodeByID(nodes, deadID); ok) {")
+                "\tif _, ok := nodeByID(nodes, deadID); false && ok {")
 W_COD_SKIP = (CODT,
               "\tif n := scanner.skippedRollouts.Load(); n != 0 {",
               "\tif n := scanner.skippedRollouts.Load(); false {")
