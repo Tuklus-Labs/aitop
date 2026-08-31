@@ -223,6 +223,11 @@ P_MSG_PARENTS_B = (GRA,
 
 # --- keys and the read-only rule --------------------------------------------
 
+# The pane's own way back removed. The table's row drops the presets on any
+# normal terminal, so this tab is the only one an operator at 80 cells sees.
+P_NO_PANE_WAYBACK = (VIE,
+                     "\t\ts.key(\"1\", \"table\"),\n\t\ts.key(\"2\", \"graph\"),\n\t}\n\tvar right []string",
+                     "\t\ts.key(\"2\", \"graph\"),\n\t}\n\tvar right []string")
 P_NO_FOOTER_PRESETS = (VIE,
                        "\t\t\ts.key(\"1\", \"table\"),\n\t\t\ts.key(\"2\", \"graph\"),\n\t\t}",
                        "\t\t}")
@@ -312,6 +317,9 @@ W_EMPTY_CANARY = (TST,
 W_DEFAULT_TABLE = (TST,
                    "\tif tm.(Model).graphView {\n\t\tt.Fatalf(\"graph-pane-keys-toggle rule violated: the table is not the default view\")",
                    "\tif false {\n\t\tt.Fatalf(\"graph-pane-keys-toggle rule violated: the table is not the default view\")")
+W_PANE_WAYBACK = (TST,
+                  "\tif !strings.Contains(narrow, \"1 table\") {",
+                  "\tif false && !strings.Contains(narrow, \"1 table\") {")
 W_FOOTER_PRESETS = (TST,
                     "\tif !strings.Contains(table, \"1 table\") || !strings.Contains(table, \"2 graph\") {",
                     "\tif false && (!strings.Contains(table, \"1 table\") || !strings.Contains(table, \"2 graph\")) {")
@@ -408,6 +416,7 @@ R_EMPTY_H = "graph-pane-empty-keeps-frame-height rule violated"
 R_QUIET = "graph-pane-empty-is-not-quiet rule violated"
 R_TOGGLE = "graph-pane-keys-toggle rule violated"
 R_PRESETS = "graph-pane-footer-offers-both-presets rule violated"
+R_WAYBACK = "graph-pane-offers-a-way-back-at-any-width rule violated"
 R_TWO_SHOWS = "graph-pane-two-shows-the-graph rule violated"
 R_TWO_REPLACES = "graph-pane-two-replaces-the-table rule violated"
 R_ONE_TABLE = "graph-pane-one-shows-the-table rule violated"
@@ -537,6 +546,8 @@ CYCLES = [
     # --- keys and the read-only rule ----------------------------------------
     ("S-T6-31-prod", [P_NO_FOOTER_PRESETS], T_KEYS, "RED", R_PRESETS),
     ("S-T6-31-weak", [P_NO_FOOTER_PRESETS, W_FOOTER_PRESETS], T_KEYS, "GREEN", None),
+    ("S-T6-31b-prod", [P_NO_PANE_WAYBACK], T_KEYS, "RED", R_WAYBACK),
+    ("S-T6-31b-weak", [P_NO_PANE_WAYBACK, W_PANE_WAYBACK], T_KEYS, "GREEN", None),
     ("S-T6-32-prod", [P_KEY_TWO_DEAD], T_KEYS, "RED", R_TOGGLE),
     ("S-T6-32-weak", [P_KEY_TWO_DEAD, W_TWO_OPENS, W_TWO_SHOWS, W_TWO_REPLACES, W_ONE_SHOWS_TABLE], T_KEYS, "GREEN", None),
     ("S-T6-33-prod", [P_KEY_TAB_DEAD], T_KEYS, "RED", R_TAB_FLIP),
