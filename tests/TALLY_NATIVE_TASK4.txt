@@ -1,13 +1,15 @@
-aitop native provenance Task 4 tally
-date: 2026-08-31T02:31:11-07:00
+aitop native provenance Task 4 tally (post-amendment)
+date: 2026-08-31T02:47:28-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-parent_commit: 6123bc9b16f8f982c71a32949b85473a6a54019a
-note: certifies the working tree carrying the Task 4 grok scanner, its
-note: tests, and the sabotage evidence, measured after the sabotage epoch
-note: and before the SABOTAGE_LOG/tally commit. parent_commit is the last
-note: code commit these numbers were taken against.
+parent_commit: 591d4b96365cb95cee9e681ae02762b2af75dd8a
+note: certifies the working tree carrying the Task 4 grok scanner as
+note: AMENDED by the controller (walk gated on each session's summary
+note: rather than on its cwd bucket; cwd encoding widened to slashes and
+note: spaces), its tests, and the sabotage evidence. Measured after the
+note: sabotage epoch and before the SABOTAGE_LOG/tally commit.
+note: supersedes the pre-amendment numbers taken against 6123bc9.
 
 commands (exact, from worktree root):
   gofmt -l internal/native/
@@ -24,11 +26,11 @@ commands (exact, from worktree root):
 vet_exit=0
 
 == go test ./internal/native -count=1 ==
-ok  	aitop/internal/native	0.440s
+ok  	aitop/internal/native	0.452s
 test_exit=0
 
 == go test ./internal/native -count=1 -race ==
-ok  	aitop/internal/native	1.484s
+ok  	aitop/internal/native	1.488s
 race_exit=0
 
 == go build ./... ==
@@ -57,31 +59,30 @@ func TestCodexScannerSkipsMalformedAndStale
 func TestCodexScannerScansOnlyRecentDateDirs
 func TestCodexCollectorMakesNoStateOrTerminalClaims
 func TestCodexCollectorLandsForkInRealShadow
+func TestGrokScannerRosterAndDarkMains
+func TestGrokScannerChildLifecycle
+func TestGrokScannerSpawnEdges
+func TestGrokScannerCWDEncoding
+func TestGrokScannerToleratesRosterShapes
+func TestGrokCollectorLandsSubagentInRealShadow
 func TestClaudeScannerFindsSidecarPrimaries
 func TestClaudeScannerEmitsAgentSpawnChain
 func TestClaudeScannerHorizonSkipsStale
 func TestClaudeScannerVanishesOrphanedChildren
 func TestClaudeScannerAgentIDFromFilename
 func TestClaudeCollectorLandsChainInRealShadow
-func TestGrokScannerRosterAndDarkMains
-func TestGrokScannerChildLifecycle
-func TestGrokScannerSpawnEdges
-func TestGrokScannerCWDEncoding
-func TestGrokScannerToleratesRosterShapes
-func TestGrokCollectorLandsSubagentInRealShadow
 
 == Task 4 tests only ==
 6
-func TestGrokScannerRosterAndDarkMains
-func TestGrokScannerChildLifecycle
-func TestGrokScannerSpawnEdges
-func TestGrokScannerCWDEncoding
-func TestGrokScannerToleratesRosterShapes
-func TestGrokCollectorLandsSubagentInRealShadow
 
-== sabotage epoch ==
-total=92 as_predicted=92
-production_RED=49 false_GREEN=43 mismatches=0
+== sabotage epoch (post-amendment, re-run from scratch) ==
+total=96 as_predicted=96
+production_RED=52 false_GREEN=44 mismatches=0
 log: tests/sabotage-native-task4/sabotage_runs_native_task4.log
 driver: tests/sabotage-native-task4/sabotage_driver.py
-epoch_head: 6123bc9b16f8f982c71a32949b85473a6a54019a
+epoch_head: 591d4b96365cb95cee9e681ae02762b2af75dd8a
+
+== live smoke, real ~/.grok, via go test -overlay (nothing written to the repo) ==
+pre-amendment  wall=824us   nodes=1  (bucket-bounded walk read 0 summaries)
+post-amendment wall=5.62ms  nodes=1  (434 stats, 1 summary read)
+note: 5.62ms is 0.28% of the 2s poll interval.

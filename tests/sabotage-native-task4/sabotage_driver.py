@@ -56,10 +56,25 @@ P_NO_KIND_GATE = (GRK,
                   "\tif strings.HasPrefix(summary.SessionKind, grokSubagentKindPrefix) {",
                   "\tif false && strings.HasPrefix(summary.SessionKind, grokSubagentKindPrefix) {")
 
-# Widen the dark-main walk bound 100x.
-P_WIDE_BUCKET = (GRK,
-                 "\t\tif now.Sub(info.ModTime()) > nativeHorizon {",
-                 "\t\tif now.Sub(info.ModTime()) > 100*nativeHorizon {")
+# The bound this amendment REMOVED, planted as a mutation: gate the walk on the
+# bucket directory's mtime again. A bucket's mtime moves when a session dir is
+# created inside it and never when a session writes, so this is the defect the
+# report measured (0 of 28 buckets inside the horizon while a session was live).
+P_BUCKET_MTIME_BOUND = (GRK,
+                        "\t\tentries, err := os.ReadDir(filepath.Join(sessions, bucket.Name()))",
+                        "\t\tinfo, err := bucket.Info()\n\t\tif err != nil {\n\t\t\tcontinue\n\t\t}\n\t\tif now.Sub(info.ModTime()) > nativeHorizon {\n\t\t\tcontinue\n\t\t}\n\t\tentries, err := os.ReadDir(filepath.Join(sessions, bucket.Name()))")
+
+# Drop the walk's stat prefilter: every summary on the box is read every tick,
+# and a file whose mtime is older than the timestamp inside it is admitted.
+P_NO_STAT_GATE = (GRK,
+                  "\tif visit.roster == nil {",
+                  "\tif false && visit.roster == nil {")
+
+# Gate the roster route on the file's mtime too, which loses a session whose
+# process is live and whose file has gone quiet.
+P_STAT_GATE_EVERYWHERE = (GRK,
+                          "\tif visit.roster == nil {",
+                          "\tif true {")
 
 # Widen the recorded-activity horizon 100x.
 P_WIDE_HORIZON = (GRK,
@@ -223,17 +238,16 @@ P_SPAWN_LOCATION_DIR = (GRK,
 
 # --- production mutations: encoding and roster ----------------------------
 
-P_CLAUDE_SLUG = (GRK,
-                 '\treturn strings.ReplaceAll(cwd, "/", "%2F")',
-                 '\treturn strings.ReplaceAll(cwd, "/", "-")')
-# The FIX for the documented limit, planted as a mutation so the assertions that
-# record the limit are the ones that speak when it is fixed.
-P_ENCODE_SPACES = (GRK,
-                   '\treturn strings.ReplaceAll(cwd, "/", "%2F")',
-                   '\treturn strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "%2F"), " ", "%20")')
-P_DROP_LEADING_SLASH = (GRK,
-                        '\treturn strings.ReplaceAll(cwd, "/", "%2F")',
-                        '\treturn strings.ReplaceAll(strings.TrimPrefix(cwd, "/"), "/", "%2F")')
+ENC = '\treturn strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "%2F"), " ", "%20")'
+P_CLAUDE_SLUG = (GRK, ENC,
+                 '\treturn strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "-"), " ", "%20")')
+# The form this amendment REPLACED. Slash-only encoding resolves a spaced cwd to
+# a path that does not exist and loses the session on the roster route, which is
+# 1 of the 434 sessions on the live box.
+P_SLASH_ONLY = (GRK, ENC,
+                '\treturn strings.ReplaceAll(cwd, "/", "%2F")')
+P_DROP_LEADING_SLASH = (GRK, ENC,
+                        '\treturn strings.ReplaceAll(strings.ReplaceAll(strings.TrimPrefix(cwd, "/"), "/", "%2F"), " ", "%20")')
 # Anchored on the ReadFile branch above it: the same two-tab `if visit.roster`
 # text is a substring of the three-tab one in scanStore, and a patch that could
 # match either is a patch aimed at neither.
@@ -293,8 +307,26 @@ W_MAINS_ABSENT = (GRKT,
                   '\t\tif seen := countNodeID(nodes, mustGrokID(t, absent.session)); seen != 0 {\n\t\t\tt.Fatalf("grok-dark-walk-admits-only-live-mains',
                   '\t\tif seen := countNodeID(nodes, mustGrokID(t, absent.session)); false && seen != 0 {\n\t\t\tt.Fatalf("grok-dark-walk-admits-only-live-mains')
 W_MAINS_NODECOUNT = (GRKT,
-                     "\tif len(nodes) != 3 {",
-                     "\tif false && len(nodes) != 3 {")
+                     "\tif len(nodes) != 5 {",
+                     "\tif false && len(nodes) != 5 {")
+W_MAINS_SKIPCOUNT = (GRKT,
+                     "\tif skipped := scanner.skippedSummaries.Load(); skipped != 0 {",
+                     "\tif skipped := scanner.skippedSummaries.Load(); false && skipped != 0 {")
+# The amendment's headline reach: a live session in a bucket nobody has added a
+# directory to for hours.
+W_HOST_REACH_PRESENT = (GRKT,
+                        "\thost, ok := nodeByID(nodes, mustGrokID(t, grokHostSession))\n\tif !ok {",
+                        "\thost, ok := nodeByID(nodes, mustGrokID(t, grokHostSession))\n\tif false && !ok {")
+W_HOST_REACH_CONTENT = (GRKT,
+                        '\tif host.Location != hostPath || host.State != "" {',
+                        '\tif false && (host.Location != hostPath || host.State != "") {')
+# The other route: a live process whose file has gone quiet.
+W_QUIET_PRESENT = (GRKT,
+                   "\tquiet, ok := nodeByID(nodes, mustGrokID(t, grokQuietFileSession))\n\tif !ok {",
+                   "\tquiet, ok := nodeByID(nodes, mustGrokID(t, grokQuietFileSession))\n\tif false && !ok {")
+W_QUIET_CONTENT = (GRKT,
+                   "\tif quiet.Location != quietPath || quiet.StartedAt == nil || !quiet.StartedAt.Equal(now.Add(-20*time.Minute)) {",
+                   "\tif false && (quiet.Location != quietPath || quiet.StartedAt == nil || !quiet.StartedAt.Equal(now.Add(-20*time.Minute))) {")
 W_SUBAGENT_COUNT = (GRKT,
                     "\tif seen := scanner.subagentSummaries.Load(); seen != 1 {",
                     "\tif seen := scanner.subagentSummaries.Load(); false && seen != 1 {")
@@ -428,15 +460,18 @@ W_ENC_LOCATION = (GRKT,
 W_ENC_CONTENT = (GRKT,
                  '\tif live.Model != grokModel || live.Project != "x" {',
                  '\tif false && (live.Model != grokModel || live.Project != "x") {')
-W_ENC_SPACED = (GRKT,
-                "\tif seen := countNodeID(nodes, mustGrokID(t, grokSecondSession)); seen != 0 {",
-                "\tif seen := countNodeID(nodes, mustGrokID(t, grokSecondSession)); false && seen != 0 {")
+W_ENC_SPACED_PRESENT = (GRKT,
+                        "\tspaced, ok := nodeByID(nodes, mustGrokID(t, grokSecondSession))\n\tif !ok {",
+                        "\tspaced, ok := nodeByID(nodes, mustGrokID(t, grokSecondSession))\n\tif false && !ok {")
+W_ENC_SPACED_CONTENT = (GRKT,
+                        '\tif spaced.Location != spacedPath || spaced.Project != "Obsidian Vault" {',
+                        '\tif false && (spaced.Location != spacedPath || spaced.Project != "Obsidian Vault") {')
 W_ENC_SKIPCOUNT = (GRKT,
                    "\tif skipped := scanner.skippedSummaries.Load(); skipped != 1 {",
                    "\tif skipped := scanner.skippedSummaries.Load(); false && skipped != 1 {")
 W_ENC_NODECOUNT = (GRKT,
-                   "\tif len(nodes) != 2 {",
-                   "\tif false && len(nodes) != 2 {")
+                   "\tif len(nodes) != 3 {",
+                   "\tif false && len(nodes) != 3 {")
 
 W_MAP_ROSTER_STATE = (GRKT,
                       "\t\tif !ok || child.State != graph.StateActive {\n\t\t\tt.Fatalf(\"grok-map-roster-parses",
@@ -470,23 +505,27 @@ CYCLES = [
     ("S-G2a-weak", [P_NO_KIND_GATE, W_MAINS_ABSENT, W_MAINS_NODECOUNT, W_SUBAGENT_COUNT], T_MAINS, "GREEN", None),
     ("S-G2b-prod", [P_NO_SUBAGENT_COUNT], T_MAINS, "RED", "grok-subagent-summaries-counted rule violated"),
     ("S-G2b-weak", [P_NO_SUBAGENT_COUNT, W_SUBAGENT_COUNT], T_MAINS, "GREEN", None),
-    ("S-G3a-prod", [P_WIDE_BUCKET], T_MAINS, "RED", "grok-dark-walk-admits-only-live-mains rule violated"),
-    ("S-G3a-weak", [P_WIDE_BUCKET, W_MAINS_ABSENT, W_MAINS_NODECOUNT], T_MAINS, "GREEN", None),
+    ("S-G3a-prod", [P_BUCKET_MTIME_BOUND], T_MAINS, "RED", "grok-dark-walk-reaches-a-stale-bucket rule violated"),
+    ("S-G3c-prod", [P_NO_STAT_GATE], T_MAINS, "RED", "grok-dark-walk-admits-only-live-mains rule violated"),
+    ("S-G3c-weak", [P_NO_STAT_GATE, W_MAINS_ABSENT, W_MAINS_NODECOUNT], T_MAINS, "GREEN", None),
+    ("S-G3d-prod", [P_STAT_GATE_EVERYWHERE], T_MAINS, "RED", "grok-roster-route-is-not-gated-on-file-mtime rule violated"),
+    ("S-G3d-weak", [P_STAT_GATE_EVERYWHERE, W_QUIET_PRESENT, W_QUIET_CONTENT, W_MAINS_NODECOUNT], T_MAINS, "GREEN", None),
     ("S-G3b-prod", [P_WIDE_HORIZON], T_MAINS, "RED", "grok-dark-walk-admits-only-live-mains rule violated"),
     ("S-G3b-weak", [P_WIDE_HORIZON, W_MAINS_ABSENT, W_MAINS_NODECOUNT], T_MAINS, "GREEN", None),
     ("S-G4a-prod", [P_MAIN_LOCATION_DIR], T_MAINS, "RED", "grok-main-location-is-summary-file rule violated"),
-    ("S-G4a-weak", [P_MAIN_LOCATION_DIR, W_MAIN_LOCATION, W_DARK_CONTENT, W_NONBUILD], T_MAINS, "GREEN", None),
+    ("S-G4a-weak", [P_MAIN_LOCATION_DIR, W_MAIN_LOCATION, W_HOST_REACH_CONTENT, W_QUIET_CONTENT, W_DARK_CONTENT, W_NONBUILD], T_MAINS, "GREEN", None),
     ("S-G4b-prod", [P_PROJECT_FROM_PATH], T_MAINS, "RED", "grok-main-content-from-summary rule violated"),
     ("S-G4b-weak", [P_PROJECT_FROM_PATH, W_MAIN_CONTENT, W_DARK_CONTENT], T_MAINS, "GREEN", None),
     ("S-G4c-prod", [P_TASKNAME_FROM_AGENT], T_MAINS, "RED", "grok-main-content-from-summary rule violated"),
     ("S-G4c-weak", [P_TASKNAME_FROM_AGENT, W_MAIN_CONTENT], T_MAINS, "GREEN", None),
     ("S-G5a-prod", [P_STARTED_IGNORES_ROSTER], T_MAINS, "RED", "grok-roster-startedat-is-opened-at rule violated"),
-    ("S-G5a-weak", [P_STARTED_IGNORES_ROSTER, W_LIVE_STARTED], T_MAINS, "GREEN", None),
+    ("S-G5a-weak", [P_STARTED_IGNORES_ROSTER, W_LIVE_STARTED, W_QUIET_CONTENT], T_MAINS, "GREEN", None),
     ("S-G5b-prod", [P_NO_CREATED_AT], T_MAINS, "RED", "grok-dark-startedat-is-created-at rule violated"),
     ("S-G5b-weak", [P_NO_CREATED_AT, W_DARK_STARTED], T_MAINS, "GREEN", None),
     ("S-G6a-prod", [P_MAIN_CLAIMS_ACTIVE], T_MAINS, "RED", "grok-main-makes-no-state-or-terminal-claim rule violated"),
-    ("S-G6a-weak", [P_MAIN_CLAIMS_ACTIVE, W_MAIN_NOCLAIM, W_DARK_NOCLAIM], T_MAINS, "GREEN", None),
-    ("S-G7a-prod", [P_NO_ROSTER_PATH], T_MAINS, "RED", "grok-roster-session-observed rule violated"),
+    ("S-G6a-weak", [P_MAIN_CLAIMS_ACTIVE, W_MAIN_NOCLAIM, W_HOST_REACH_CONTENT, W_DARK_NOCLAIM], T_MAINS, "GREEN", None),
+    ("S-G7a-prod", [P_NO_ROSTER_PATH], T_MAINS, "RED", "grok-roster-startedat-is-opened-at rule violated"),
+    ("S-G7b-prod", [P_NO_ROSTER_PATH, W_LIVE_STARTED], T_MAINS, "RED", "grok-roster-route-is-not-gated-on-file-mtime rule violated"),
 
     # --- the child lifecycle, and the two halves of the state rule ----------
     ("S-G8a-prod", [P_ACTIVE_WITHOUT_ROSTER], T_LIFE, "RED", "grok-running-child-of-roster-absent-parent-claims-nothing rule violated"),
@@ -541,12 +580,12 @@ CYCLES = [
 
     # --- the path arithmetic ------------------------------------------------
     ("S-G17a-prod", [P_CLAUDE_SLUG], T_ENC, "RED", "grok-roster-path-is-percent-encoded-cwd rule violated"),
-    ("S-G17a-weak", [P_CLAUDE_SLUG, W_ENC_LOCATION, W_ENC_CONTENT], T_ENC, "GREEN", None),
+    ("S-G17a-weak", [P_CLAUDE_SLUG, W_ENC_LOCATION, W_ENC_CONTENT, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
     ("S-G17b-prod", [P_DROP_LEADING_SLASH], T_ENC, "RED", "grok-roster-path-is-percent-encoded-cwd rule violated"),
-    ("S-G17b-weak", [P_DROP_LEADING_SLASH, W_ENC_LOCATION, W_ENC_CONTENT], T_ENC, "GREEN", None),
-    ("S-G17c-prod", [P_ENCODE_SPACES], T_ENC, "RED", "grok-spaced-cwd-is-unreachable-by-roster-path rule violated"),
-    ("S-G17c-weak", [P_ENCODE_SPACES, W_ENC_SPACED, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
-    ("S-G17d-prod", [P_NO_ROSTER_MISS_COUNT], T_ENC, "RED", "grok-unreachable-roster-summary-counted rule violated"),
+    ("S-G17b-weak", [P_DROP_LEADING_SLASH, W_ENC_LOCATION, W_ENC_CONTENT, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
+    ("S-G17c-prod", [P_SLASH_ONLY], T_ENC, "RED", "grok-spaced-cwd-is-reachable-by-roster-path rule violated"),
+    ("S-G17c-weak", [P_SLASH_ONLY, W_ENC_SPACED_PRESENT, W_ENC_SPACED_CONTENT, W_ENC_SKIPCOUNT, W_ENC_NODECOUNT], T_ENC, "GREEN", None),
+    ("S-G17d-prod", [P_NO_ROSTER_MISS_COUNT], T_ENC, "RED", "grok-unreadable-roster-summary-counted rule violated"),
     ("S-G17d-weak", [P_NO_ROSTER_MISS_COUNT, W_ENC_SKIPCOUNT], T_ENC, "GREEN", None),
 
     # --- the roster is evidence of life and never of death ------------------
