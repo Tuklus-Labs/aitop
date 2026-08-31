@@ -1,0 +1,72 @@
+aitop native provenance Task 1 tally
+date: 2026-08-31T00:20:11-07:00
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
+branch: native-provenance
+parent_commit: fd4991403d704b69eba17383eb8cab81e56b1874
+note: certifies the working tree immediately before the Task 1 evidence commit.
+
+commands (exact, from worktree root):
+  gofmt -l internal/native/
+  go vet ./internal/native
+  go test ./internal/native -count=1
+  go test ./internal/native -count=1 -race
+  go build ./...
+  go test ./... -count=1
+
+== gofmt -l internal/native/ ==
+(empty above = formatted)
+
+== go vet ./internal/native ==
+vet_exit=0
+
+== go test ./internal/native -count=1 ==
+ok  	aitop/internal/native	0.113s
+test_exit=0
+
+== go test ./internal/native -count=1 -race ==
+ok  	aitop/internal/native	1.118s
+race_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+ok  	aitop/cmd/aitop	0.272s
+ok  	aitop/internal/act	0.079s
+ok  	aitop/internal/act/claude	0.005s
+ok  	aitop/internal/act/codex	0.005s
+ok  	aitop/internal/act/grok	0.006s
+ok  	aitop/internal/act/local	0.005s
+ok  	aitop/internal/classify	0.006s
+ok  	aitop/internal/graph	1.535s
+ok  	aitop/internal/join	0.005s
+ok  	aitop/internal/native	0.107s
+ok  	aitop/internal/overlay/claude	0.042s
+ok  	aitop/internal/overlay/codex	0.005s
+ok  	aitop/internal/overlay/forks	0.005s
+ok  	aitop/internal/overlay/grok	0.007s
+ok  	aitop/internal/overlay/heartbeat	0.006s
+ok  	aitop/internal/overlay/inference	0.409s
+ok  	aitop/internal/overlay/local	0.006s
+ok  	aitop/internal/present	0.004s
+ok  	aitop/internal/price	0.005s
+ok  	aitop/internal/proc	0.034s
+ok  	aitop/internal/snapshot	0.206s
+ok  	aitop/internal/supervisor	0.005s
+ok  	aitop/internal/theme	0.008s
+ok  	aitop/internal/types	0.006s
+ok  	aitop/internal/ui	0.014s
+all_exit=0
+
+== test function inventory (authoritative count) ==
+9
+func TestNativeEmitOrderNodesBeforeEdges
+func TestNativeEventIDsDeterministicAcrossTicks
+func TestNativeIncarnationPrefersLiveProcess
+func TestNativeStateClaimGetsHeartbeatLane
+func TestNativeExitWindowSkipsStaleTerminals
+func TestNativeRejectionDoesNotStopRun
+func TestNativeDisplayBoundsAndUTF
+func TestNativeDescriptorValid
+func TestNativeSpawnEdgeLandsInRealShadow
