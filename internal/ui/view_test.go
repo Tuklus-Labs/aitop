@@ -959,6 +959,17 @@ func graphFixture() *snapshot.Snapshot {
 	return s
 }
 
+// lineAt is lineIndex's safe reader: a needle that is missing yields -1, and
+// the assertion that follows has to be able to say so rather than panic on the
+// index. A weakened cycle relaxes assertions one at a time, so every one of
+// them has to survive the others being switched off.
+func lineAt(lines []string, i int) string {
+	if i < 0 || i >= len(lines) {
+		return ""
+	}
+	return lines[i]
+}
+
 func lineIndex(frame, needle string) int {
 	for i, l := range strings.Split(frame, "\n") {
 		if strings.Contains(l, needle) {
@@ -982,21 +993,21 @@ func TestGraphPaneRendersSpawnForest(t *testing.T) {
 			t.Fatalf("graph-pane-renders-the-spawn-forest rule violated: child %s at line %d is not directly under parent %s at line %d:\n%s",
 				pair[1], child, pair[0], parent, out)
 		}
-		if !strings.Contains(lines[child], "└─") {
-			t.Fatalf("graph-pane-indents-children-under-parents rule violated: %q", lines[child])
+		if !strings.Contains(lineAt(lines, child), "└─") {
+			t.Fatalf("graph-pane-indents-children-under-parents rule violated: %q", lineAt(lines, child))
 		}
-		if strings.Contains(lines[parent], "└─") || strings.Contains(lines[parent], "├─") {
-			t.Fatalf("graph-pane-roots-carry-no-rail rule violated: %q", lines[parent])
+		if strings.Contains(lineAt(lines, parent), "└─") || strings.Contains(lineAt(lines, parent), "├─") {
+			t.Fatalf("graph-pane-roots-carry-no-rail rule violated: %q", lineAt(lines, parent))
 		}
 	}
 	// The name falls back to the ID TAIL, not the whole id: a pane full of
 	// claude:session:<uuid> would still contain every substring asserted above.
-	if ghost := lines[lineIndex(out, "01a022e3")]; strings.Contains(ghost, "grok:session:") {
+	if ghost := rowLine(out, "01a022e3"); strings.Contains(ghost, "grok:session:") {
 		t.Fatalf("graph-pane-falls-back-to-the-id-tail rule violated: %q", ghost)
 	}
 	// Both of these live on the pane's own top border. Asserting them anywhere
 	// in the frame would pass on the footer's own "2 graph" key tab.
-	top := lines[headerH]
+	top := lineAt(lines, headerH)
 	if !strings.Contains(top, "┤ graph ├") {
 		t.Fatalf("graph-pane-header-names-itself rule violated: %q", top)
 	}
