@@ -1,0 +1,172 @@
+head: 5f9f7b68ddfd1c34fe44ecfb46d289c440690f52
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+
+===== S-F1a-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:464: claude-buried-store-synthesizes-no-parent rule violated: session=0b5eee95-4523-4249-8c82-463efd174f6a present with every child past window=4m0s ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:session:06e524ab-4afa-4a36-a578-1a629d4853c3 claude:session:0b5eee95-4523-4249-8c82-463efd174f6a claude:session:0bb9b35b-251d-4c4d-bdb7-44c68f2860a2 claude:agent:06e524ab-4afa-4a36-a578-1a629d4853c3:aorphan0000000000 claude:agent:0b5eee95-4523-4249-8c82-463efd174f6a:aburied0000000000 claude:agent:0bb9b35b-251d-4c4d-bdb7-44c68f2860a2:ahosted0000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:aactive0000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:aquiet00000000000]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-F1a-prod: AS-PREDICTED
+S-F1a-prod: restored, porcelain clean, focused test green again
+
+===== S-F1a-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 7 ++-----
+ 2 files changed, 3 insertions(+), 6 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-F1a-weak: AS-PREDICTED
+S-F1a-weak: restored, porcelain clean, focused test green again
+
+===== S-F1b-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 6 ------
+ 1 file changed, 6 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:464: claude-buried-store-synthesizes-no-parent rule violated: session=0b5eee95-4523-4249-8c82-463efd174f6a present with every child past window=4m0s ids=[claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 claude:session:06e524ab-4afa-4a36-a578-1a629d4853c3 claude:session:0b5eee95-4523-4249-8c82-463efd174f6a claude:session:0bb9b35b-251d-4c4d-bdb7-44c68f2860a2 claude:agent:06e524ab-4afa-4a36-a578-1a629d4853c3:aorphan0000000000 claude:agent:0b5eee95-4523-4249-8c82-463efd174f6a:aburied0000000000 claude:agent:0bb9b35b-251d-4c4d-bdb7-44c68f2860a2:ahosted0000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:aactive0000000000 claude:agent:84a06b9a-0873-4655-9eb9-d7cf99554b05:aquiet00000000000]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-F1b-prod: AS-PREDICTED
+S-F1b-prod: restored, porcelain clean, focused test green again
+
+===== S-F2a-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:449: claude-orphan-parent-vanishes-with-its-children rule violated: exit="" exitAt=<nil> want="vanished"/2026-08-31 06:59:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-F2a-prod: AS-PREDICTED
+S-F2a-prod: restored, porcelain clean, focused test green again
+
+===== S-F2a-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 3 ---
+ internal/native/claude_test.go | 4 ++--
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-F2a-weak: AS-PREDICTED
+S-F2a-weak: restored, porcelain clean, focused test green again
+
+===== S-F2b-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:449: claude-orphan-parent-vanishes-with-its-children rule violated: exit="vanished" exitAt=2026-08-30 23:54:00 -0700 PDT want="vanished"/2026-08-31 06:59:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-F2b-prod: AS-PREDICTED
+S-F2b-prod: restored, porcelain clean, focused test green again
+
+===== S-F2b-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 4 ++--
+ internal/native/claude_test.go | 8 ++++----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-F2b-weak: AS-PREDICTED
+S-F2b-weak: restored, porcelain clean, focused test green again
+
+===== S-F2c-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:474: claude-present-sidecar-invents-no-terminal rule violated: exit="vanished" exitAt=2026-08-30 23:58:00 -0700 PDT sidecarAge=2h horizon=1h0m0s
+FAIL
+FAIL	aitop/internal/native	0.003s
+FAIL
+S-F2c-prod: AS-PREDICTED
+S-F2c-prod: restored, porcelain clean, focused test green again
+
+===== S-F2c-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-F2c-weak: AS-PREDICTED
+S-F2c-weak: restored, porcelain clean, focused test green again
+
+===== S-C4a-rerun-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:422: claude-quiet-child-makes-no-claim rule violated: state="active" exit="" window=5m0s
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C4a-rerun-prod: AS-PREDICTED
+S-C4a-rerun-prod: restored, porcelain clean, focused test green again
+
+===== S-C4a-rerun-weak expect=GREEN run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go      | 2 +-
+ internal/native/claude_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-C4a-rerun-weak: AS-PREDICTED
+S-C4a-rerun-weak: restored, porcelain clean, focused test green again
+
+===== S-C4b-rerun-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:433: claude-orphan-exitat-is-last-activity rule violated: exitAt=2026-08-30 23:54:00 -0700 PDT want=2026-08-31 06:59:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C4b-rerun-prod: AS-PREDICTED
+S-C4b-rerun-prod: restored, porcelain clean, focused test green again
+
+===== S-C4c-rerun-prod expect=RED run=^TestClaudeScannerVanishesOrphanedChildren$
+plant diffstat:
+internal/native/claude.go | 3 ---
+ 1 file changed, 3 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestClaudeScannerVanishesOrphanedChildren (0.00s)
+    claude_test.go:430: claude-orphan-child-vanishes rule violated: exit="" state="" want="vanished"/""
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-C4c-rerun-prod: AS-PREDICTED
+S-C4c-rerun-prod: restored, porcelain clean, focused test green again
+
+===== SUMMARY
+S-F1a-prod: AS-PREDICTED
+S-F1a-weak: AS-PREDICTED
+S-F1b-prod: AS-PREDICTED
+S-F2a-prod: AS-PREDICTED
+S-F2a-weak: AS-PREDICTED
+S-F2b-prod: AS-PREDICTED
+S-F2b-weak: AS-PREDICTED
+S-F2c-prod: AS-PREDICTED
+S-F2c-weak: AS-PREDICTED
+S-C4a-rerun-prod: AS-PREDICTED
+S-C4a-rerun-weak: AS-PREDICTED
+S-C4b-rerun-prod: AS-PREDICTED
+S-C4c-rerun-prod: AS-PREDICTED
+total=13 as_predicted=13

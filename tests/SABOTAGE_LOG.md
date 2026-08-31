@@ -2162,3 +2162,37 @@ lookup one line later, so the test panicked in `scanStore` before the vanish
 assertion ever ran. A panic is not evidence about the terminal rule. The edit
 that fits the claim is emptying the vanish branch itself, which leaves the live
 path untouched and lets exactly the assertion under test speak.
+
+### Fix round 1: review findings 1 and 2 (synthesized-parent path)
+
+Two Important findings, both on the path that synthesizes a session for a
+subagent store. A parent was emitted even when every child it existed for
+carried a terminal the core drops, and an orphan's parent never carried a
+terminal of its own; with `GhostExpiresAt` set only from a terminal state and
+`MaxNodes` gating admission rather than eviction, either one leaves a nameless
+primary in the graph forever. Fixed in `ec0f1cb`, coverage for the negative half
+in `5f9f7b6`. Driver and raw log: `sabotage_driver_fix1.py`,
+`sabotage_runs_native_task2_fix1.log` (archived in `tests/sabotage-native-task2/`).
+
+| ID / test | production mutation | observed | weakened assertion | observed | conclusion |
+|---|---|---|---|---|---|
+| S-F1a / `TestClaudeScannerVanishesOrphanedChildren` | Anchor the store on any accepted child rather than an admissible one, so a store whose children the core will all drop still synthesizes a session. Predicted RED. | RED: `claude-buried-store-synthesizes-no-parent rule violated: session=0b5eee95-... present with every child past window=4m0s` (nine ids listed, four of them sessions). | Three sites: delete the absence check, relax the scanner node count to `< 8`, relax the stale-terminal counter to `< 1`. Predicted false GREEN. | PASS. | Load-bearing at three sites, and the counter is the one that cannot be talked around: the extra parent is itself dropped by the core, so `staleTerminals` rises from 1 to 2 while the published-node count stays at 7. |
+| S-F1b / `TestClaudeScannerVanishesOrphanedChildren` | Same defect from the other side: delete the store-level short-circuit entirely. Predicted RED. | RED: same phrase and the same nine-id list. | (production-only supplementary cycle) | n/a | Load-bearing. Two independent edits produce one failure, which is what a gate covering a rule rather than a line should do. |
+| S-F2a / `TestClaudeScannerVanishesOrphanedChildren` | Synthesize an orphan's parent with no terminal at all: the immortal nameless primary the review found. Predicted RED. | RED: `claude-orphan-parent-vanishes-with-its-children rule violated: exit="" exitAt=<nil> want="vanished"/2026-08-31 06:59:00`. | Two sites: disable the parent-terminal assertion and the end-to-end parent exit event. Predicted false GREEN. | PASS. | Load-bearing at two sites. Every node and edge assertion in the test passes with an immortal parent in the graph; only a claim about the terminal sees it. |
+| S-F2b / `TestClaudeScannerVanishesOrphanedChildren` | Date the store from the meta mtime instead of its newest activity, so a session working seconds ago reads as having died minutes ago. Predicted RED. | RED: `claude-orphan-parent-vanishes-with-its-children rule violated: exit="vanished" exitAt=2026-08-30 23:54:00 want=...06:59:00`. | Four sites, two more than predicted: parent terminal, published-node count, stale-terminal counter, parent exit event. Predicted false GREEN. | PASS. | Load-bearing, and the correction is the finding: a mis-dated parent falls out of the exit window, which moves three counters at once. The date is not cosmetic; it decides whether the parent is observed at all. |
+| S-F2c / `TestClaudeScannerVanishesOrphanedChildren` | Invent a terminal for every synthesized parent, including sessions whose roster entry is merely stale. Predicted RED. | RED: `claude-present-sidecar-invents-no-terminal rule violated: exit="vanished" exitAt=2026-08-30 23:58:00 sidecarAge=2h horizon=1h0m0s`. | Disable that one assertion. Predicted false GREEN. | PASS. | Load-bearing, and it is the only witness to the negative half of the rule. Before `5f9f7b6` the fixture had no session with a stale-but-present sidecar, so this mutation was invisible: the rule said "do not invent terminals here" and nothing checked. |
+| S-C4a re-run / `TestClaudeScannerVanishesOrphanedChildren` | Activity window 30 s to 5 m (first-epoch plant, re-run against the grown test). Predicted RED. | RED: `claude-quiet-child-makes-no-claim rule violated: state="active" exit="" window=5m0s`. | Relax the quiet-child guard to `quiet.Exit != ""`. Predicted false GREEN. | PASS. | Unchanged by the fix: still one plant, still one weakening site. |
+| S-C4b re-run / `TestClaudeScannerVanishesOrphanedChildren` | Date a CHILD's terminal at the meta mtime (first-epoch plant, re-run). Predicted RED. | RED: `claude-orphan-exitat-is-last-activity rule violated: exitAt=2026-08-30 23:54:00 want=...06:59:00`. | (production-only now; see below) | n/a | **The first epoch's three-site weakening no longer greens this plant.** A child mis-dated out of the exit window now makes its whole store inadmissible, so the Finding 1 gate withholds the parent as well and SEVEN assertions fire. The two fixes compose: a defect in dating a child propagates to its parent instead of stopping at the child. This row supersedes the S-C4b row in the first-epoch table. |
+| S-C4c re-run / `TestClaudeScannerVanishesOrphanedChildren` | Empty the child vanish branch (first-epoch plant, re-run). Predicted RED. | RED: `claude-orphan-child-vanishes rule violated: exit="" state="" want="vanished"/""`. | (production-only supplementary cycle) | n/a | Unchanged by the fix. |
+
+13 counted cycles (9 production RED, 4 false GREEN). All AS-PREDICTED; tree
+restored porcelain-clean and focused-test green after every cycle. Running total
+for Task 2: 50 cycles, 31 production RED and 19 false GREEN.
+
+**Prediction corrected during this round.** S-F2b was first paired with a
+weakening that relaxed the published-node count from `!= 7` to `< 7`. The plant
+makes that count FALL to 6, so the relaxed comparison still fired: a loosened
+bound only admits a plant on the side the value actually moved. Re-run with `> 7`
+and the stale-terminal site added, then re-run whole. The same run then showed
+S-C4b's inherited weakening set to be obsolete, which is recorded above rather
+than patched away.
