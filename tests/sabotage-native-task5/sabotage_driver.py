@@ -93,9 +93,11 @@ P_CLA_WRONG_MAP = (CLA,
 P_COD_NO_LIFT = (COD,
                  "\t\t\tif now.Sub(info.ModTime()) > nativeHorizon && !codexLiveRollout(name, live) {",
                  "\t\t\tif now.Sub(info.ModTime()) > nativeHorizon {")
+# The bound widened 100x rather than removed: `if false` would orphan the info
+# binding and fail to build, which tests the compiler rather than the rule.
 P_COD_NO_HORIZON = (COD,
                     "\t\t\tif now.Sub(info.ModTime()) > nativeHorizon && !codexLiveRollout(name, live) {",
-                    "\t\t\tif false {")
+                    "\t\t\tif now.Sub(info.ModTime()) > 100*nativeHorizon {")
 # The suffix match dropped: any live thread admits every stale rollout in the
 # walked days, which is the whole corpus for those dates.
 P_COD_NO_MATCH = (COD,
