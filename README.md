@@ -7,7 +7,7 @@ ink.
 ```
 go build -o aitop ./cmd/aitop
 ./aitop                          # the TUI
-./aitop --json --once            # one JSON dump (includes aitop-canary; control fields when set)
+./aitop --json --once            # one JSON dump (schema 2: rows + graph; control fields when set)
 ./aitop --screenshot 150x42      # one ANSI frame to stdout, truecolor
 ./aitop --theme ~/.config/btop/themes/nightfable.theme
 ```
@@ -174,7 +174,8 @@ clock that never sits on the paint path:
 `--json` dumps the occupancy snapshot. Zero-value control fields are absent,
 same as cost: `fork_of`, `kind`, `worktree`, `capsule_id`, `tok_per_sec`,
 `dark`, `slot_index` appear only when set. `fork_of:""` is never emitted.
-Empty machine still carries `aitop-canary`.
+Schema-2 JSON carries no canary; the canary lives in the TUI header
+(visible in `--screenshot` output), where the empty machine still shows it.
 
 `internal/join.Join` is a pure left join on `(pid, starttime)`. Overlays with
 no live process never create rows; processes with no overlay keep theirs with
@@ -194,7 +195,8 @@ Files older than 5s are ignored. Uncooperative processes still appear.
 
 `go test ./...`. Instruments follow `~/.claude/STYLE.md`: every gate has been
 watched fail on a planted mutation (`tests/SABOTAGE_LOG.md`), the risk model
-is `tests/RISK_MODEL.md`, and the empty machine still emits `aitop-canary`.
+is `tests/RISK_MODEL.md`, and the empty machine still shows `aitop-canary`
+in the TUI header (JSON dropped the canary with schema 2).
 `hack/ansi2png.py` turns `--screenshot` output into a PNG for eyeballing.
 
 Design: `docs/superpowers/specs/2026-08-21-aitop-design.md`. Occupancy polish:
