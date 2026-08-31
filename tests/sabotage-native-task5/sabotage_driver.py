@@ -362,6 +362,13 @@ W_ATT_ABS_EMPTY = (ATTT,
 W_SCHEMA_WRITE = (ATTT,
                   "\tif err := WriteJSON(snap, &out, snap.At); err != nil {",
                   "\tif err := WriteJSON(snap, &out, snap.At); false && err != nil {")
+# Removing the mapping makes WriteJSON fail, so nothing is written and the
+# decode fails on empty input. The write assertion and the decode assertion are
+# two witnesses of one rule, and a weakened cycle has to relax both.
+W_SCHEMA_JSON = (ATTT,
+                 "\tif err := json.Unmarshal([]byte(out.String()), &decoded); err != nil {",
+                 "\tif err := json.Unmarshal([]byte(out.String()), &decoded); false && err != nil {")
+
 W_SCHEMA_VALUE = (ATTT,
                   "\tif state.Value != string(graph.StateUnknown) {",
                   "\tif false && (state.Value != string(graph.StateUnknown)) {")
@@ -456,10 +463,10 @@ CYCLES = [
 
     # --- schema 2 ----------------------------------------------------------
     ("S-T5-26-prod", [P_JSN_NO_MAP], P_SNAP, T_SCHEMA, "RED", "schema-2-writes-an-unclaimed-state rule violated"),
-    ("S-T5-26-weak", [P_JSN_NO_MAP, W_SCHEMA_WRITE, W_SCHEMA_NODES], P_SNAP, T_SCHEMA, "GREEN", None),
+    ("S-T5-26-weak", [P_JSN_NO_MAP, W_SCHEMA_WRITE, W_SCHEMA_JSON, W_SCHEMA_NODES], P_SNAP, T_SCHEMA, "GREEN", None),
     ("S-T5-27-prod", [P_JSN_ALWAYS_UNKNOWN], P_SNAP, T_SCHEMA, "GREEN", None),
     ("S-T5-27b-prod", [P_JSN_INVENTS_SINCE], P_SNAP, T_SCHEMA, "RED", "schema-2-writes-an-unclaimed-state rule violated"),
-    ("S-T5-27b-weak", [P_JSN_INVENTS_SINCE, W_SCHEMA_WRITE, W_SCHEMA_NODES, W_SCHEMA_SINCE], P_SNAP, T_SCHEMA, "GREEN", None),
+    ("S-T5-27b-weak", [P_JSN_INVENTS_SINCE, W_SCHEMA_WRITE, W_SCHEMA_JSON, W_SCHEMA_NODES, W_SCHEMA_SINCE], P_SNAP, T_SCHEMA, "GREEN", None),
 
     # --- the production run paths -------------------------------------------
     ("S-T5-28-prod", [P_MAI_CAP_EMPTY], P_MAIN, T_CAP_HOMES, "RED", "production-passes-engine-homes-to-the-graph rule violated"),
