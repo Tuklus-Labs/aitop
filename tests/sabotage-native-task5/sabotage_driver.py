@@ -95,6 +95,60 @@ T_CAP_OVER = "^TestProductionCaptureOnceReturnsAtTheCapForASlowerLane$"
 T_BUDGET = "^TestNativeFirstTickBudgetIsTwoSeconds$"
 T_DARK = "^TestDarkLocalUnitNeedsNoSpine$"
 
+# Fix wave 2: the newborn binding rule, and the screenshot size hole.
+T_NEWBORN = "^TestNewbornSightingWaitsOneTickForItsProcessBinding$"
+T_NEWBORN_ONCE = "^TestNewbornSightingIsWaitedForOnlyOnce$"
+T_STALE_NOW = "^TestStaleUnboundSightingPublishesImmediately$"
+T_BOUND_NOW = "^TestBoundSightingPublishesImmediately$"
+T_SHOT = "^TestScreenshotGraphRendersTheGraphPane$"
+
+# --- fix wave 2: the newborn binding rule ---------------------------------
+
+# The rule removed. This is the code as fix round 1 shipped it, and it
+# establishes a newborn under an invocation incarnation that nothing can rotate.
+P_NB_NO_WAIT = (NAT,
+                "\t\tif c.awaitBinding(processes, sighting, now) {",
+                "\t\tif false && c.awaitBinding(processes, sighting, now) {")
+# The grace given every tick instead of once, which makes a session aitop can
+# never bind permanently invisible rather than one poll late.
+P_NB_ALWAYS = (NAT,
+               "\tif c.awaitingBinding[sighting.ID] {\n\t\treturn false\n\t}\n",
+               "")
+# Bound sightings held back too, so every session on the box pays a poll and the
+# rule fires precisely where it can do nothing.
+P_NB_IGNORES_BINDING = (NAT,
+                        "\tif _, bound := processes[sighting.SessionID]; bound {\n\t\treturn false\n\t}",
+                        "\tif _, bound := processes[sighting.SessionID]; false && bound {\n\t\treturn false\n\t}")
+# Stale sightings held back as well: the window widened past anything that could
+# be called newborn.
+P_NB_WIDE_WINDOW = (NAT,
+                    "\tnativeBindWindow  = 6 * time.Second",
+                    "\tnativeBindWindow  = 6 * time.Hour")
+# A terminal sighting held back, delaying the one piece of evidence that ends a
+# node by a poll for no possible gain: nothing will ever bind a dead session.
+P_NB_HOLDS_TERMINALS = (NAT,
+                        "\tif sighting.Exit != \"\" {\n\t\treturn false\n\t}",
+                        "\tif sighting.Exit != \"\" && false {\n\t\treturn false\n\t}")
+# The prune dropped, so a node keeps its mark after it goes away and never gets
+# the grace again when it comes back under a new incarnation.
+P_NB_NO_PRUNE = (NAT,
+                 "\tfor id := range c.awaitingBinding {\n\t\tif !seen[id] {\n\t\t\tdelete(c.awaitingBinding, id)\n\t\t}\n\t}",
+                 "\t_ = seen")
+
+# The claude scanner dating a sighting from something that is not its activity,
+# so a two-hour-old session reads as a newborn and is held back forever.
+P_NB_CLAUDE_UNDATED = (CLA,
+                       "\t\t\tActivityAt: &sidecar.modTime,\n",
+                       "")
+
+# --- fix wave 2: the screenshot size hole ---------------------------------
+
+# The width hardcoded. A frame of the right HEIGHT is the right height at any
+# width, which is how this passed the whole suite before the assertion existed.
+P_SHOT_FIXED_WIDTH = (MAI,
+                      "\treturn ui.Render(s, th, w, h, now)",
+                      "\treturn ui.Render(s, th, 120, h, now)")
+
 # --- fix round 1: the first-tick signal -----------------------------------
 
 # The signal closed on the way INTO the tick. A waiter then learns only that the
@@ -482,6 +536,37 @@ W_SCHEMA_WRITE = (ATTT,
 # Removing the mapping makes WriteJSON fail, so nothing is written and the
 # decode fails on empty input. The write assertion and the decode assertion are
 # two witnesses of one rule, and a weakened cycle has to relax both.
+W_NB_TICK1 = (NATT,
+              "\tif n := sink.count(); n != 0 {\n\t\tevents, _ := sink.snapshot()",
+              "\tif n := sink.count(); false && n != 0 {\n\t\tevents, _ := sink.snapshot()")
+W_NB_INCARNATION = (NATT,
+                    "\tif events[0].Actor != id || events[0].ActorIncarnation != want {",
+                    "\tif false && (events[0].Actor != id || events[0].ActorIncarnation != want) {")
+W_NB_NEVER_INV = (NATT,
+                  "\t\tif e.ActorIncarnation == never {",
+                  "\t\tif false && e.ActorIncarnation == never {")
+W_NB_ONCE = (NATT,
+             "\tif n := sink.count(); n == 0 {\n\t\tt.Fatalf(\"newborn-sighting-is-waited-for-only-once",
+             "\tif false {\n\t\tt.Fatalf(\"newborn-sighting-is-waited-for-only-once")
+W_NB_ONCE_TICK1 = (NATT,
+                   "\tif n := sink.count(); n != 0 {\n\t\tt.Fatalf(\"newborn-sighting-waits-for-its-binding rule violated: tick 1 published %d events\", n)",
+                   "\tif n := sink.count(); false && n != 0 {\n\t\tt.Fatalf(\"newborn-sighting-waits-for-its-binding rule violated: tick 1 published %d events\", n)")
+W_NB_STALE = (NATT,
+              "\tif n := sink.count(); n == 0 {\n\t\tt.Fatalf(\"stale-unbound-sighting-publishes-immediately",
+              "\tif false {\n\t\tt.Fatalf(\"stale-unbound-sighting-publishes-immediately")
+W_NB_BOUND = (NATT,
+              "\tif len(events) == 0 {\n\t\tt.Fatalf(\"bound-sighting-publishes-immediately",
+              "\tif false {\n\t\tt.Fatalf(\"bound-sighting-publishes-immediately")
+# Four tabs, and anchored on the graph pane's own message. The table subtest's
+# identical check sits one level shallower, so the shallower text is a SUBSTRING
+# of this one and a three-tab patch would match both.
+W_SHOT_WIDTH = (MAIT,
+                "\t\t\t\tif w := ansi.StringWidth(l); w != graphFrameW {\n\t\t\t\t\tt.Fatalf(\"screenshot-graph-renders-the-requested-size",
+                "\t\t\t\tif w := ansi.StringWidth(l); false && w != graphFrameW {\n\t\t\t\t\tt.Fatalf(\"screenshot-graph-renders-the-requested-size")
+W_SHOT_WIDTH_TABLE = (MAIT,
+                      "\t\t\tif w := ansi.StringWidth(l); w != graphFrameW {\n\t\t\t\tt.Fatalf(\"screenshot-renders-the-requested-size",
+                      "\t\t\tif w := ansi.StringWidth(l); false && w != graphFrameW {\n\t\t\t\tt.Fatalf(\"screenshot-renders-the-requested-size")
+
 W_TICK_AFTER_OPEN = (NATT,
                      "\t\tt.Fatalf(\"native-first-tick-is-open-before-the-collector-runs rule violated: signal closed with no tick taken\")",
                      "\t\t_ = t")
@@ -491,9 +576,11 @@ W_TICK_AFTER_MID = (NATT,
 # The mid-scan assertion is not the only witness: a signal that closes on entry
 # also closes before anything is published, and the publishing assertion catches
 # it independently. Two witnesses of one rule, both relaxed here.
+# Anchored on its own message: three tests now assert on sink.count(), and a
+# patch that could match any of them is a patch aimed at none.
 W_TICK_AFTER_PUBLISHED = (NATT,
-                          "\tif n := sink.count(); n == 0 {",
-                          "\tif n := sink.count(); false && n == 0 {")
+                          "\tif n := sink.count(); n == 0 {\n\t\tt.Fatalf(\"native-first-tick-closes-after-publishing",
+                          "\tif n := sink.count(); false && n == 0 {\n\t\tt.Fatalf(\"native-first-tick-closes-after-publishing")
 
 W_TICK_ERR = (NATT,
               "\t\tt.Fatalf(\"native-first-tick-closes-on-a-failed-scan rule violated: signal still open 3s after a scan error\")",
@@ -707,6 +794,23 @@ CYCLES = [
     ("S-T5-44-prod", [P_MAI_HUGE_BUDGET], P_MAIN, T_BUDGET, "RED", "native-first-tick-budget-is-two-seconds rule violated"),
     ("S-T5-44b-prod", [P_MAI_HUGE_BUDGET], P_MAIN, T_CAP_UNDER, "GREEN", None),
     ("S-T5-44-weak", [P_MAI_HUGE_BUDGET, W_BUDGET], P_MAIN, T_BUDGET, "GREEN", None),
+
+    # --- fix wave 2: the newborn binding rule -----------------------------
+    ("S-T5-47-prod", [P_NB_NO_WAIT], P_NATIVE, T_NEWBORN, "RED", "newborn-sighting-waits-for-its-binding rule violated"),
+    ("S-T5-47-weak", [P_NB_NO_WAIT, W_NB_TICK1, W_NB_INCARNATION, W_NB_NEVER_INV], P_NATIVE, T_NEWBORN, "GREEN", None),
+    ("S-T5-48-prod", [P_NB_ALWAYS], P_NATIVE, T_NEWBORN_ONCE, "RED", "newborn-sighting-is-waited-for-only-once rule violated"),
+    ("S-T5-48-weak", [P_NB_ALWAYS, W_NB_ONCE], P_NATIVE, T_NEWBORN_ONCE, "GREEN", None),
+    ("S-T5-49-prod", [P_NB_IGNORES_BINDING], P_NATIVE, T_BOUND_NOW, "RED", "bound-sighting-publishes-immediately rule violated"),
+    ("S-T5-49-weak", [P_NB_IGNORES_BINDING, W_NB_BOUND], P_NATIVE, T_BOUND_NOW, "GREEN", None),
+    ("S-T5-50-prod", [P_NB_WIDE_WINDOW], P_NATIVE, T_STALE_NOW, "RED", "stale-unbound-sighting-publishes-immediately rule violated"),
+    ("S-T5-50-weak", [P_NB_WIDE_WINDOW, W_NB_STALE], P_NATIVE, T_STALE_NOW, "GREEN", None),
+    ("S-T5-51-prod", [P_NB_CLAUDE_UNDATED], P_NATIVE, T_CLA_LIVE, "GREEN", None),
+    ("S-T5-52-prod", [P_NB_HOLDS_TERMINALS], P_NATIVE, T_NEWBORN, "GREEN", None),
+    ("S-T5-53-prod", [P_NB_NO_PRUNE], P_NATIVE, T_NEWBORN_ONCE, "GREEN", None),
+
+    # --- fix wave 2: the screenshot size hole -----------------------------
+    ("S-T5-54-prod", [P_SHOT_FIXED_WIDTH], P_MAIN, T_SHOT, "RED", "renders-the-requested-size rule violated"),
+    ("S-T5-54-weak", [P_SHOT_FIXED_WIDTH, W_SHOT_WIDTH, W_SHOT_WIDTH_TABLE], P_MAIN, T_SHOT, "GREEN", None),
 
     # --- fix round 1: the portable ordering test --------------------------
     # Removing the injection CANNOT red the ordering test on this box, and that
