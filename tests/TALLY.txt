@@ -392,3 +392,72 @@ twice in this file with no owner. It reds on load rather than on a regression,
 which trains readers to retry a red instead of reading it. Worth either a
 scaled budget, an explicit skip under load, or deletion in favour of a
 complexity assertion.
+
+================================================================
+recertification: native provenance phase, fix round 1
+date: 2026-08-31
+go: go1.27.0-X:nodwarf5 linux/amd64
+certified_tree: ba9abd857e81bc7b08f3be27e1c5fe749d4caef3
+reason: review finding (Important, evidence overstatement). The rule
+screenshot-graph-renders-the-requested-size asserted the frame's LINE COUNT and
+nothing else, so it measured height and not width, while the sabotage log and
+the driver docstring both listed "its size" among the claims with a plant aimed
+at each. Two commits: 4cf8bc6 (the width assertion) and ba9abd8 (the cycle and
+the evidence correction).
+
+the finding was verified before it was fixed, because a review finding's
+predicted CONSEQUENCE is a claim like any other:
+  plant: frame := render(snap, th, 80, height, now)   in runScreenshot
+  go test ./... -count=1  ->  exit 0, 25 packages, 0 failed
+  i.e. the whole suite passed with the parsed width thrown away. Confirmed, not
+  taken on report.
+
+why it hid, all three at once:
+  - a 42-line frame is 42 lines at any width, so the height assertion is blind
+    to a width defect by construction;
+  - testRunDeps' spy renderers return the literal "FRAME" and discard their int
+    arguments, so every cmd-path test using them is blind to both axes;
+  - internal/ui's TestGraphPaneKeepsFrameGeometry DOES assert per-line cell
+    width, and calls RenderGraph directly. It proves the renderer honours a
+    width it is handed, never that runScreenshot hands it the parsed one.
+    Coverage sat on both sides of the seam and not across it.
+
+fix: every line's cell width asserted against the requested width on the cmd
+path; the requested size now lives in one constant pair (graphFrameW,
+graphFrameH) that the flag argument is built from, so the ask and the check
+cannot drift apart. The same plant now reds:
+  screenshot-graph-renders-the-requested-size rule violated:
+  line 0 is 80 cells wide, want 150
+
+sabotage: whole epoch re-run at 4cf8bc6, not just the new cycles.
+  18 cycles, 18 as predicted, 9 production RED, 9 predicted GREEN, 0 mismatches
+  three bounded chunks, one head, no tree drift
+  new pair S-T7-09 kept separate from S-T7-06: the two halves of "size" fail
+  independently, and a plant moving both could not show which assertion caught
+  which. S-T7-09-weak's relaxation count was measured before it was predicted,
+  by rendering the real pane at 80x42 (42 lines, border tab present, one canary
+  line), so no other assertion moves.
+
+gate at ba9abd8, identical seven-stage command list:
+  go test ./... -count=1                exit 0, 25 packages, 0 failed
+  go test -race ./... -count=1          exit 0, 25 packages, 0 failed (first
+                                        run; the internal/proc wall-clock flake
+                                        recorded above did not fire this time)
+    cmd/aitop race:  ok  5.982s
+    graph race:      ok 18.638s
+    native race:     ok  1.995s
+    proc race:       ok  1.107s
+  go vet ./...                          exit 0
+  go list -deps jsonschema absence      exit 0 (no match)
+  rg production jsonschema absence      exit 0 (no match)
+  aegis-taste-check --fail-on critical  exit 0 (same .py-only coverage caveat)
+  git diff --check                      exit 0
+
+evidence updated alongside: LOUDNESS_AUDIT totals re-derived to 532 sites /
+532 named (one site added, counts not incremented by hand); RISK_MODEL gains
+the size row it never had; SABOTAGE_LOG's "a plant aimed at each" claim
+corrected in place with the superseded 16-cycle numbers described rather than
+deleted.
+
+HEAD recorded here: ba9abd857e81bc7b08f3be27e1c5fe749d4caef3
+after the evidence commit, this file is one commit behind that SHA by design.
