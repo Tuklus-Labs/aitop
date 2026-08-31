@@ -1088,9 +1088,21 @@ func TestGraphPaneKeysToggle(t *testing.T) {
 	if tm.(Model).graphView {
 		t.Fatalf("graph-pane-keys-toggle rule violated: the table is not the default view")
 	}
+	// The table's key row is already over budget before this task: at 140 cells
+	// it silently drops `v mark`, and the two presets only appear from 165 up
+	// (measured against --screenshot, not reasoned about). The window here is
+	// wide enough to see them.
 	table := ansi.Strip(tm.View())
 	if !strings.Contains(table, "1 table") || !strings.Contains(table, "2 graph") {
 		t.Fatalf("graph-pane-footer-offers-both-presets rule violated:\n%s", table)
+	}
+	// Which is why the assertion that actually protects an operator is this
+	// one: the pane's own key row is short, so the way back is on screen at
+	// every width the app will run. Asserting the presets ONLY on a 200-cell
+	// frame would certify discoverability at a width nobody uses.
+	narrow := ansi.Strip(RenderGraph(graphFixture(), theme.Nightfable(), 80, 24, now))
+	if !strings.Contains(narrow, "1 table") {
+		t.Fatalf("graph-pane-offers-a-way-back-at-any-width rule violated:\n%s", narrow)
 	}
 
 	tm = press(tm, "2")
