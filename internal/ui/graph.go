@@ -62,6 +62,10 @@ func graphNodeName(n graph.Node) string {
 
 func graphIsGhost(n graph.Node) bool { return n.GhostExpiresAt != nil }
 
+// spawnEnds identifies a parent-child pair independently of which observation
+// reported it.
+type spawnEnds struct{ source, target graph.NodeID }
+
 // flattenGraph walks the spawn forest depth first and returns the lines to
 // paint. It never trusts the reconciler's cycle rejection: a node is expanded
 // at most once, so a fabricated cycle terminates and its second reach renders
@@ -80,6 +84,7 @@ func flattenGraph(g *graph.Snapshot) []graphLine {
 	kids := map[graph.NodeID][]graph.NodeID{}
 	spawned := map[graph.NodeID]bool{}
 	side := map[graph.NodeID][]graph.Edge{}
+	drawn := map[spawnEnds]bool{}
 	for _, e := range g.Edges {
 		if _, ok := byID[e.Source]; !ok {
 			continue
@@ -90,6 +95,17 @@ func flattenGraph(g *graph.Snapshot) []graphLine {
 		switch e.Type {
 		case graph.EdgeSpawn, graph.EdgeLaunch:
 			spawned[e.Target] = true
+			// One spawn observed twice is two rows, not one: RelationshipEdgeKey
+			// hashes the relationship id, so the same (source, target, type)
+			// under two ids never coalesces in the store. Appending both would
+			// draw the child once and then again as `↩ <name>`, which is
+			// byte-identical to a genuine second parent. The pane would be
+			// inventing provenance, which is the one thing it exists not to do.
+			ends := spawnEnds{e.Source, e.Target}
+			if drawn[ends] {
+				continue
+			}
+			drawn[ends] = true
 			kids[e.Source] = append(kids[e.Source], e.Target)
 		case graph.EdgeMessage, graph.EdgeService:
 			side[e.Source] = append(side[e.Source], e)

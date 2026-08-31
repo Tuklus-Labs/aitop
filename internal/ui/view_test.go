@@ -1292,3 +1292,105 @@ func TestGraphPaneCapsMessageEdgesAtThree(t *testing.T) {
 		t.Fatalf("graph-pane-message-edges-do-not-parent rule violated: %q", extraLine)
 	}
 }
+
+// --- Task 6 fix round 1: the pane's cursor, and duplicate spawn edges -------
+
+// graphScrollFixture builds n unrelated roots, so the flattened list is longer
+// than the pane the test opens. A fixture that fits on screen measures nothing
+// about scrolling, which is why the test asserts it does not fit.
+func graphScrollFixture(n int) *snapshot.Snapshot {
+	s := fixtureSnapshot()
+	nodes := make([]graph.Node, 0, n)
+	for i := 0; i < n; i++ {
+		nodes = append(nodes, graph.Node{
+			ID:         graph.NodeID(fmt.Sprintf("claude:session:%02d", i)),
+			Runtime:    types.RuntimeClaude,
+			ProvenName: fmt.Sprintf("node-%02d", i),
+			State:      graph.NodeState{Value: graph.StateActive},
+		})
+	}
+	s.Graph = &graph.Snapshot{At: now, TopologyRevision: 1, Nodes: nodes}
+	return s
+}
+
+func TestGraphPaneScrollsThroughTheForest(t *testing.T) {
+	src := &atomic.Pointer[snapshot.Snapshot]{}
+	src.Store(graphScrollFixture(24))
+	m := New(src, theme.Nightfable(), nil)
+	m.now = func() time.Time { return now }
+	var tm tea.Model = m
+	// 14 rows leaves the pane an 8-line body for 24 lines of forest.
+	tm, _ = tm.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
+	tm, _ = tm.Update(tickMsg(now))
+
+	// Move the TABLE cursor first, so the reset on switching presets is
+	// load-bearing rather than a no-op over a cursor that was already 0.
+	tm = press(tm, "j")
+	tm = press(tm, "j")
+	tm = press(tm, "j")
+	tm = press(tm, "2")
+
+	top := ansi.Strip(tm.View())
+	if !strings.Contains(top, "node-00") || !strings.Contains(top, " 1/24 ") {
+		t.Fatalf("graph-pane-opens-at-the-top rule violated: a cursor carried in from the table means nothing in this list:\n%s", top)
+	}
+	if strings.Contains(top, "node-23") {
+		t.Fatalf("graph-pane-scroll-precondition violated: the whole forest fits on screen, so nothing here measures scrolling:\n%s", top)
+	}
+
+	for i := 0; i < 12; i++ {
+		tm = press(tm, "j")
+	}
+	mid := ansi.Strip(tm.View())
+	if !strings.Contains(mid, "node-12") || !strings.Contains(mid, " 13/24 ") {
+		t.Fatalf("graph-pane-window-follows-the-cursor rule violated: the cursor line is not on screen:\n%s", mid)
+	}
+	if strings.Contains(mid, "node-00") {
+		t.Fatalf("graph-pane-window-follows-the-cursor rule violated: the window never advanced:\n%s", mid)
+	}
+
+	tm = press(tm, "G")
+	end := ansi.Strip(tm.View())
+	if !strings.Contains(end, "node-23") || !strings.Contains(end, " 24/24 ") {
+		t.Fatalf("graph-pane-last-line-is-reachable rule violated: the end of a 24-line forest is off screen:\n%s", end)
+	}
+	// The window the model scrolls by has to be the window the pane paints, or
+	// the last screen carries blank rows under the final line. At 14 rows that
+	// window is 8, so the end view starts at node-16.
+	if !strings.Contains(end, "node-16") || strings.Contains(end, "node-15") {
+		t.Fatalf("graph-pane-scroll-window-is-the-painted-window rule violated: the last screen is not a full body of lines:\n%s", end)
+	}
+
+	tm = press(tm, "g")
+	if back := ansi.Strip(tm.View()); !strings.Contains(back, "node-00") || !strings.Contains(back, " 1/24 ") {
+		t.Fatalf("graph-pane-window-follows-the-cursor rule violated: g did not return to the top:\n%s", back)
+	}
+}
+
+func TestGraphPaneDuplicateSpawnEdgeDrawsOneChild(t *testing.T) {
+	s := graphFixture()
+	// RelationshipEdgeKey hashes the relationship id, so one spawn observed
+	// under two ids is two distinct rows in the snapshot rather than one
+	// coalesced edge. The pane has to survive that without inventing a parent.
+	first := graph.Edge{
+		Key:    graph.RelationshipEdgeKey(graph.EdgeSpawn, graphRootID, graphAgentID, "aimpl-t6"),
+		Source: graphRootID, Target: graphAgentID, Type: graph.EdgeSpawn,
+		Provenance: graph.ProvenanceNative, Relationship: "aimpl-t6", Lifecycle: graph.LifecycleActive,
+	}
+	second := first
+	second.Relationship = "aimpl-t6-rescanned"
+	second.Key = graph.RelationshipEdgeKey(graph.EdgeSpawn, graphRootID, graphAgentID, second.Relationship)
+	if first.Key == second.Key {
+		t.Fatalf("graph-pane-duplicate-edge-precondition violated: the two observations share an edge key, so the store would have coalesced them and this measures nothing")
+	}
+	s.Graph.Edges[0] = first
+	s.Graph.Edges = append(s.Graph.Edges, second)
+
+	out := ansi.Strip(RenderGraph(s, theme.Nightfable(), 100, 30, now))
+	if n := strings.Count(out, "impl-t6"); n != 1 {
+		t.Fatalf("graph-pane-draws-a-duplicate-edge-once rule violated: one spawn observed twice drew the child %d times:\n%s", n, out)
+	}
+	if strings.Contains(out, "↩") {
+		t.Fatalf("graph-pane-invents-no-back-reference rule violated: a second observation of one spawn rendered as a second parent, which is what a real one looks like:\n%s", out)
+	}
+}
