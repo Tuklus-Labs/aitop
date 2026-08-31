@@ -163,13 +163,23 @@ func productionEngine(opt runOptions) *snapshot.Engine {
 	}
 }
 
+func reapEngineOnCancel(ctx context.Context, wait func()) {
+	if ctx == nil || wait == nil {
+		return
+	}
+	go func() {
+		<-ctx.Done()
+		wait()
+	}()
+}
+
 func productionRunInteractive(ctx context.Context, opt runOptions, _ taskRegistrar, actor *act.Actor, out io.Writer) error {
 	eng := productionEngine(opt)
 	src := eng.Start(ctx)
+	reapEngineOnCancel(ctx, eng.Wait)
 	th := theme.Resolve(opt.ThemePath, "")
 	p := tea.NewProgram(ui.New(src, th, actor.Enqueue), tea.WithAltScreen(), tea.WithOutput(out))
 	_, err := p.Run()
-	eng.Wait()
 	return err
 }
 

@@ -3434,3 +3434,14 @@ Four-box result: present-tense `rule violated` names, enough interpolated state 
 
 
 Task 11 loudness result: 217 PASS, zero failures, zero exemptions.
+
+## Task 11 follow-up: engine wait after cancel (2026-08-30)
+
+New nested assertions under `TestRunInteractiveAlwaysShutsDownOnce/engine-wait-after-cancel`. Schema terminal rows reuse the existing `state-schema-encodes-conditional-rules` Fatalf.
+
+| Site | Present-tense rule name | Enough offending state | Unique greppable phrase | Present-tense wording | Result |
+|---|---|---|---|---|---|
+| `cmd/aitop/main_test.go:440` | `run-interactive-always-shuts-down-once engine wait invoked before cancel` | n | `engine wait invoked before cancel n=` | yes | PASS |
+| `cmd/aitop/main_test.go:445` | `run-interactive-always-shuts-down-once engine wait not invoked after cancel` | n | `engine wait not invoked after cancel n=` | yes | PASS |
+
+Follow-up loudness: 2 PASS, zero failures, zero exemptions.

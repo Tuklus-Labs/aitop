@@ -427,7 +427,41 @@ func TestRunInteractiveAlwaysShutsDownOnce(t *testing.T) {
 		}
 		t.Fatalf("run-interactive-always-shuts-down-once rule violated: status=%d shutdowns=%d", status, n)
 	}
+
+	t.Run("engine-wait-after-cancel", func(t *testing.T) {
+		gctx := gateCancelContext{done: make(chan struct{})}
+		var n atomic.Int32
+		finished := make(chan struct{})
+		reapEngineOnCancel(gctx, func() {
+			n.Add(1)
+			close(finished)
+		})
+		if n.Load() != 0 {
+			t.Fatalf("run-interactive-always-shuts-down-once rule violated: engine wait invoked before cancel n=%d", n.Load())
+		}
+		close(gctx.done)
+		<-finished
+		if n.Load() != 1 {
+			t.Fatalf("run-interactive-always-shuts-down-once rule violated: engine wait not invoked after cancel n=%d", n.Load())
+		}
+	})
 }
+
+type gateCancelContext struct {
+	done chan struct{}
+}
+
+func (g gateCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (g gateCancelContext) Done() <-chan struct{}       { return g.done }
+func (g gateCancelContext) Err() error {
+	select {
+	case <-g.done:
+		return context.Canceled
+	default:
+		return nil
+	}
+}
+func (g gateCancelContext) Value(any) any { return nil }
 
 func TestRunInteractiveRejectsNilSupervisorOrActor(t *testing.T) {
 	deps, spies := testRunDeps(t)
