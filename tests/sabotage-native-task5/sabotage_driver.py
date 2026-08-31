@@ -253,7 +253,7 @@ W_CLA_PRESENT = (CLAT,
                  "\tnode, ok := nodeByID(nodes, id)\n\tif false && !ok {\n\t\tt.Fatalf(\"claude-live-session-is-inside-horizon rule violated:")
 W_CLA_CONTENT = (CLAT,
                  "\tif node.Name != \"aegis-48\" || node.Project != \"aitop\" || node.Location != path || node.Role != types.RolePrimary {",
-                 "\tif false {")
+                 "\tif false && (node.Name != \"aegis-48\" || node.Project != \"aitop\" || node.Location != path || node.Role != types.RolePrimary) {")
 W_CLA_NOCLAIM = (CLAT,
                  "\tif node.State != \"\" || node.Exit != \"\" {\n\t\tt.Fatalf(\"claude-live-session-makes-no-state-or-terminal-claim",
                  "\tif false {\n\t\tt.Fatalf(\"claude-live-session-makes-no-state-or-terminal-claim")
@@ -266,13 +266,13 @@ W_COD_PRESENT = (CODT,
                  "\tnode, ok := nodeByID(nodes, liveID)\n\tif false && !ok {")
 W_COD_CONTENT = (CODT,
                  "\tif node.Location != livePath || node.Project != \"aitop\" || node.Role != types.RolePrimary {",
-                 "\tif false {")
+                 "\tif false && (node.Location != livePath || node.Project != \"aitop\" || node.Role != types.RolePrimary) {")
 W_COD_ABSENT = (CODT,
                 "\tif _, ok := nodeByID(nodes, liveID); ok {\n\t\tt.Fatalf(\"codex-cold-thread-with-no-process-is-not-observed",
                 "\tif false {\n\t\tt.Fatalf(\"codex-cold-thread-with-no-process-is-not-observed")
 W_COD_SELECT = (CODT,
                 "\tif _, ok := nodeByID(nodes, deadID); ok {",
-                "\tif false {")
+                "\tif false && (_, ok := nodeByID(nodes, deadID); ok) {")
 W_COD_SKIP = (CODT,
               "\tif n := scanner.skippedRollouts.Load(); n != 0 {",
               "\tif n := scanner.skippedRollouts.Load(); false {")
@@ -282,10 +282,10 @@ W_GRK_PRESENT = (GRKT,
                  "\tnode, ok := nodeByID(nodes, id)\n\tif false && !ok {\n\t\tt.Fatalf(\"grok-live-session-is-inside-horizon")
 W_GRK_CONTENT = (GRKT,
                  "\tif node.Name != grokHarnessName || node.Model != grokModel || node.Project != \"aitop\" || node.TaskName != \"wire the collectors\" || node.Location != path {",
-                 "\tif false {")
+                 "\tif false && (node.Name != grokHarnessName || node.Model != grokModel || node.Project != \"aitop\" || node.TaskName != \"wire the collectors\" || node.Location != path) {")
 W_GRK_STARTED = (GRKT,
                  "\tif node.StartedAt == nil || !node.StartedAt.Equal(created) {",
-                 "\tif false {")
+                 "\tif false && (node.StartedAt == nil || !node.StartedAt.Equal(created)) {")
 W_GRK_NOCLAIM = (GRKT,
                  "\tif node.State != \"\" || node.Exit != \"\" {\n\t\tt.Fatalf(\"grok-live-session-makes-no-state-or-terminal-claim",
                  "\tif false {\n\t\tt.Fatalf(\"grok-live-session-makes-no-state-or-terminal-claim")
@@ -305,10 +305,10 @@ W_SID_FOLLOW = (SIDT,
 
 W_FRK_OVERLAY = (FRKT,
                  "\tif ovs[0].Runtime != types.RuntimeClaude {",
-                 "\tif false {")
+                 "\tif false && (ovs[0].Runtime != types.RuntimeClaude) {")
 W_FRK_ROW = (FRKT,
              "\tif child.Runtime != types.RuntimeClaude {",
-             "\tif false {")
+             "\tif false && (child.Runtime != types.RuntimeClaude) {")
 W_FRK_GRAPH = (FRKT,
                "\tif !found {\n\t\tt.Fatalf(\"fork-child-reaches-the-graph",
                "\tif false {\n\t\tt.Fatalf(\"fork-child-reaches-the-graph")
@@ -321,7 +321,7 @@ W_JOIN_SLOT = (JOIT,
                "\tif got := byID[\"S\"].Process.Role; false {")
 W_JOIN_PROC = (JOIT,
                "\tif byID[\"C\"].Process.PID != 0 || byID[\"C\"].Process.StartTime != 0 || !byID[\"C\"].OverlayOnly {",
-               "\tif false {")
+               "\tif false && (byID[\"C\"].Process.PID != 0 || byID[\"C\"].Process.StartTime != 0 || !byID[\"C\"].OverlayOnly) {")
 
 W_ATT_REG = (ATTT,
              "\tif !hasPrefix(snap, \"claude:session:\") {\n\t\tt.Fatalf(\"attach-graph-registers-native-collectors",
@@ -334,13 +334,13 @@ W_ATT_AGENT = (ATTT,
                "\tagent, ok := nodeByGraphID(snap, agentID)\n\tif false && !ok {")
 W_ATT_AGENT_CONTENT = (ATTT,
                        "\tif agent.Role != types.RoleSubagent || agent.TaskName != \"wire the collectors\" {",
-                       "\tif false {")
+                       "\tif false && (agent.Role != types.RoleSubagent || agent.TaskName != \"wire the collectors\") {")
 W_ATT_INC = (ATTT,
              "\tif session.Incarnation != wantIncarnation {",
-             "\tif false {")
+             "\tif false && (session.Incarnation != wantIncarnation) {")
 W_ATT_PROC = (ATTT,
               "\tif session.Process == nil || session.Process.PID != attachPID || session.Process.StartTicks != attachStartTick {",
-              "\tif false {")
+              "\tif false && (session.Process == nil || session.Process.PID != attachPID || session.Process.StartTicks != attachStartTick) {")
 W_ATT_EDGE = (ATTT,
               "\tif edge == nil {\n\t\tt.Fatalf(\"attach-graph-native-spawn-edge-survives-admission",
               "\tif edge == nil {\n\t\treturn\n\t}\n\tif false {\n\t\tt.Fatalf(\"attach-graph-native-spawn-edge-survives-admission")
@@ -350,7 +350,7 @@ W_ATT_SESSION = (ATTT,
 
 W_ATT_ABS = (ATTT,
              "\tif !filepath.IsAbs(got) {",
-             "\tif false {")
+             "\tif false && (!filepath.IsAbs(got)) {")
 W_ATT_ABS_EMPTY = (ATTT,
                    '\tif got, err := absHome(""); err != nil || got != "" {',
                    '\tif got, err := absHome(""); false {')
@@ -360,29 +360,29 @@ W_SCHEMA_WRITE = (ATTT,
                   "\tif err := WriteJSON(snap, &out, snap.At); false && err != nil {")
 W_SCHEMA_VALUE = (ATTT,
                   "\tif state.Value != string(graph.StateUnknown) {",
-                  "\tif false {")
+                  "\tif false && (state.Value != string(graph.StateUnknown)) {")
 W_SCHEMA_NODES = (ATTT,
                   "\tif len(decoded.Graph.Nodes) != 1 {",
                   "\tif len(decoded.Graph.Nodes) != 1 {\n\t\treturn\n\t}\n\tif false {")
 W_SCHEMA_SOURCE = (ATTT,
                    '\tif len(state.Source) != 0 && string(state.Source) != "null" {',
-                   "\tif false {")
+                   '\tif false && (len(state.Source) != 0 && string(state.Source) != "null") {')
 W_SCHEMA_SINCE = (ATTT,
                   '\tif state.Since != "" {',
-                  "\tif false {")
+                  "\tif false && (state.Since != "") {")
 
 W_MAIN_HOMES = (MAIT,
                 "\tif spy.homes != want {",
-                "\tif false {")
+                "\tif false && (spy.homes != want) {")
 W_MAIN_NONEMPTY = (MAIT,
                    '\tif eng.ClaudeHome == "" || eng.CodexHome == "" || eng.GrokHome == "" {',
-                   "\tif false {")
+                   "\tif false && (eng.ClaudeHome == "" || eng.CodexHome == "" || eng.GrokHome == "") {")
 W_MAIN_ENVPREFIX = (MAIT,
                     "\tif !strings.HasPrefix(spy.homes.Claude, home) {",
-                    "\tif false {")
+                    "\tif false && (!strings.HasPrefix(spy.homes.Claude, home)) {")
 W_MAIN_ORDER = (MAIT,
                 "\tif !probe.sawRows.Load() {",
-                "\tif false {")
+                "\tif false && (!probe.sawRows.Load()) {")
 
 CYCLES = [
     # --- the horizon rule's live-process clause ---------------------------

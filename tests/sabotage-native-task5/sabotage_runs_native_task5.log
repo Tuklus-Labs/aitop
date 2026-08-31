@@ -1,4 +1,4 @@
-head: cfddee5aa3451de7475e376e606d632f9da23065
+head: 02e529b24cdfcb1b32e2caff7464ad5960f45b35
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 tz_offset: -0700
 
@@ -33,7 +33,7 @@ exit=1 wall=0.1s
 --- FAIL: TestClaudeScannerLiveSessionIsInsideHorizon (0.00s)
     claude_test.go:692: claude-cold-session-with-no-process-is-not-observed rule violated: id=claude:session:84a06b9a-0873-4655-9eb9-d7cf99554b05 sidecarAge=3h0m0s horizon=1h0m0s nodes=1
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-02-prod: AS-PREDICTED
 S-T5-02-prod: restored, porcelain clean, focused test green again
@@ -102,7 +102,7 @@ exit=1 wall=0.1s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:810: codex-cold-thread-with-no-process-is-not-observed rule violated: id=codex:thread:01a0519a-73df-7261-b1ad-32b399e90ed2 rolloutAge=3h0m0s horizon=1h0m0s nodes=2
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-05-prod: AS-PREDICTED
 S-T5-05-prod: restored, porcelain clean, focused test green again
@@ -113,7 +113,7 @@ internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 4 ++--
  2 files changed, 3 insertions(+), 3 deletions(-)
 exit=0 wall=0.1s
-ok  	aitop/internal/native	0.001s
+ok  	aitop/internal/native	0.002s
 S-T5-05-weak: AS-PREDICTED
 S-T5-05-weak: restored, porcelain clean, focused test green again
 
@@ -121,11 +121,11 @@ S-T5-05-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.1s
 --- FAIL: TestCodexScannerLiveThreadIsInsideHorizon (0.00s)
     codex_test.go:819: codex-live-lift-admits-only-the-live-thread rule violated: id=codex:thread:01a0537d-2b5d-7c60-9b8c-99ff4cecb7ea admitted while absent from liveSet=[01a0519a-73df-7261-b1ad-32b399e90ed2]
 FAIL
-FAIL	aitop/internal/native	0.001s
+FAIL	aitop/internal/native	0.002s
 FAIL
 S-T5-06-prod: AS-PREDICTED
 S-T5-06-prod: restored, porcelain clean, focused test green again
@@ -135,7 +135,7 @@ plant diffstat:
 internal/native/codex.go      | 2 +-
  internal/native/codex_test.go | 2 +-
  2 files changed, 2 insertions(+), 2 deletions(-)
-exit=0 wall=0.2s
+exit=0 wall=0.1s
 ok  	aitop/internal/native	0.001s
 S-T5-06-weak: AS-PREDICTED
 S-T5-06-weak: restored, porcelain clean, focused test green again
@@ -144,7 +144,7 @@ S-T5-06-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/codex.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.3s
+exit=0 wall=0.1s
 ok  	aitop/internal/native	0.001s
 S-T5-07-prod: AS-PREDICTED
 S-T5-07-prod: restored, porcelain clean, focused test green again
@@ -153,7 +153,7 @@ S-T5-07-prod: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.1s
 --- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
     grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
 FAIL
@@ -167,8 +167,8 @@ plant diffstat:
 internal/native/grok.go      |  2 +-
  internal/native/grok_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 6 deletions(-)
-exit=0 wall=0.2s
-ok  	aitop/internal/native	0.001s
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
 S-T5-08-weak: AS-PREDICTED
 S-T5-08-weak: restored, porcelain clean, focused test green again
 
@@ -176,7 +176,7 @@ S-T5-08-weak: restored, porcelain clean, focused test green again
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=1 wall=0.2s
+exit=1 wall=0.1s
 --- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
     grok_test.go:1367: grok-live-session-is-inside-horizon rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent summaryAge=3h0m0s liveSet=[019fbb2b-40be-7cc2-89a5-ca62441eaf5b] nodes=0
 FAIL
@@ -190,17 +190,153 @@ plant diffstat:
 internal/native/grok.go      |  2 +-
  internal/native/grok_test.go | 10 +++++-----
  2 files changed, 6 insertions(+), 6 deletions(-)
-exit=0 wall=0.2s
+exit=0 wall=0.1s
 ok  	aitop/internal/native	0.001s
 S-T5-09-weak: AS-PREDICTED
 S-T5-09-weak: restored, porcelain clean, focused test green again
 
-===== S-T5-10-prod expect=RED pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+===== S-T5-10a-prod expect=GREEN pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
 plant diffstat:
 internal/native/grok.go | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
-exit=0 wall=0.3s
-ok  	aitop/internal/native	0.002s
-S-T5-10-prod: MISMATCH
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-10a-prod: AS-PREDICTED
+S-T5-10a-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-10b-prod expect=GREEN pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-10b-prod: AS-PREDICTED
+S-T5-10b-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-10-prod expect=RED pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestGrokScannerLiveSessionIsInsideHorizon (0.00s)
+    grok_test.go:1361: grok-cold-session-with-no-process-is-not-observed rule violated: id=grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b summaryAge=3h0m0s horizon=1h0m0s nodes=1
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-T5-10-prod: AS-PREDICTED
 S-T5-10-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-10-weak expect=GREEN pkg=./internal/native run=^TestGrokScannerLiveSessionIsInsideHorizon$
+plant diffstat:
+internal/native/grok.go      | 4 ++--
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-T5-10-weak: AS-PREDICTED
+S-T5-10-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-11-prod expect=RED pkg=./internal/act run=^TestForkSidecarCarriesRuntime$
+plant diffstat:
+internal/act/sidecar.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestForkSidecarCarriesRuntime (0.00s)
+    sidecar_test.go:52: fork-sidecar-carries-target-runtime rule violated: runtime= want="claude" body={"parent":"84a06b9a-0873-4655-9eb9-d7cf99554b05","fork_of":"84a06b9a-0873-4655-9eb9-d7cf99554b05","kind":"fork","runtime":"","capsule_id":"01k9","worktree":"/home/aegis/Projects/aitop","child_session":"06e524ab-4afa-4a36-a578-1a629d4853c3"}
+FAIL
+FAIL	aitop/internal/act	0.002s
+FAIL
+S-T5-11-prod: AS-PREDICTED
+S-T5-11-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-11-weak expect=GREEN pkg=./internal/act run=^TestForkSidecarCarriesRuntime$
+plant diffstat:
+internal/act/sidecar.go      | 1 -
+ internal/act/sidecar_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/act	0.002s
+S-T5-11-weak: AS-PREDICTED
+S-T5-11-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-12-prod expect=GREEN pkg=./internal/act run=^TestForkSidecarCarriesRuntime$
+plant diffstat:
+internal/act/sidecar.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/act	0.002s
+S-T5-12-prod: AS-PREDICTED
+S-T5-12-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-12b-prod expect=RED pkg=./internal/act run=^TestForkSidecarRuntimeFollowsTheTarget$
+plant diffstat:
+internal/act/sidecar.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestForkSidecarRuntimeFollowsTheTarget (0.00s)
+    sidecar_test.go:82: fork-sidecar-runtime-follows-the-target rule violated: runtime=claude want="grok"
+FAIL
+FAIL	aitop/internal/act	0.002s
+FAIL
+S-T5-12b-prod: AS-PREDICTED
+S-T5-12b-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-12b-weak expect=GREEN pkg=./internal/act run=^TestForkSidecarRuntimeFollowsTheTarget$
+plant diffstat:
+internal/act/sidecar.go      | 2 +-
+ internal/act/sidecar_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/act	0.002s
+S-T5-12b-weak: AS-PREDICTED
+S-T5-12b-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-13-prod expect=RED pkg=./internal/act run=^TestForkSidecarCarriesRuntime$
+plant diffstat:
+internal/act/sidecar.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestForkSidecarCarriesRuntime (0.00s)
+    sidecar_test.go:52: fork-sidecar-carries-target-runtime rule violated: runtime= want="claude" body={"parent":"84a06b9a-0873-4655-9eb9-d7cf99554b05","fork_of":"84a06b9a-0873-4655-9eb9-d7cf99554b05","kind":"fork","runtime":"","capsule_id":"01k9","worktree":"/home/aegis/Projects/aitop","child_session":"06e524ab-4afa-4a36-a578-1a629d4853c3"}
+FAIL
+FAIL	aitop/internal/act	0.002s
+FAIL
+S-T5-13-prod: AS-PREDICTED
+S-T5-13-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-13-weak expect=GREEN pkg=./internal/act run=^TestForkSidecarCarriesRuntime$
+plant diffstat:
+internal/act/sidecar.go      | 2 +-
+ internal/act/sidecar_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/act	0.001s
+S-T5-13-weak: AS-PREDICTED
+S-T5-13-weak: restored, porcelain clean, focused test green again
+
+===== S-T5-14-prod expect=RED pkg=./internal/overlay/forks run=^TestForksOverlayReadsRuntime$
+plant diffstat:
+internal/overlay/forks/forks.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestForksOverlayReadsRuntime (0.00s)
+    forks_test.go:98: fork-overlay-carries-the-sidecar-runtime rule violated: runtime="" want="claude" overlay={SessionID:06e524ab-4afa-4a36-a578-1a629d4853c3 PID:0 StartTime:0 Runtime: ProvenName: Project: Model: TokensUsed:<nil> ContextWindow:<nil> ContextFill:<nil> CostUSD:<nil> CostSource: Usage:{Input:0 CacheRead:0 CacheWrite:0 Output:0 Known:false} WindowSource: SubagentLive:0 SubagentDeclared:0 Title: UpdatedAt:0001-01-01 00:00:00 +0000 UTC SessionPath: OverlayCWD: Heartbeat:false ParentSession:84a06b9a-0873-4655-9eb9-d7cf99554b05 SubagentStatus: SubagentID: SubagentType: Status: StartedAt:0001-01-01 00:00:00 +0000 UTC CompletedAt:0001-01-01 00:00:00 +0000 UTC SessionName: Branch: Effort: Entrypoint: ForkOf:84a06b9a-0873-4655-9eb9-d7cf99554b05 CapsuleID:01k9 Worktree:/home/aegis/Projects/aitop Kind:fork TokPerSec:<nil> SlotIndex:<nil> Dark:false}
+FAIL
+FAIL	aitop/internal/overlay/forks	0.001s
+FAIL
+S-T5-14-prod: AS-PREDICTED
+S-T5-14-prod: restored, porcelain clean, focused test green again
+
+===== S-T5-14-weak expect=GREEN pkg=./internal/overlay/forks run=^TestForksOverlayReadsRuntime$
+plant diffstat:
+internal/overlay/forks/forks.go      | 1 -
+ internal/overlay/forks/forks_test.go | 6 +++---
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+exit=1 wall=0.0s
+FAIL	aitop/internal/overlay/forks [build failed]
+FAIL
+# aitop/internal/overlay/forks [aitop/internal/overlay/forks.test]
+internal/overlay/forks/forks_test.go:125:2: declared and not used: found
+S-T5-14-weak: MISMATCH
+S-T5-14-weak: restored, porcelain clean, focused test green again
 STOP on mismatch for inspection
