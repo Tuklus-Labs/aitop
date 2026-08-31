@@ -641,7 +641,10 @@ func TestNativeSpawnEdgeLandsInRealShadow(t *testing.T) {
 		spawns: []SpawnSighting{spawnSighting(parent, child)},
 	}
 	c := newCollector(testSourceID, types.RuntimeClaude, sc, nil)
-	c.interval = 20 * time.Millisecond
+	// One tick only. A repeating poll would heal a broken emission order on
+	// the next pass, because by then the endpoints are already in the store,
+	// and the test would certify an ordering it never exercised.
+	c.interval = time.Hour
 
 	shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), c)
 	if err != nil {
