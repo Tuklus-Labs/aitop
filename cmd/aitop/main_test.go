@@ -1274,24 +1274,15 @@ func graphFrameSnapshot(nodes ...graph.Node) *snapshot.Snapshot {
 	}
 }
 
-// graphFrameBody is everything painted below the pane's own top border. The
-// header carries the canary on every frame, so a whole-frame scan for it would
-// pass on the table view too; only the body distinguishes "the graph pane drew
-// its empty state" from "aitop drew a frame".
-func graphFrameBody(t *testing.T, frame string) []string {
-	t.Helper()
-	lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
-	for i, l := range lines {
-		if strings.Contains(l, "┤ graph ├") {
-			return lines[i+1:]
-		}
-	}
-	return nil
-}
-
-func graphFrameLinesWith(lines []string, needle string) int {
+// graphFrameLinesWith counts LINES carrying a needle, not occurrences. Every
+// frame's header carries the canary once, so the empty state is a second line
+// rather than a first one, and a count separates "the pane said it is empty"
+// from "the pane drew rows" without the test having to know where the header
+// ends. Locating the body relative to the pane's own border tab would chain
+// this assertion to the border assertion, and one plant would then move both.
+func graphFrameLinesWith(frame, needle string) int {
 	n := 0
-	for _, l := range lines {
+	for _, l := range strings.Split(strings.TrimRight(frame, "\n"), "\n") {
 		if strings.Contains(l, needle) {
 			n++
 		}
@@ -1308,16 +1299,17 @@ func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
 	empty := graphFrameSnapshot()
 
 	for _, tc := range []struct {
-		name           string
-		snap           *snapshot.Snapshot
-		wantName       int
-		wantCanaryBody int
+		name       string
+		snap       *snapshot.Snapshot
+		wantName   int
+		wantCanary int
 	}{
 		// A populated pane names its nodes and must NOT fall back to the empty
 		// state; an empty one says so out loud rather than painting blank, which
-		// is byte-identical to a dead collector.
-		{"nodes", populated, 1, 0},
-		{"empty", empty, 0, 1},
+		// is byte-identical to a dead collector. One canary line is the header's,
+		// which every frame carries; the second is the empty state itself.
+		{"nodes", populated, 1, 1},
+		{"empty", empty, 0, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var captures atomic.Int32
@@ -1333,22 +1325,19 @@ func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
 			if len(lines) != 42 {
 				t.Fatalf("screenshot-graph-renders-the-requested-size rule violated: %d lines want 42", len(lines))
 			}
-			// The pane's own top border. "2 graph" also appears in the TABLE's key
-			// row, so a frame-wide scan for the word would certify the wrong view.
+			// The pane's own border tab. "2 graph" also appears in the TABLE's key
+			// row, so a frame-wide scan for the bare word would certify the wrong
+			// view; the tab glyphs are what only this pane's border carries.
 			if !strings.Contains(frame, "┤ graph ├") {
 				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: no pane border tab in\n%s", frame)
 			}
-			body := graphFrameBody(t, frame)
-			if len(body) == 0 {
-				t.Fatalf("screenshot-graph-renders-the-graph-pane rule violated: pane border is the last line of the frame")
+			if got := graphFrameLinesWith(frame, graphFrameName); got != tc.wantName {
+				t.Fatalf("screenshot-graph-draws-the-nodes-it-was-given rule violated: %d lines name %q want %d:\n%s",
+					got, graphFrameName, tc.wantName, frame)
 			}
-			if got := graphFrameLinesWith(body, graphFrameName); got != tc.wantName {
-				t.Fatalf("screenshot-graph-draws-the-nodes-it-was-given rule violated: %d body lines name %q want %d:\n%s",
-					got, graphFrameName, tc.wantName, strings.Join(body, "\n"))
-			}
-			if got := graphFrameLinesWith(body, snapshot.Canary); got != tc.wantCanaryBody {
-				t.Fatalf("screenshot-graph-empty-is-not-quiet rule violated: %d body lines carry %s want %d:\n%s",
-					got, snapshot.Canary, tc.wantCanaryBody, strings.Join(body, "\n"))
+			if got := graphFrameLinesWith(frame, snapshot.Canary); got != tc.wantCanary {
+				t.Fatalf("screenshot-graph-empty-is-not-quiet rule violated: %d lines carry %s want %d:\n%s",
+					got, snapshot.Canary, tc.wantCanary, frame)
 			}
 		})
 	}
