@@ -1,14 +1,16 @@
-aitop native provenance Task 6 tally (graph pane, post-amendment)
-date: 2026-08-31T07:07:34-07:00
+aitop native provenance Task 6 tally (graph pane, post-fix-round-1)
+date: 2026-08-31T07:23:08-07:00
 go: go version go1.27.0-X:nodwarf5 linux/amd64
 worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
 branch: native-provenance
-head: f50c7812265eee7314accc1f02f5426f4ae26212
-epoch_head: f50c7812265eee7314accc1f02f5426f4ae26212
+head: 6a3dc632fed7c35b6fb420a0a8bdb7eb1fe8879b
+epoch_head: 6a3dc632fed7c35b6fb420a0a8bdb7eb1fe8879b
 note: certifies the graph pane (flattenGraph, renderGraph, the 1/2/tab
 note: presets, the pane's read-only keymap) plus the controller's footer
-note: ruling: `2 graph` at high priority in the table key row.
-note: supersedes the pre-amendment tally at 4ae1255 (84 cycles).
+note: ruling (`2 graph` at high priority in the table key row) and fix
+note: round 1: the pane's cursor and scroll now have discriminating
+note: coverage, and one spawn observed twice draws its child once.
+note: supersedes the tallies at 4ae1255 (84 cycles) and c8a6bd8 (86).
 note: exit codes are captured from each command, never from a pipe tail.
 
 commands (exact, from worktree root):
@@ -35,7 +37,7 @@ packages_ok=25 non_ok_lines=0
 
 == go test -race ./internal/ui -count=1 ==
 race_exit=0
-ok  	aitop/internal/ui	1.320s
+ok  	aitop/internal/ui	1.327s
 
 == go run ./cmd/aitop --screenshot 150x42 ==
 screenshot_exit=0
@@ -75,16 +77,18 @@ internal/ui/view_test.go   TestGraphPaneSelectionCarriesNoActions
 internal/ui/view_test.go   TestGraphPaneKeepsFrameGeometry
 internal/ui/view_test.go   TestGraphPaneOrdersRuntimeGroupsThenName
 internal/ui/view_test.go   TestGraphPaneCapsMessageEdgesAtThree
-count=9
+internal/ui/view_test.go   TestGraphPaneScrollsThroughTheForest
+internal/ui/view_test.go   TestGraphPaneDuplicateSpawnEdgeDrawsOneChild
+count=11
 note: TestMain in the same file pins the lipgloss colour profile to
 note: TrueColor. Without it the suite renders no colour at all and every
 note: dim assertion is vacuous; see SABOTAGE_LOG S-T6-30.
 
 == sabotage epoch (single run, single head) ==
-total=86 as_predicted=86 mismatches=0
-production_RED=45 predicted_GREEN=41
-restores confirmed in log=86
-cycles per test: RendersSpawnForest=17 MarksGhostAndPartial=17 KeysToggle=17 CapsMessageEdgesAtThree=8 KeepsFrameGeometry=7 CycleSafe=7 OrdersRuntimeGroupsThenName=6 EmptyShowsCanary=5 SelectionCarriesNoActions=2
+total=101 as_predicted=101 mismatches=0
+production_RED=51 predicted_GREEN=50
+restores confirmed in log=101
+cycles per test: RendersSpawnForest=18 MarksGhostAndPartial=17 KeysToggle=17 CycleSafe=9 KeepsFrameGeometry=8 CapsMessageEdgesAtThree=8 OrdersRuntimeGroupsThenName=6 ScrollsThroughTheForest=6 EmptyShowsCanary=5 DuplicateSpawnEdgeDrawsOneChild=5 SelectionCarriesNoActions=2
 log: tests/sabotage-native-task6/sabotage_runs_native_task6.log
 corrections: tests/sabotage-native-task6/sabotage_runs_native_task6_corrections.log
 driver: tests/sabotage-native-task6/sabotage_driver.py

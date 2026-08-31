@@ -2710,3 +2710,62 @@ every width and is pinned by S-T6-31b at 80x24.
 missing at 140. An absence assertion would red the day someone shortens the row
 and makes things better, which is the wrong direction for a gate to fail in.
 The cost lives in the tally, where a number belongs, not welded into a test.
+
+### Native provenance Task 6, fix round 1
+
+Two Important review findings. Epoch re-run in full at head
+`6a3dc632fed7c35b6fb420a0a8bdb7eb1fe8879b`, 101 cycles, all as predicted, 51
+production REDs and 50 predicted GREENs, 101 confirmed restores. Supersedes the
+86-cycle run above, which is in git history at `c8a6bd8`.
+
+**The gate hole was real and I confirmed it before fixing it.** The review said
+the pane's cursor and scroll had zero discriminating coverage, and that deleting
+the graph arm of `clampCursor` or changing `rowsVisible`'s `-2` to `-5` would
+leave every cycle green. Both mutations were planted against the shipping tree
+and `go test ./internal/ui` returned `ok` for each. Every one of the nine render
+tests ran at cursor 0, scroll 0, so the three graph arms of the shared
+cursor/offset machinery were carried by the epoch without ever being exercised.
+That is the failure mode where an aggregate rises while coverage does not: 86
+cycles all as predicted, and a whole subsystem inside the blast radius of none
+of them.
+
+The new test opens a 24-line forest in an 8-line body and reads the pane's own
+`N/M` counter tab, which is a *rendered* witness of the cursor index. That is
+what lets three separate branches each move something visible without the test
+reaching into model state:
+
+| plant | witness |
+|-------|---------|
+| `clampCursor` graph arm deleted (cursor clamps to the TABLE's row count) | `graph-pane-window-follows-the-cursor` |
+| `rowsVisible` graph arm `-2` to `-5` | `graph-pane-scroll-window-is-the-painted-window` |
+| `setGraphView` reset removed | `graph-pane-opens-at-the-top` |
+
+The `rowsVisible` plant is the instructive one. The cursor still reaches the
+last line under it, and the counter still reads `24/24`: only the last SCREEN is
+short, carrying blank rows under the final line because the window the model
+scrolls by is no longer the window the pane paints. An assertion about
+reachability alone cannot see it. The test's fixture also asserts its own
+precondition, that the forest does NOT fit on screen, because a fixture that
+fits measures nothing about scrolling.
+
+**S-T6-42 is the cycle that makes the second fix a fix rather than a deletion.**
+The defect: `RelationshipEdgeKey` hashes the relationship id, so one spawn
+observed under two ids is two distinct snapshot rows, and `flattenGraph`
+appended the target once per edge. The child drew once and then again as
+`↩ <name>`, byte-identical to a genuine second parent. A provenance pane
+inventing a parent is the worst thing this view can do.
+
+The obvious repair is to dedupe. But deduping on the CHILD alone also removes
+the phantom, and it removes a genuine second parent with it. Both patches pass
+`graph-pane-draws-a-duplicate-edge-once` and `graph-pane-invents-no-back-
+reference`; only `graph-pane-keeps-a-real-second-parent`, which asserts that two
+DIFFERENT parents of one child still draw a back reference, tells them apart.
+The negative half of the test is the entire difference between fixing the lie
+and deleting the signal, and S-T6-42 is what proves that half discriminates.
+S-T6-41b and S-T6-42b record that neither dedupe touches the cycle test: a cycle
+is not a duplicate, and both its back references have to survive.
+
+**Three cycles are recorded GREEN to keep the narrowness on the record.**
+S-T6-38b and S-T6-39b show the cursor plants moving nothing in the forest and
+geometry tests, which is exactly why they were invisible. Stating that from the
+epoch is worth more than stating it from reasoning.
