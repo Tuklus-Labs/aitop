@@ -123,8 +123,8 @@ type codexRollout struct {
 // scan never returns an error: a box with no Codex on it, an unreadable
 // directory, and a corrupt rollout are all ordinary, and returning an error
 // would blank the runtime for that tick.
-func (s *codexScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, error) {
-	rollouts := s.readRecentRollouts(now)
+func (s *codexScanner) scan(now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
+	rollouts := s.readRecentRollouts(now, live)
 	nodes := make([]NodeSighting, 0, len(rollouts))
 	published := make(map[graph.NodeID]bool, len(rollouts))
 	observed := make([]codexRollout, 0, len(rollouts))
@@ -209,7 +209,7 @@ func (s *codexScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, err
 
 // readRecentRollouts walks the bounded set of date directories and reads the
 // header of every rollout inside the horizon.
-func (s *codexScanner) readRecentRollouts(now time.Time) []codexRollout {
+func (s *codexScanner) readRecentRollouts(now time.Time, live map[string]bool) []codexRollout {
 	var rollouts []codexRollout
 	for _, date := range codexDateDirs(now) {
 		day := filepath.Join(s.home, codexSessionsDir, date)
@@ -227,7 +227,7 @@ func (s *codexScanner) readRecentRollouts(now time.Time) []codexRollout {
 				s.skippedRollouts.Add(1)
 				continue
 			}
-			if now.Sub(info.ModTime()) > nativeHorizon {
+			if now.Sub(info.ModTime()) > nativeHorizon && !codexLiveRollout(name, live) {
 				continue
 			}
 			path := filepath.Join(day, name)
@@ -239,6 +239,34 @@ func (s *codexScanner) readRecentRollouts(now time.Time) []codexRollout {
 		}
 	}
 	return rollouts
+}
+
+// codexLiveRollout applies the horizon rule's live-process clause without
+// opening the file. A rollout is named rollout-<ts>-<threadId>.jsonl, so the
+// thread id is in the name; the alternative is reading the header of every
+// stale rollout in the walked days just to learn whether to admit it, which is
+// the unbounded read the mtime gate exists to prevent.
+//
+// The suffix is matched rather than the name parsed. The timestamp in the
+// middle carries dashes of its own, so any split would be a claim about that
+// stamp's exact width, and the live set is a handful of entries at most.
+//
+// KNOWN LIMIT: this lifts the mtime bound, never the walk bound. A codex thread
+// whose rollout sits outside the walked date directories is still unreachable,
+// so a live session running for more than about two days is not observed. That
+// is a property of codexDateDirs, and closing it means walking more days for
+// every tick rather than for the live set.
+func codexLiveRollout(name string, live map[string]bool) bool {
+	if len(live) == 0 {
+		return false
+	}
+	base := strings.TrimSuffix(name, codexRolloutSuffix)
+	for thread := range live {
+		if thread != "" && strings.HasSuffix(base, "-"+thread) {
+			return true
+		}
+	}
+	return false
 }
 
 // codexDateDirs is the walk bound. ~/.codex keeps every rollout it has ever

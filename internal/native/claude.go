@@ -84,7 +84,11 @@ type claudeAgentMeta struct {
 // scan never returns an error: a box with no Claude on it, an unreadable
 // directory, and a corrupt file are all ordinary, and returning an error would
 // blank the runtime for that tick.
-func (s *claudeScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, error) {
+// liveProcs is the horizon rule's live-process clause: a session in it is
+// observed whatever its files' mtimes say. It is named apart from the roster's
+// own `live` map, which answers a different question (which sidecar FILE owns a
+// session id) and cannot stand in for a process binding.
+func (s *claudeScanner) scan(now time.Time, liveProcs map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
 	roster, live := s.readSidecars()
 	nodes := make([]NodeSighting, 0, len(roster))
 	emitted := make(map[graph.NodeID]bool, len(roster))
@@ -93,7 +97,11 @@ func (s *claudeScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, er
 		if live[sidecar.SessionID] != sidecar {
 			continue // an older roster file for a session a newer one owns
 		}
-		if now.Sub(sidecar.modTime) > nativeHorizon {
+		// A live process holds the session open whatever its sidecar's mtime
+		// says, and the sidecar is only rewritten when the session's status
+		// changes: a session left thinking for an hour goes cold on disk while
+		// being the most active thing on the box.
+		if now.Sub(sidecar.modTime) > nativeHorizon && !liveProcs[sidecar.SessionID] {
 			continue
 		}
 		id, err := graph.ClaudeSessionID(sidecar.SessionID)

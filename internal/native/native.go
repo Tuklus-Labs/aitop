@@ -77,9 +77,12 @@ type SpawnSighting struct {
 	Location        string
 }
 
-// scanner reads one runtime's on-disk state. Tasks 2-4 implement it.
+// scanner reads one runtime's on-disk state. live is the set of session ids the
+// engine's current rows bind to a live process; the horizon rule admits those
+// whatever their files say, so every scanner takes it and none of them derives
+// liveness on its own.
 type scanner interface {
-	scan(now time.Time) ([]NodeSighting, []SpawnSighting, error)
+	scan(now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, error)
 }
 
 // Dispositions counts what the store did with what we published. Saturation
@@ -164,19 +167,35 @@ func (c *Collector) Run(ctx context.Context, sink graph.EventSink) error {
 
 func (c *Collector) tick(sink graph.EventSink) {
 	now := c.now()
-	nodes, spawns, err := c.scan.scan(now)
+	// The bindings are read once and used twice: the scanner needs the id set to
+	// apply the horizon rule's live-process clause, and emit needs the identities
+	// to pick each node's incarnation. Reading them twice would let a row appear
+	// between the two reads and hand the scanner a session emit then dates by an
+	// invocation incarnation, or the reverse.
+	processes := c.processBindings()
+	nodes, spawns, err := c.scan.scan(now, liveSessions(processes))
 	if err != nil {
 		c.scanErrors.Add(1)
 		return
 	}
-	c.emit(sink, now, nodes, spawns)
+	c.emit(sink, now, processes, nodes, spawns)
+}
+
+// liveSessions is the id set behind the horizon rule's "or with a live process"
+// clause. A session whose process is up is not stale however long ago anything
+// on disk last moved, and no scanner is allowed to decide that for itself.
+func liveSessions(processes map[string]graph.ProcessIdentity) map[string]bool {
+	live := make(map[string]bool, len(processes))
+	for session := range processes {
+		live[session] = true
+	}
+	return live
 }
 
 // emit publishes one tick in admission order: nodes, then the state and exit
 // claims about them, then the edges naming them, then the heartbeats that keep
 // the state claims alive.
-func (c *Collector) emit(sink graph.EventSink, now time.Time, nodes []NodeSighting, spawns []SpawnSighting) {
-	processes := c.processBindings()
+func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[string]graph.ProcessIdentity, nodes []NodeSighting, spawns []SpawnSighting) {
 	published := make(map[graph.NodeID]graph.IncarnationID, len(nodes))
 	claims := make([]NodeSighting, 0, len(nodes))
 	exits := make([]NodeSighting, 0, len(nodes))

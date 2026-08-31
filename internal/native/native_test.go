@@ -32,7 +32,7 @@ type fakeScanner struct {
 	calls  int
 }
 
-func (f *fakeScanner) scan(time.Time) ([]NodeSighting, []SpawnSighting, error) {
+func (f *fakeScanner) scan(time.Time, map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

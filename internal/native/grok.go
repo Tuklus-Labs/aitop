@@ -113,7 +113,7 @@ type grokVisit struct {
 // scan never returns an error: a box with no Grok on it, an unreadable
 // directory, and a corrupt file are all ordinary, and returning an error would
 // blank the runtime for that tick.
-func (s *grokScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, error) {
+func (s *grokScanner) scan(now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
 	visits := s.visits(now)
 
 	nodes := make([]NodeSighting, 0, len(visits))
@@ -147,7 +147,7 @@ func (s *grokScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, erro
 	}
 
 	for _, visit := range visits {
-		sighting, ok := s.readMain(now, visit)
+		sighting, ok := s.readMain(now, visit, live)
 		if !ok || emitted[sighting.ID] {
 			continue
 		}
@@ -321,7 +321,7 @@ func (s *grokScanner) readRoster() []grokRosterEntry {
 // state claim in either direction: occupancy holds the process truth for a
 // primary and a native claim would fight it every tick, and a session that stops
 // being observed ages to Stale rather than being asserted dead.
-func (s *grokScanner) readMain(now time.Time, visit grokVisit) (NodeSighting, bool) {
+func (s *grokScanner) readMain(now time.Time, visit grokVisit, live map[string]bool) (NodeSighting, bool) {
 	var sighting NodeSighting
 	path := filepath.Join(visit.dir, grokSummaryFile)
 	if visit.roster == nil {
@@ -339,8 +339,16 @@ func (s *grokScanner) readMain(now time.Time, visit grokVisit) (NodeSighting, bo
 		// The roster route is deliberately NOT gated this way. A roster entry is
 		// a live process's claim on a session, dated by opened_at, and it must
 		// not depend on when the session last wrote a file.
+		// The live clause is applied here as well as to the recorded horizon
+		// below. Skipping it would make the prefilter, whose whole justification
+		// is that it is a SUPERSET of the recorded rule, into a stricter gate
+		// than the rule it prefilters, and a live session would be dropped
+		// before its own claim was ever read.
 		info, err := os.Stat(path)
-		if err != nil || now.Sub(info.ModTime()) > nativeHorizon {
+		if err != nil {
+			return sighting, false
+		}
+		if now.Sub(info.ModTime()) > nativeHorizon && !live[visit.session] {
 			return sighting, false
 		}
 	}
@@ -389,7 +397,10 @@ func (s *grokScanner) readMain(now time.Time, visit grokVisit) (NodeSighting, bo
 		s.skippedSummaries.Add(1)
 		return sighting, false
 	}
-	if now.Sub(*activity) > nativeHorizon {
+	// A live process holds the session open whatever last_active_at says: the
+	// field is grok's record of its own writing, and a session waiting on a long
+	// tool call has not written for as long as the call has run.
+	if now.Sub(*activity) > nativeHorizon && !live[visit.session] {
 		return sighting, false
 	}
 

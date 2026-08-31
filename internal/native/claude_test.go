@@ -126,8 +126,16 @@ func (tree *claudeTree) agentTranscript(session, agent string, mod time.Time) st
 
 func scanClaude(t *testing.T, home string, now time.Time) ([]NodeSighting, []SpawnSighting, *claudeScanner) {
 	t.Helper()
+	return scanClaudeLive(t, home, now, nil)
+}
+
+// scanClaudeLive is the same scan with the horizon rule's live-process clause
+// supplied. nil and an empty map both mean "no session has a live process",
+// which is what every scan that is not driven by engine rows must see.
+func scanClaudeLive(t *testing.T, home string, now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, *claudeScanner) {
+	t.Helper()
 	scanner := &claudeScanner{home: home}
-	nodes, spawns, err := scanner.scan(now)
+	nodes, spawns, err := scanner.scan(now, live)
 	if err != nil {
 		t.Fatalf("claude-scan-tolerates-disk rule violated: home=%s err=%v", home, err)
 	}
@@ -659,5 +667,47 @@ func TestClaudeCollectorLandsChainInRealShadow(t *testing.T) {
 				nodes, edges, collector.Disp().Published.Load(), collector.Disp().Rejected.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestClaudeScannerLiveSessionIsInsideHorizon covers the second clause of the
+// horizon rule: a session is observed when its files are fresh OR when a live
+// process holds it. Only the engine's rows know the second half, so the scanner
+// is handed the id set rather than deriving liveness from anything on disk.
+//
+// Both directions are asserted in one test on purpose. A scanner that simply
+// stopped applying the horizon would satisfy the presence half by itself, and
+// the absence half is the only thing that can tell that apart.
+func TestClaudeScannerLiveSessionIsInsideHorizon(t *testing.T) {
+	now := claudeBase()
+	tree := newClaudeTree(t)
+	// Three hours cold: the sidecar is well past nativeHorizon, which is the
+	// shape a long-running session that has not been typed into produces.
+	cold := now.Add(-3 * time.Hour)
+	path := tree.sidecar(4242, claudeFixtureSession, "/home/aegis/Projects/aitop", "aegis-48", cold)
+	id := mustSessionID(t, claudeFixtureSession)
+
+	nodes, _, _ := scanClaude(t, tree.home, now)
+	if _, ok := nodeByID(nodes, id); ok {
+		t.Fatalf("claude-cold-session-with-no-process-is-not-observed rule violated: id=%s sidecarAge=%s horizon=%s nodes=%d", id, now.Sub(cold), nativeHorizon, len(nodes))
+	}
+
+	nodes, _, scanner := scanClaudeLive(t, tree.home, now, map[string]bool{claudeFixtureSession: true})
+	node, ok := nodeByID(nodes, id)
+	if !ok {
+		t.Fatalf("claude-live-session-is-inside-horizon rule violated: id=%s absent sidecarAge=%s liveSet=[%s] nodes=%d", id, now.Sub(cold), claudeFixtureSession, len(nodes))
+	}
+	// The lift admits the session; it must not change what the session is. A
+	// sighting built from somewhere other than the sidecar would pass presence.
+	if node.Name != "aegis-48" || node.Project != "aitop" || node.Location != path || node.Role != types.RolePrimary {
+		t.Fatalf("claude-live-session-carries-its-sidecar-content rule violated: name=%q project=%q role=%q location=%q want location=%s", node.Name, node.Project, node.Role, node.Location, path)
+	}
+	// A live session is still a primary: occupancy owns the process truth, and a
+	// native state claim would fight it every tick.
+	if node.State != "" || node.Exit != "" {
+		t.Fatalf("claude-live-session-makes-no-state-or-terminal-claim rule violated: state=%q exit=%q", node.State, node.Exit)
+	}
+	if n := scanner.skippedSidecars.Load(); n != 0 {
+		t.Fatalf("claude-live-session-is-not-a-skip rule violated: skippedSidecars=%d", n)
 	}
 }

@@ -265,8 +265,15 @@ func grokMetaFields(parent, child, kind, model, desc, status, cwd string, starte
 
 func scanGrok(t *testing.T, home string, now time.Time) ([]NodeSighting, []SpawnSighting, *grokScanner) {
 	t.Helper()
+	return scanGrokLive(t, home, now, nil)
+}
+
+// scanGrokLive is the same scan with the horizon rule's live-process clause
+// supplied. nil and an empty map both mean "no session has a live process".
+func scanGrokLive(t *testing.T, home string, now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, *grokScanner) {
+	t.Helper()
 	scanner := &grokScanner{home: home}
-	nodes, spawns, err := scanner.scan(now)
+	nodes, spawns, err := scanner.scan(now, live)
 	if err != nil {
 		t.Fatalf("grok-scan-tolerates-disk rule violated: home=%s err=%v", home, err)
 	}
@@ -1326,5 +1333,51 @@ func TestGrokCollectorLandsSubagentInRealShadow(t *testing.T) {
 				nodeCount, edgeCount, collector.Disp().Published.Load(), collector.Disp().Rejected.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestGrokScannerLiveSessionIsInsideHorizon covers the second clause of the
+// horizon rule for grok. Two gates stand between a cold summary and a sighting
+// -- the stat prefilter that keeps a 434-session store off the read path, and
+// the runtime's own recorded last_active_at -- and a live process has to clear
+// both, so this test is what keeps the lift from being applied to one of them.
+//
+// The session deliberately has NO roster entry. active_sessions.json is grok's
+// own liveness claim and would admit the session through the roster route; the
+// clause under test is the engine's process binding, which is a different fact
+// from a different source and must stand on its own.
+func TestGrokScannerLiveSessionIsInsideHorizon(t *testing.T) {
+	now := grokBase()
+	tree := newGrokTree(t)
+	cold := now.Add(-3 * time.Hour) // well past nativeHorizon
+	created := now.Add(-9 * time.Hour)
+	path := tree.summary(grokProjectCWD, grokDarkSession,
+		grokMainFields(grokDarkSession, grokProjectCWD, grokBuildAgent, grokModel, "wire the collectors", created, cold), cold)
+	tree.seal(grokProjectCWD, cold)
+	id := mustGrokID(t, grokDarkSession)
+
+	nodes, _, _ := scanGrok(t, tree.home, now)
+	if _, ok := nodeByID(nodes, id); ok {
+		t.Fatalf("grok-cold-session-with-no-process-is-not-observed rule violated: id=%s summaryAge=%s horizon=%s nodes=%d", id, now.Sub(cold), nativeHorizon, len(nodes))
+	}
+
+	nodes, _, scanner := scanGrokLive(t, tree.home, now, map[string]bool{grokDarkSession: true})
+	node, ok := nodeByID(nodes, id)
+	if !ok {
+		t.Fatalf("grok-live-session-is-inside-horizon rule violated: id=%s absent summaryAge=%s liveSet=[%s] nodes=%d", id, now.Sub(cold), grokDarkSession, len(nodes))
+	}
+	// The lift admits the summary; it must not change what the summary says.
+	if node.Name != grokHarnessName || node.Model != grokModel || node.Project != "aitop" || node.TaskName != "wire the collectors" || node.Location != path {
+		t.Fatalf("grok-live-session-carries-its-summary-content rule violated: name=%q model=%q project=%q task=%q location=%q want location=%s", node.Name, node.Model, node.Project, node.TaskName, node.Location, path)
+	}
+	// With no roster entry there is no opened_at, so created_at is the start.
+	if node.StartedAt == nil || !node.StartedAt.Equal(created) {
+		t.Fatalf("grok-live-session-startedat-is-created-at rule violated: startedAt=%v want=%s", node.StartedAt, created)
+	}
+	if node.State != "" || node.Exit != "" {
+		t.Fatalf("grok-live-session-makes-no-state-or-terminal-claim rule violated: state=%q exit=%q", node.State, node.Exit)
+	}
+	if n := scanner.skippedSummaries.Load(); n != 0 {
+		t.Fatalf("grok-live-session-is-not-a-skip rule violated: skippedSummaries=%d", n)
 	}
 }

@@ -198,8 +198,15 @@ func codexSubagentPayload(thread, root, parent, nickname, cwd string) map[string
 
 func scanCodex(t *testing.T, home string, now time.Time) ([]NodeSighting, []SpawnSighting, *codexScanner) {
 	t.Helper()
+	return scanCodexLive(t, home, now, nil)
+}
+
+// scanCodexLive is the same scan with the horizon rule's live-process clause
+// supplied. nil and an empty map both mean "no thread has a live process".
+func scanCodexLive(t *testing.T, home string, now time.Time, live map[string]bool) ([]NodeSighting, []SpawnSighting, *codexScanner) {
+	t.Helper()
 	scanner := &codexScanner{home: home}
-	nodes, spawns, err := scanner.scan(now)
+	nodes, spawns, err := scanner.scan(now, live)
 	if err != nil {
 		t.Fatalf("codex-scan-tolerates-disk rule violated: home=%s err=%v", home, err)
 	}
@@ -775,5 +782,50 @@ func TestCodexCollectorLandsForkInRealShadow(t *testing.T) {
 				nodeCount, edgeCount, collector.Disp().Published.Load(), collector.Disp().Rejected.Load())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestCodexScannerLiveThreadIsInsideHorizon covers the second clause of the
+// horizon rule for codex: a thread is observed when its rollout is fresh OR
+// when a live process holds it. The engine's rows carry the ROOT thread id for
+// a live codex process, which is a user thread's own id, so the id set is
+// matched against the rollout FILE NAME -- the name carries the thread id, and
+// reading a stale rollout's header just to learn whether to admit it would
+// reopen the walk bound this scanner exists to respect.
+//
+// Two cold rollouts, one of them live. A scanner that simply stopped applying
+// the horizon would admit both, so selectivity is the assertion that separates
+// the lift from a removed bound.
+func TestCodexScannerLiveThreadIsInsideHorizon(t *testing.T) {
+	now := codexBase()
+	tree := newCodexTree(t)
+	cold := now.Add(-3 * time.Hour) // well past nativeHorizon
+	livePath := tree.rollout(now, codexUserThread, codexUserPayload(codexUserThread, codexFixtureCWD), cold)
+	tree.rollout(now, codexSecondChild, codexUserPayload(codexSecondChild, codexFixtureCWD), cold)
+	liveID := mustThreadID(t, codexUserThread)
+	deadID := mustThreadID(t, codexSecondChild)
+
+	nodes, _, _ := scanCodex(t, tree.home, now)
+	if _, ok := nodeByID(nodes, liveID); ok {
+		t.Fatalf("codex-cold-thread-with-no-process-is-not-observed rule violated: id=%s rolloutAge=%s horizon=%s nodes=%d", liveID, now.Sub(cold), nativeHorizon, len(nodes))
+	}
+
+	nodes, _, scanner := scanCodexLive(t, tree.home, now, map[string]bool{codexUserThread: true})
+	node, ok := nodeByID(nodes, liveID)
+	if !ok {
+		t.Fatalf("codex-live-thread-is-inside-horizon rule violated: id=%s absent rolloutAge=%s liveSet=[%s] nodes=%d", liveID, now.Sub(cold), codexUserThread, len(nodes))
+	}
+	if _, ok := nodeByID(nodes, deadID); ok {
+		t.Fatalf("codex-live-lift-admits-only-the-live-thread rule violated: id=%s admitted while absent from liveSet=[%s]", deadID, codexUserThread)
+	}
+	// The lift admits the rollout; it must not change what the rollout says.
+	if node.Location != livePath || node.Project != "aitop" || node.Role != types.RolePrimary {
+		t.Fatalf("codex-live-thread-carries-its-rollout-content rule violated: project=%q role=%q location=%q want location=%s", node.Project, node.Role, node.Location, livePath)
+	}
+	if node.State != "" || node.Exit != "" {
+		t.Fatalf("codex-live-thread-makes-no-state-or-terminal-claim rule violated: state=%q exit=%q", node.State, node.Exit)
+	}
+	if n := scanner.skippedRollouts.Load(); n != 0 {
+		t.Fatalf("codex-live-thread-is-not-a-skip rule violated: skippedRollouts=%d", n)
 	}
 }
