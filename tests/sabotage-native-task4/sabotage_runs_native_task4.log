@@ -1,0 +1,1180 @@
+head: 6123bc9b16f8f982c71a32949b85473a6a54019a
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+
+===== S-G1a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:335: grok-build-agent-names-the-harness rule violated: name="grok-build-plan" agentName="grok-build-plan" want="Grok"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G1a-prod: AS-PREDICTED
+S-G1a-prod: restored, porcelain clean, focused test green again
+
+===== S-G1a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G1a-weak: AS-PREDICTED
+S-G1a-weak: restored, porcelain clean, focused test green again
+
+===== S-G1b-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:377: grok-non-build-agent-is-unnamed rule violated: name="Grok" agentName="grok-plan" location="/tmp/TestGrokScannerRosterAndDarkMains1868886729/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/01a0557d-312b-7170-9f7c-8e94a48c49b6/summary.json" want=""/"/tmp/TestGrokScannerRosterAndDarkMains1868886729/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/01a0557d-312b-7170-9f7c-8e94a48c49b6/summary.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G1b-prod: AS-PREDICTED
+S-G1b-prod: restored, porcelain clean, focused test green again
+
+===== S-G1b-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G1b-weak: AS-PREDICTED
+S-G1b-weak: restored, porcelain clean, focused test green again
+
+===== S-G2a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:389: grok-dark-walk-admits-only-live-mains rule violated: session=019fc18b-9518-7283-900c-e9e6450ba842 count=1 reason="its own summary says session_kind=subagent, so it is somebody's child" ids=[grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G2a-prod: AS-PREDICTED
+S-G2a-prod: restored, porcelain clean, focused test green again
+
+===== S-G2a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G2a-weak: AS-PREDICTED
+S-G2a-weak: restored, porcelain clean, focused test green again
+
+===== S-G2b-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:401: grok-subagent-summaries-counted rule violated: subagentSummaries=0 want=1 ids=[grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G2b-prod: AS-PREDICTED
+S-G2b-prod: restored, porcelain clean, focused test green again
+
+===== S-G2b-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 1 -
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G2b-weak: AS-PREDICTED
+S-G2b-weak: restored, porcelain clean, focused test green again
+
+===== S-G3a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:389: grok-dark-walk-admits-only-live-mains rule violated: session=01a01634-b76e-76e0-a27d-192cc5da9fd3 count=1 reason="not in the roster, and its bucket mtime is outside the walk bound" ids=[grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3 grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G3a-prod: AS-PREDICTED
+S-G3a-prod: restored, porcelain clean, focused test green again
+
+===== S-G3a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G3a-weak: AS-PREDICTED
+S-G3a-weak: restored, porcelain clean, focused test green again
+
+===== S-G3b-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:389: grok-dark-walk-admits-only-live-mains rule violated: session=019ffdf3-85af-7171-8216-331c7e11bc19 count=1 reason="last_active_at outside the horizon, however fresh the file is" ids=[grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:019ffdf3-85af-7171-8216-331c7e11bc19 grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G3b-prod: AS-PREDICTED
+S-G3b-prod: restored, porcelain clean, focused test green again
+
+===== S-G3b-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G3b-weak: AS-PREDICTED
+S-G3b-weak: restored, porcelain clean, focused test green again
+
+===== S-G4a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:342: grok-main-location-is-summary-file rule violated: location="/tmp/TestGrokScannerRosterAndDarkMains2578635715/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b" want="/tmp/TestGrokScannerRosterAndDarkMains2578635715/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/summary.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G4a-prod: AS-PREDICTED
+S-G4a-prod: restored, porcelain clean, focused test green again
+
+===== S-G4a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G4a-weak: AS-PREDICTED
+S-G4a-weak: restored, porcelain clean, focused test green again
+
+===== S-G4b-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:338: grok-main-content-from-summary rule violated: model="grok-4.6" taskName="native provenance task 4" project="%2Fhome%2Faegis%2FProjects%2Faitop" want="grok-4.6"/"native provenance task 4"/"aitop"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G4b-prod: AS-PREDICTED
+S-G4b-prod: restored, porcelain clean, focused test green again
+
+===== S-G4b-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G4b-weak: AS-PREDICTED
+S-G4b-weak: restored, porcelain clean, focused test green again
+
+===== S-G4c-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:338: grok-main-content-from-summary rule violated: model="grok-4.6" taskName="grok-build-plan" project="aitop" want="grok-4.6"/"native provenance task 4"/"aitop"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G4c-prod: AS-PREDICTED
+S-G4c-prod: restored, porcelain clean, focused test green again
+
+===== S-G4c-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G4c-weak: AS-PREDICTED
+S-G4c-weak: restored, porcelain clean, focused test green again
+
+===== S-G5a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 1 -
+ 1 file changed, 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:347: grok-roster-startedat-is-opened-at rule violated: startedAt=2026-08-31 06:20:00 +0000 UTC want=2026-08-31 06:40:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G5a-prod: AS-PREDICTED
+S-G5a-prod: restored, porcelain clean, focused test green again
+
+===== S-G5a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 1 -
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G5a-weak: AS-PREDICTED
+S-G5a-weak: restored, porcelain clean, focused test green again
+
+===== S-G5b-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:366: grok-dark-startedat-is-created-at rule violated: startedAt=<nil> want=2026-08-31 06:35:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G5b-prod: AS-PREDICTED
+S-G5b-prod: restored, porcelain clean, focused test green again
+
+===== S-G5b-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G5b-weak: AS-PREDICTED
+S-G5b-weak: restored, porcelain clean, focused test green again
+
+===== S-G6a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 1 +
+ 1 file changed, 1 insertion(+)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:352: grok-main-makes-no-state-or-terminal-claim rule violated: state="active" exit="" exitAt=<nil>
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G6a-prod: AS-PREDICTED
+S-G6a-prod: restored, porcelain clean, focused test green again
+
+===== S-G6a-weak expect=GREEN run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go      | 1 +
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G6a-weak: AS-PREDICTED
+S-G6a-weak: restored, porcelain clean, focused test green again
+
+===== S-G7a-prod expect=RED run=^TestGrokScannerRosterAndDarkMains$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerRosterAndDarkMains (0.00s)
+    grok_test.go:326: grok-roster-session-observed rule violated: session=01a05553-afa1-7ea3-b658-96498482568b absent ids=[grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G7a-prod: AS-PREDICTED
+S-G7a-prod: restored, porcelain clean, focused test green again
+
+===== S-G8a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:570: grok-running-child-of-roster-absent-parent-claims-nothing rule violated: state="active" exit="" parent=01a01634-b76e-76e0-a27d-192cc5da9fd3
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G8a-prod: AS-PREDICTED
+S-G8a-prod: restored, porcelain clean, focused test green again
+
+===== S-G8a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G8a-weak: AS-PREDICTED
+S-G8a-weak: restored, porcelain clean, focused test green again
+
+===== S-G8b-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:520: grok-running-child-of-roster-parent-is-active rule violated: state="" exit="" want="active"/""
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G8b-prod: AS-PREDICTED
+S-G8b-prod: restored, porcelain clean, focused test green again
+
+===== S-G8b-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.003s
+S-G8b-weak: AS-PREDICTED
+S-G8b-weak: restored, porcelain clean, focused test green again
+
+===== S-G9a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:552: grok-cancelled-status-claims-nothing rule violated: exit="completed" exitAt=2026-08-31 06:59:00 +0000 UTC state=""
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G9a-prod: AS-PREDICTED
+S-G9a-prod: restored, porcelain clean, focused test green again
+
+===== S-G9a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G9a-weak: AS-PREDICTED
+S-G9a-weak: restored, porcelain clean, focused test green again
+
+===== S-G9b-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:542: grok-failed-status-is-the-only-failed-terminal rule violated: exit="completed" exitAt=2026-08-31 06:58:00 +0000 UTC want="failed"/2026-08-31 06:58:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G9b-prod: AS-PREDICTED
+S-G9b-prod: restored, porcelain clean, focused test green again
+
+===== S-G9b-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G9b-weak: AS-PREDICTED
+S-G9b-weak: restored, porcelain clean, focused test green again
+
+===== S-G9c-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:531: grok-exitat-is-completed-at rule violated: exitAt=2026-08-31 06:40:00 +0000 UTC want=2026-08-31 06:57:00 +0000 UTC location="/tmp/TestGrokScannerChildLifecycle2073419782/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fda66-8c24-7c80-9a7f-3383839b9e06/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G9c-prod: AS-PREDICTED
+S-G9c-prod: restored, porcelain clean, focused test green again
+
+===== S-G9c-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      |  2 +-
+ internal/native/grok_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G9c-weak: AS-PREDICTED
+S-G9c-weak: restored, porcelain clean, focused test green again
+
+===== S-G10a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:597: grok-child-horizon-skips-stale rule violated: child=019fda85-dcff-7b61-9a43-f1f58c4c3461 count=1 metaAge=2h horizon=1h0m0s ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda66-8c24-7c80-9a7f-3383839b9e06 grok:session:019fda70-9b8f-7583-815e-a18bb1a087fb grok:session:019fda72-cc6c-7f53-8dab-813d48f33fcf grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:019fda77-abf4-7133-8d31-f802bc67d01a grok:session:019fda7f-b335-7f50-a12a-18e0355d75a2 grok:session:019fda85-dcff-7b61-9a43-f1f58c4c3461 grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G10a-prod: AS-PREDICTED
+S-G10a-prod: restored, porcelain clean, focused test green again
+
+===== S-G10a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G10a-weak: AS-PREDICTED
+S-G10a-weak: restored, porcelain clean, focused test green again
+
+===== S-G10b-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:557: grok-long-running-child-stays-visible rule violated: child=019fda7f-b335-7f50-a12a-18e0355d75a2 absent metaAge=90m ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda66-8c24-7c80-9a7f-3383839b9e06 grok:session:019fda70-9b8f-7583-815e-a18bb1a087fb grok:session:019fda72-cc6c-7f53-8dab-813d48f33fcf grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:019fda77-abf4-7133-8d31-f802bc67d01a grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G10b-prod: AS-PREDICTED
+S-G10b-prod: restored, porcelain clean, focused test green again
+
+===== S-G11a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:505: grok-child-identity rule violated: sessionID="019fc18b-9518-7283-900c-e9e6450ba842" role="primary" runtime="grok" want="019fc18b-9518-7283-900c-e9e6450ba842"/"subagent"/"grok"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G11a-prod: AS-PREDICTED
+S-G11a-prod: restored, porcelain clean, focused test green again
+
+===== S-G11a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G11a-weak: AS-PREDICTED
+S-G11a-weak: restored, porcelain clean, focused test green again
+
+===== S-G11b-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:505: grok-child-identity rule violated: sessionID="01a05553-afa1-7ea3-b658-96498482568b" role="subagent" runtime="grok" want="019fc18b-9518-7283-900c-e9e6450ba842"/"subagent"/"grok"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G11b-prod: AS-PREDICTED
+S-G11b-prod: restored, porcelain clean, focused test green again
+
+===== S-G11b-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G11b-weak: AS-PREDICTED
+S-G11b-weak: restored, porcelain clean, focused test green again
+
+===== S-G11c-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:509: grok-child-content-from-meta rule violated: name="survey the disk formats" model="grok-4.5" taskName="survey the disk formats" project="aitop" want="general-purpose"/"grok-4.5"/"survey the disk formats"/"aitop"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G11c-prod: AS-PREDICTED
+S-G11c-prod: restored, porcelain clean, focused test green again
+
+===== S-G11c-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G11c-weak: AS-PREDICTED
+S-G11c-weak: restored, porcelain clean, focused test green again
+
+===== S-G11d-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:513: grok-child-location-is-meta-file rule violated: location="/tmp/TestGrokScannerChildLifecycle232603147/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842" want="/tmp/TestGrokScannerChildLifecycle232603147/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G11d-prod: AS-PREDICTED
+S-G11d-prod: restored, porcelain clean, focused test green again
+
+===== S-G11d-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G11d-weak: AS-PREDICTED
+S-G11d-weak: restored, porcelain clean, focused test green again
+
+===== S-G12a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:576: grok-child-record-outranks-its-own-summary rule violated: role="primary" name="Grok" location="/tmp/TestGrokScannerChildLifecycle3185095977/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/019fda8d-8a39-7651-82c6-8a44c982180f/summary.json" want="subagent"/"explore"/"/tmp/TestGrokScannerChildLifecycle3185095977/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/01a01634-b76e-76e0-a27d-192cc5da9fd3/subagents/019fda8d-8a39-7651-82c6-8a44c982180f/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G12a-prod: AS-PREDICTED
+S-G12a-prod: restored, porcelain clean, focused test green again
+
+===== S-G12a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 18 +++++++++---------
+ internal/native/grok_test.go |  4 ++--
+ 2 files changed, 11 insertions(+), 11 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G12a-weak: AS-PREDICTED
+S-G12a-weak: restored, porcelain clean, focused test green again
+
+===== S-G13a-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:583: grok-stale-parent-synthesized-for-live-child rule violated: parent=01a01634-b76e-76e0-a27d-192cc5da9fd3 absent ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda66-8c24-7c80-9a7f-3383839b9e06 grok:session:019fda70-9b8f-7583-815e-a18bb1a087fb grok:session:019fda72-cc6c-7f53-8dab-813d48f33fcf grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:019fda77-abf4-7133-8d31-f802bc67d01a grok:session:019fda7f-b335-7f50-a12a-18e0355d75a2 grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:01a05553-afa1-7ea3-b658-96498482568b]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G13a-prod: AS-PREDICTED
+S-G13a-prod: restored, porcelain clean, focused test green again
+
+===== S-G13a-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      |  2 +-
+ internal/native/grok_test.go | 10 +++++-----
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G13a-weak: AS-PREDICTED
+S-G13a-weak: restored, porcelain clean, focused test green again
+
+===== S-G13b-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 1 +
+ 1 file changed, 1 insertion(+)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:586: grok-synthesized-parent-is-minimal rule violated: role="primary" name="Grok" location="/tmp/TestGrokScannerChildLifecycle1323669168/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/01a01634-b76e-76e0-a27d-192cc5da9fd3/subagents/019fda8d-8a39-7651-82c6-8a44c982180f/meta.json" want="primary"/""/"/tmp/TestGrokScannerChildLifecycle1323669168/001/sessions/%2Fhome%2Faegis%2FProjects%2Fpensive%2Fdaemon/01a01634-b76e-76e0-a27d-192cc5da9fd3/subagents/019fda8d-8a39-7651-82c6-8a44c982180f/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G13b-prod: AS-PREDICTED
+S-G13b-prod: restored, porcelain clean, focused test green again
+
+===== S-G13b-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 1 +
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G13b-weak: AS-PREDICTED
+S-G13b-weak: restored, porcelain clean, focused test green again
+
+===== S-G13c-prod expect=RED run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go | 2 ++
+ 1 file changed, 2 insertions(+)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerChildLifecycle (0.00s)
+    grok_test.go:593: grok-roster-absence-is-not-death rule violated: exit="vanished" exitAt=2026-08-31 07:00:00 +0000 UTC parent=01a01634-b76e-76e0-a27d-192cc5da9fd3
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G13c-prod: AS-PREDICTED
+S-G13c-prod: restored, porcelain clean, focused test green again
+
+===== S-G13c-weak expect=GREEN run=^TestGrokScannerChildLifecycle$
+plant diffstat:
+internal/native/grok.go      | 2 ++
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G13c-weak: AS-PREDICTED
+S-G13c-weak: restored, porcelain clean, focused test green again
+
+===== S-G14a-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:777: grok-relationship-is-subagent-id rule violated: relationship="019fda8e-a041-7253-9024-8dc7843efc7c" want="019fda94-8279-7ea0-989d-f076eaba77fc" childSessionID="019fda8e-a041-7253-9024-8dc7843efc7c"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G14a-prod: AS-PREDICTED
+S-G14a-prod: restored, porcelain clean, focused test green again
+
+===== S-G14a-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G14a-weak: AS-PREDICTED
+S-G14a-weak: restored, porcelain clean, focused test green again
+
+===== S-G14b-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:768: grok-relationship-is-subagent-id rule violated: relationship="01a05553-afa1-7ea3-b658-96498482568b" location="/tmp/TestGrokScannerSpawnEdges877155269/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842/meta.json" want="019fc18b-9518-7283-900c-e9e6450ba842"/"/tmp/TestGrokScannerSpawnEdges877155269/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G14b-prod: AS-PREDICTED
+S-G14b-prod: restored, porcelain clean, focused test green again
+
+===== S-G14b-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G14b-weak: AS-PREDICTED
+S-G14b-weak: restored, porcelain clean, focused test green again
+
+===== S-G14c-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:781: grok-child-node-is-child-session-id rule violated: childSessionID="019fda94-8279-7ea0-989d-f076eaba77fc" want="019fda8e-a041-7253-9024-8dc7843efc7c" relationship="019fda94-8279-7ea0-989d-f076eaba77fc"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G14c-prod: AS-PREDICTED
+S-G14c-prod: restored, porcelain clean, focused test green again
+
+===== S-G14c-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G14c-weak: AS-PREDICTED
+S-G14c-weak: restored, porcelain clean, focused test green again
+
+===== S-G14d-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:768: grok-relationship-is-subagent-id rule violated: relationship="019fc18b-9518-7283-900c-e9e6450ba842" location="/tmp/TestGrokScannerSpawnEdges2606293157/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842" want="019fc18b-9518-7283-900c-e9e6450ba842"/"/tmp/TestGrokScannerSpawnEdges2606293157/001/sessions/%2Fhome%2Faegis%2FProjects%2Faitop/01a05553-afa1-7ea3-b658-96498482568b/subagents/019fc18b-9518-7283-900c-e9e6450ba842/meta.json"
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G14d-prod: AS-PREDICTED
+S-G14d-prod: restored, porcelain clean, focused test green again
+
+===== S-G14d-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G14d-weak: AS-PREDICTED
+S-G14d-weak: restored, porcelain clean, focused test green again
+
+===== S-G15a-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:827: grok-spawn-fixture-edge-count rule violated: spawns=5 want=4 ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda8e-a041-7253-9024-8dc7843efc7c grok:session:019fda8e-a041-7253-9024-8ddf687717ba grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G15a-prod: AS-PREDICTED
+S-G15a-prod: restored, porcelain clean, focused test green again
+
+===== S-G15a-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G15a-weak: AS-PREDICTED
+S-G15a-weak: restored, porcelain clean, focused test green again
+
+===== S-G15b-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:795: grok-meta-parent-must-match-its-directory rule violated: child=019fda8e-a041-7253-9024-8ddf687717ba has an edge metaParent=01a0557d-312b-7170-9f7c-8e94a48c49b6 dirParent=01a05553-afa1-7ea3-b658-96498482568b
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G15b-prod: AS-PREDICTED
+S-G15b-prod: restored, porcelain clean, focused test green again
+
+===== S-G15b-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G15b-weak: AS-PREDICTED
+S-G15b-weak: restored, porcelain clean, focused test green again
+
+===== S-G15c-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:799: grok-mismatched-parent-still-publishes-the-child rule violated: child=019fda8e-a041-7253-9024-8ddf687717ba absent ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda8e-a041-7253-9024-8dc7843efc7c grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G15c-prod: AS-PREDICTED
+S-G15c-prod: restored, porcelain clean, focused test green again
+
+===== S-G15c-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 3 +--
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G15c-weak: AS-PREDICTED
+S-G15c-weak: restored, porcelain clean, focused test green again
+
+===== S-G16a-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:818: grok-published-parent-not-duplicated rule violated: parent=01a05553-afa1-7ea3-b658-96498482568b count=2 want=1 ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda8e-a041-7253-9024-8dc7843efc7c grok:session:019fda8e-a041-7253-9024-8ddf687717ba grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G16a-prod: AS-PREDICTED
+S-G16a-prod: restored, porcelain clean, focused test green again
+
+===== S-G16a-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G16a-weak: AS-PREDICTED
+S-G16a-weak: restored, porcelain clean, focused test green again
+
+===== S-G16b-prod expect=RED run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerSpawnEdges (0.00s)
+    grok_test.go:812: grok-skipped-child-synthesizes-no-parent rule violated: session=01a0557d-312b-7170-9f7c-8e94a48c49b6 count=1 reason="its only child is inside the horizon but outside the exit window, so the core drops that child" ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fda8e-a041-7253-9024-8dc7843efc7c grok:session:019fda8e-a041-7253-9024-8ddf687717ba grok:session:019fda8d-8a39-7651-82c6-8a44c982180f grok:session:019fda75-07a3-7720-a046-9f03690ecd52 grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:01a01634-b76e-76e0-a27d-192cc5da9fd3 grok:session:01a0557d-312b-7170-9f7c-8e94a48c49b6]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G16b-prod: AS-PREDICTED
+S-G16b-prod: restored, porcelain clean, focused test green again
+
+===== S-G16b-weak expect=GREEN run=^TestGrokScannerSpawnEdges$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G16b-weak: AS-PREDICTED
+S-G16b-weak: restored, porcelain clean, focused test green again
+
+===== S-G17a-prod expect=RED run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerCWDEncoding (0.00s)
+    grok_test.go:916: grok-roster-path-is-percent-encoded-cwd rule violated: location="/tmp/TestGrokScannerCWDEncoding2775086925/001/sessions/-home-x/01a05553-afa1-7ea3-b658-96498482568b/summary.json" want="/tmp/TestGrokScannerCWDEncoding2775086925/001/sessions/%2Fhome%2Fx/01a05553-afa1-7ea3-b658-96498482568b/summary.json"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G17a-prod: AS-PREDICTED
+S-G17a-prod: restored, porcelain clean, focused test green again
+
+===== S-G17a-weak expect=GREEN run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G17a-weak: AS-PREDICTED
+S-G17a-weak: restored, porcelain clean, focused test green again
+
+===== S-G17b-prod expect=RED run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerCWDEncoding (0.00s)
+    grok_test.go:916: grok-roster-path-is-percent-encoded-cwd rule violated: location="/tmp/TestGrokScannerCWDEncoding686223993/001/sessions/home%2Fx/01a05553-afa1-7ea3-b658-96498482568b/summary.json" want="/tmp/TestGrokScannerCWDEncoding686223993/001/sessions/%2Fhome%2Fx/01a05553-afa1-7ea3-b658-96498482568b/summary.json"
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G17b-prod: AS-PREDICTED
+S-G17b-prod: restored, porcelain clean, focused test green again
+
+===== S-G17b-weak expect=GREEN run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G17b-weak: AS-PREDICTED
+S-G17b-weak: restored, porcelain clean, focused test green again
+
+===== S-G17c-prod expect=RED run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerCWDEncoding (0.00s)
+    grok_test.go:924: grok-spaced-cwd-is-unreachable-by-roster-path rule violated: session=01a0557d-312b-7170-9f7c-8e94a48c49b6 count=1 cwd="/home/x/Obsidian Vault"; if the encoding now escapes spaces, this limit is fixed and the assertion is stale
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G17c-prod: AS-PREDICTED
+S-G17c-prod: restored, porcelain clean, focused test green again
+
+===== S-G17c-weak expect=GREEN run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.001s
+S-G17c-weak: AS-PREDICTED
+S-G17c-weak: restored, porcelain clean, focused test green again
+
+===== S-G17d-prod expect=RED run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerCWDEncoding (0.00s)
+    grok_test.go:930: grok-unreachable-roster-summary-counted rule violated: skippedSummaries=0 want=1 cwd="/home/x/Obsidian Vault" ids=[grok:session:01a05553-afa1-7ea3-b658-96498482568b grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-G17d-prod: AS-PREDICTED
+S-G17d-prod: restored, porcelain clean, focused test green again
+
+===== S-G17d-weak expect=GREEN run=^TestGrokScannerCWDEncoding$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G17d-weak: AS-PREDICTED
+S-G17d-weak: restored, porcelain clean, focused test green again
+
+===== S-G18a-prod expect=RED run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerToleratesRosterShapes (0.00s)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/map (0.00s)
+        grok_test.go:1013: grok-map-roster-parses rule violated: child present=true state="" want="active" ids=[grok:session:019fc18b-9518-7283-900c-e9e6450ba842 grok:session:019fbb2b-40be-7cc2-89a5-ca62441eaf5b grok:session:01a05553-afa1-7ea3-b658-96498482568b]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G18a-prod: AS-PREDICTED
+S-G18a-prod: restored, porcelain clean, focused test green again
+
+===== S-G18a-weak expect=GREEN run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.1s
+ok  	aitop/internal/native	0.002s
+S-G18a-weak: AS-PREDICTED
+S-G18a-weak: restored, porcelain clean, focused test green again
+
+===== S-G18b-prod expect=RED run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.1s
+--- FAIL: TestGrokScannerToleratesRosterShapes (0.00s)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/missing (0.00s)
+        grok_test.go:1059: grok-unreadable-roster-counted rule violated: case="missing" skippedRoster=1 want=0 (a missing file is ordinary, a corrupt one is not)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/empty-home (0.00s)
+        grok_test.go:1067: grok-absent-home-is-not-an-error rule violated: nodes=0 spawns=0 skippedRoster=1 skippedSummaries=0
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G18b-prod: AS-PREDICTED
+S-G18b-prod: restored, porcelain clean, focused test green again
+
+===== S-G18b-weak expect=GREEN run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go      | 2 +-
+ internal/native/grok_test.go | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
+S-G18b-weak: AS-PREDICTED
+S-G18b-weak: restored, porcelain clean, focused test green again
+
+===== S-G18c-prod expect=RED run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go | 3 +++
+ 1 file changed, 3 insertions(+)
+exit=1 wall=0.3s
+--- FAIL: TestGrokScannerToleratesRosterShapes (0.00s)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/missing (0.00s)
+        grok_test.go:1052: grok-no-roster-is-not-a-mass-vanish rule violated: case="missing" id=grok:session:019fc18b-9518-7283-900c-e9e6450ba842 exit="vanished" exitAt=2026-08-31 06:55:00 +0000 UTC
+    --- FAIL: TestGrokScannerToleratesRosterShapes/unparseable (0.00s)
+        grok_test.go:1052: grok-no-roster-is-not-a-mass-vanish rule violated: case="unparseable" id=grok:session:019fc18b-9518-7283-900c-e9e6450ba842 exit="vanished" exitAt=2026-08-31 06:55:00 +0000 UTC
+    --- FAIL: TestGrokScannerToleratesRosterShapes/truncated-array (0.00s)
+        grok_test.go:1052: grok-no-roster-is-not-a-mass-vanish rule violated: case="truncated-array" id=grok:session:019fc18b-9518-7283-900c-e9e6450ba842 exit="vanished" exitAt=2026-08-31 06:55:00 +0000 UTC
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G18c-prod: AS-PREDICTED
+S-G18c-prod: restored, porcelain clean, focused test green again
+
+===== S-G18c-weak expect=GREEN run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go      | 3 +++
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
+S-G18c-weak: AS-PREDICTED
+S-G18c-weak: restored, porcelain clean, focused test green again
+
+===== S-G18d-prod expect=RED run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go | 3 +++
+ 1 file changed, 3 insertions(+)
+exit=1 wall=0.3s
+--- FAIL: TestGrokScannerToleratesRosterShapes (0.00s)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/missing (0.00s)
+        grok_test.go:1037: grok-roster-case-canary rule violated: case="missing" dark main=019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent, so every absence below proves nothing ids=[]
+    --- FAIL: TestGrokScannerToleratesRosterShapes/unparseable (0.00s)
+        grok_test.go:1037: grok-roster-case-canary rule violated: case="unparseable" dark main=019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent, so every absence below proves nothing ids=[]
+    --- FAIL: TestGrokScannerToleratesRosterShapes/truncated-array (0.00s)
+        grok_test.go:1037: grok-roster-case-canary rule violated: case="truncated-array" dark main=019fbb2b-40be-7cc2-89a5-ca62441eaf5b absent, so every absence below proves nothing ids=[]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G18d-prod: AS-PREDICTED
+S-G18d-prod: restored, porcelain clean, focused test green again
+
+===== S-G18e-prod expect=RED run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go | 3 +++
+ 1 file changed, 3 insertions(+)
+exit=1 wall=0.3s
+--- FAIL: TestGrokScannerToleratesRosterShapes (0.00s)
+    --- FAIL: TestGrokScannerToleratesRosterShapes/empty-home (0.00s)
+        grok_test.go:1065: grok-scan-tolerates-disk rule violated: home=/tmp/TestGrokScannerToleratesRosterShapesempty-home2151183489/001 err=file does not exist
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-G18e-prod: AS-PREDICTED
+S-G18e-prod: restored, porcelain clean, focused test green again
+
+===== S-G18e-weak expect=GREEN run=^TestGrokScannerToleratesRosterShapes$
+plant diffstat:
+internal/native/grok.go      | 3 +++
+ internal/native/grok_test.go | 2 +-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+exit=0 wall=0.3s
+ok  	aitop/internal/native	0.002s
+S-G18e-weak: AS-PREDICTED
+S-G18e-weak: restored, porcelain clean, focused test green again
+
+===== S-G19a-shadow-prod expect=RED run=^TestGrokCollectorLandsSubagentInRealShadow$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestGrokCollectorLandsSubagentInRealShadow (0.11s)
+    grok_test.go:1167: grok-shadow-relationship-is-subagent-id rule violated: child=grok:session:019fc18b-9518-7283-900c-e9e6450ba842 relationship="01a05553-afa1-7ea3-b658-96498482568b" want="019fc18b-9518-7283-900c-e9e6450ba842"
+FAIL
+FAIL	aitop/internal/native	0.112s
+FAIL
+S-G19a-shadow-prod: AS-PREDICTED
+S-G19a-shadow-prod: restored, porcelain clean, focused test green again
+
+===== S-G19b-shadow-prod expect=RED run=^TestGrokCollectorLandsSubagentInRealShadow$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=3.1s
+--- FAIL: TestGrokCollectorLandsSubagentInRealShadow (3.01s)
+    grok_test.go:1189: grok-shadow-spawn-edge rule violated: fewer than 3 edges after 3s nodes=4 edges=2 published=8 rejected=0
+FAIL
+FAIL	aitop/internal/native	3.008s
+FAIL
+S-G19b-shadow-prod: AS-PREDICTED
+S-G19b-shadow-prod: restored, porcelain clean, focused test green again
+
+===== S-G19c-shadow-prod expect=RED run=^TestGrokCollectorLandsSubagentInRealShadow$
+plant diffstat:
+internal/native/grok.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+exit=1 wall=0.2s
+--- FAIL: TestGrokCollectorLandsSubagentInRealShadow (0.10s)
+    grok_test.go:1171: grok-shadow-node-content rule violated: runtime="grok" role="subagent" provenName="general-purpose" state="" want="grok"/"subagent"/"general-purpose"/"active"
+FAIL
+FAIL	aitop/internal/native	0.102s
+FAIL
+S-G19c-shadow-prod: AS-PREDICTED
+S-G19c-shadow-prod: restored, porcelain clean, focused test green again
+
+===== SUMMARY
+S-G1a-prod: AS-PREDICTED
+S-G1a-weak: AS-PREDICTED
+S-G1b-prod: AS-PREDICTED
+S-G1b-weak: AS-PREDICTED
+S-G2a-prod: AS-PREDICTED
+S-G2a-weak: AS-PREDICTED
+S-G2b-prod: AS-PREDICTED
+S-G2b-weak: AS-PREDICTED
+S-G3a-prod: AS-PREDICTED
+S-G3a-weak: AS-PREDICTED
+S-G3b-prod: AS-PREDICTED
+S-G3b-weak: AS-PREDICTED
+S-G4a-prod: AS-PREDICTED
+S-G4a-weak: AS-PREDICTED
+S-G4b-prod: AS-PREDICTED
+S-G4b-weak: AS-PREDICTED
+S-G4c-prod: AS-PREDICTED
+S-G4c-weak: AS-PREDICTED
+S-G5a-prod: AS-PREDICTED
+S-G5a-weak: AS-PREDICTED
+S-G5b-prod: AS-PREDICTED
+S-G5b-weak: AS-PREDICTED
+S-G6a-prod: AS-PREDICTED
+S-G6a-weak: AS-PREDICTED
+S-G7a-prod: AS-PREDICTED
+S-G8a-prod: AS-PREDICTED
+S-G8a-weak: AS-PREDICTED
+S-G8b-prod: AS-PREDICTED
+S-G8b-weak: AS-PREDICTED
+S-G9a-prod: AS-PREDICTED
+S-G9a-weak: AS-PREDICTED
+S-G9b-prod: AS-PREDICTED
+S-G9b-weak: AS-PREDICTED
+S-G9c-prod: AS-PREDICTED
+S-G9c-weak: AS-PREDICTED
+S-G10a-prod: AS-PREDICTED
+S-G10a-weak: AS-PREDICTED
+S-G10b-prod: AS-PREDICTED
+S-G11a-prod: AS-PREDICTED
+S-G11a-weak: AS-PREDICTED
+S-G11b-prod: AS-PREDICTED
+S-G11b-weak: AS-PREDICTED
+S-G11c-prod: AS-PREDICTED
+S-G11c-weak: AS-PREDICTED
+S-G11d-prod: AS-PREDICTED
+S-G11d-weak: AS-PREDICTED
+S-G12a-prod: AS-PREDICTED
+S-G12a-weak: AS-PREDICTED
+S-G13a-prod: AS-PREDICTED
+S-G13a-weak: AS-PREDICTED
+S-G13b-prod: AS-PREDICTED
+S-G13b-weak: AS-PREDICTED
+S-G13c-prod: AS-PREDICTED
+S-G13c-weak: AS-PREDICTED
+S-G14a-prod: AS-PREDICTED
+S-G14a-weak: AS-PREDICTED
+S-G14b-prod: AS-PREDICTED
+S-G14b-weak: AS-PREDICTED
+S-G14c-prod: AS-PREDICTED
+S-G14c-weak: AS-PREDICTED
+S-G14d-prod: AS-PREDICTED
+S-G14d-weak: AS-PREDICTED
+S-G15a-prod: AS-PREDICTED
+S-G15a-weak: AS-PREDICTED
+S-G15b-prod: AS-PREDICTED
+S-G15b-weak: AS-PREDICTED
+S-G15c-prod: AS-PREDICTED
+S-G15c-weak: AS-PREDICTED
+S-G16a-prod: AS-PREDICTED
+S-G16a-weak: AS-PREDICTED
+S-G16b-prod: AS-PREDICTED
+S-G16b-weak: AS-PREDICTED
+S-G17a-prod: AS-PREDICTED
+S-G17a-weak: AS-PREDICTED
+S-G17b-prod: AS-PREDICTED
+S-G17b-weak: AS-PREDICTED
+S-G17c-prod: AS-PREDICTED
+S-G17c-weak: AS-PREDICTED
+S-G17d-prod: AS-PREDICTED
+S-G17d-weak: AS-PREDICTED
+S-G18a-prod: AS-PREDICTED
+S-G18a-weak: AS-PREDICTED
+S-G18b-prod: AS-PREDICTED
+S-G18b-weak: AS-PREDICTED
+S-G18c-prod: AS-PREDICTED
+S-G18c-weak: AS-PREDICTED
+S-G18d-prod: AS-PREDICTED
+S-G18e-prod: AS-PREDICTED
+S-G18e-weak: AS-PREDICTED
+S-G19a-shadow-prod: AS-PREDICTED
+S-G19b-shadow-prod: AS-PREDICTED
+S-G19c-shadow-prod: AS-PREDICTED
+total=92 as_predicted=92

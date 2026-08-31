@@ -1,0 +1,87 @@
+aitop native provenance Task 4 tally
+date: 2026-08-31T02:31:11-07:00
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
+branch: native-provenance
+parent_commit: 6123bc9b16f8f982c71a32949b85473a6a54019a
+note: certifies the working tree carrying the Task 4 grok scanner, its
+note: tests, and the sabotage evidence, measured after the sabotage epoch
+note: and before the SABOTAGE_LOG/tally commit. parent_commit is the last
+note: code commit these numbers were taken against.
+
+commands (exact, from worktree root):
+  gofmt -l internal/native/
+  go vet ./internal/native
+  go test ./internal/native -count=1
+  go test ./internal/native -count=1 -race
+  go build ./...
+  go test ./... -count=1
+
+== gofmt -l internal/native/ ==
+(empty above = formatted)
+
+== go vet ./internal/native ==
+vet_exit=0
+
+== go test ./internal/native -count=1 ==
+ok  	aitop/internal/native	0.440s
+test_exit=0
+
+== go test ./internal/native -count=1 -race ==
+ok  	aitop/internal/native	1.484s
+race_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+packages_reporting=25 non_ok_lines=0 all_exit=0
+note: all_exit is go test's own status, not a grep's; non_ok_lines counts
+note: lines that do not start with "ok", so 0 is the only clean reading.
+
+== test function inventory (authoritative count) ==
+28
+func TestNativeEmitOrderNodesBeforeEdges
+func TestNativeEventIDsDeterministicAcrossTicks
+func TestNativeIncarnationPrefersLiveProcess
+func TestNativeStateClaimGetsHeartbeatLane
+func TestNativeExitWindowSkipsStaleTerminals
+func TestNativeRejectionDoesNotStopRun
+func TestNativeDisplayBoundsAndUTF8
+func TestNativeDescriptorValid
+func TestNativeSpawnRelationshipSeamGuard
+func TestNativeSpawnEdgeLandsInRealShadow
+func TestCodexScannerNodeUsesOwnThreadID
+func TestCodexScannerSpawnFromParentThreadID
+func TestCodexScannerSkipsMalformedAndStale
+func TestCodexScannerScansOnlyRecentDateDirs
+func TestCodexCollectorMakesNoStateOrTerminalClaims
+func TestCodexCollectorLandsForkInRealShadow
+func TestClaudeScannerFindsSidecarPrimaries
+func TestClaudeScannerEmitsAgentSpawnChain
+func TestClaudeScannerHorizonSkipsStale
+func TestClaudeScannerVanishesOrphanedChildren
+func TestClaudeScannerAgentIDFromFilename
+func TestClaudeCollectorLandsChainInRealShadow
+func TestGrokScannerRosterAndDarkMains
+func TestGrokScannerChildLifecycle
+func TestGrokScannerSpawnEdges
+func TestGrokScannerCWDEncoding
+func TestGrokScannerToleratesRosterShapes
+func TestGrokCollectorLandsSubagentInRealShadow
+
+== Task 4 tests only ==
+6
+func TestGrokScannerRosterAndDarkMains
+func TestGrokScannerChildLifecycle
+func TestGrokScannerSpawnEdges
+func TestGrokScannerCWDEncoding
+func TestGrokScannerToleratesRosterShapes
+func TestGrokCollectorLandsSubagentInRealShadow
+
+== sabotage epoch ==
+total=92 as_predicted=92
+production_RED=49 false_GREEN=43 mismatches=0
+log: tests/sabotage-native-task4/sabotage_runs_native_task4.log
+driver: tests/sabotage-native-task4/sabotage_driver.py
+epoch_head: 6123bc9b16f8f982c71a32949b85473a6a54019a
