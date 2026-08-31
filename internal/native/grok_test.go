@@ -75,6 +75,9 @@ const (
 
 	grokProjectCWD = "/home/aegis/Projects/aitop"          // ProjectName -> "aitop"
 	grokDaemonCWD  = "/home/aegis/Projects/pensive/daemon" // ProjectName -> "pensive"
+	// A child cwd with a space in it, the shape the live box actually has under
+	// /home/aegis/Documents/Obsidian Vault.
+	grokSpacedChildCWD = "/home/aegis/Documents/Obsidian Vault"
 
 	grokBuildAgent = "grok-build-plan" // agent_name on all 206 mains on disk
 	grokModel      = "grok-4.6"
@@ -521,13 +524,19 @@ func TestGrokScannerChildLifecycle(t *testing.T) {
 	// completion (228 of 228 on disk), so its mtime is this child's SPAWN time
 	// and a meta-only horizon loses it mid-flight; its own session directory is
 	// where a running child keeps writing.
+	//
+	// Its cwd carries a space on purpose. Finding that second signal means
+	// computing a path from child_cwd, so this is the one place left where the
+	// encoder's completeness still costs something real: get the escape wrong
+	// and a live child quietly ages out mid-flight.
 	tree.meta(grokProjectCWD, grokLiveSession, grokLongRunChild,
 		grokMetaFields(grokLiveSession, grokLongRunChild, "general-purpose", grokChildModel, "the long one",
-			"running", grokProjectCWD, now.Add(-90*time.Minute), ""),
+			"running", grokSpacedChildCWD, now.Add(-90*time.Minute), ""),
 		now.Add(-90*time.Minute))
-	tree.summary(grokProjectCWD, grokLongRunChild,
-		grokChildOwnFields(grokLongRunChild, grokProjectCWD, "subagent", now.Add(-time.Minute)),
+	tree.summary(grokSpacedChildCWD, grokLongRunChild,
+		grokChildOwnFields(grokLongRunChild, grokSpacedChildCWD, "subagent", now.Add(-time.Minute)),
 		now.Add(-time.Minute))
+	tree.seal(grokSpacedChildCWD, now.Add(-3*time.Hour))
 
 	// A parent whose own summary is outside the horizon, in a bucket the walk
 	// does reach. Its running child is live evidence; the parent is not.
