@@ -28,6 +28,8 @@ import time
 REPO = "/home/aegis/Projects/aitop/.worktrees/native-provenance"
 LOG = os.path.join(REPO, "tests/sabotage-native-task5/sabotage_runs_native_task5.log")
 
+NAT = "internal/native/native.go"
+NATT = "internal/native/native_test.go"
 CLA = "internal/native/claude.go"
 CLAT = "internal/native/claude_test.go"
 COD = "internal/native/codex.go"
@@ -46,7 +48,7 @@ JSN = "internal/snapshot/json_v2.go"
 MAI = "cmd/aitop/main.go"
 MAIT = "cmd/aitop/main_test.go"
 
-SOURCES = [CLA, CLAT, COD, CODT, GRK, GRKT, SID, SIDT, FRK, FRKT,
+SOURCES = [NAT, NATT, CLA, CLAT, COD, CODT, GRK, GRKT, SID, SIDT, FRK, FRKT,
            JOI, JOIT, ATT, ATTT, JSN, MAI, MAIT]
 
 P_NATIVE = "./internal/native"
@@ -71,6 +73,103 @@ T_CAP_HOMES = "^TestProductionCaptureOncePassesEngineHomes$"
 T_INT_HOMES = "^TestProductionRunInteractivePassesEngineHomes$"
 T_ORDER = "^TestProductionCaptureOnceFillsRowsBeforeRunningCollectors$"
 T_ATT_ABS = "^TestAttachGraphResolvesRelativeHomes$"
+
+# Fix round 1: the one-shot's readiness wait, and the portable ordering test.
+T_TICK_AFTER = "^TestCollectorSignalsItsFirstTickAfterItFinishes$"
+T_TICK_ERR = "^TestCollectorSignalsItsFirstTickWhenTheScanFails$"
+T_TICK_STAYS = "^TestCollectorFirstTickStaysClosedAcrossTicks$"
+T_TICK_NODES = "^TestCollectorFirstTickNodesAreWhatTheStoreTook$"
+T_TICK_NODES_ONE = "^TestCollectorFirstTickNodesStopAtTheFirstTick$"
+T_EV_IN = "^TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn$"
+T_EV_BOUND = "^TestWaitNativeEvidenceIsBoundedByItsBudget$"
+T_EV_SHARED = "^TestWaitNativeEvidenceSharesOneBudgetAcrossLanes$"
+T_LANES = "^TestAttachGraphReturnsOneLanePerHome$"
+T_CAP_UNDER = "^TestProductionCaptureOnceWaitsForANativeLaneUnderTheCap$"
+T_CAP_OVER = "^TestProductionCaptureOnceReturnsAtTheCapForASlowerLane$"
+T_BUDGET = "^TestNativeFirstTickBudgetIsTwoSeconds$"
+
+# --- fix round 1: the first-tick signal -----------------------------------
+
+# The signal closed on the way INTO the tick. A waiter then learns only that the
+# collector is running, which it already knew, and samples the graph while the
+# disk walk is still going.
+P_TICK_ON_ENTRY = (NAT,
+                   "\tdefer func() {\n\t\tc.firstTickOnce.Do(func() {",
+                   "\tfunc() {\n\t\tc.firstTickOnce.Do(func() {")
+# The signal withheld when the scan fails. A one-shot then pays its whole budget
+# every time a runtime's home is unreadable.
+P_TICK_NOT_ON_ERROR = (NAT,
+                       "\tnodes, spawns, err := c.scan.scan(now, liveSessions(processes))\n\tif err != nil {\n\t\tc.scanErrors.Add(1)\n\t\treturn\n\t}",
+                       "\tnodes, spawns, err := c.scan.scan(now, liveSessions(processes))\n\tif err != nil {\n\t\tc.scanErrors.Add(1)\n\t\tselect {}\n\t}")
+# The signal re-closed every tick, which panics on the second one. The Once is
+# what makes a waiter's answer independent of which tick it asked during.
+P_TICK_NO_ONCE = (NAT,
+                  "\t\tc.firstTickOnce.Do(func() {\n\t\t\t// Cleared before the signal, so nothing that reads the ids after\n\t\t\t// the close can see a later tick appending to them.\n\t\t\tc.firstTickPending = false\n\t\t\tclose(c.firstTick)\n\t\t})",
+                  "\t\tfunc() {\n\t\t\tc.firstTickPending = false\n\t\t\tclose(c.firstTick)\n\t\t}()")
+# Every attempted node recorded, not only the ones the store took. A waiter then
+# looks for evidence that is never coming and burns its budget every run.
+# Only an outright rejection excluded, so a saturation DROP is recorded as
+# taken. Written this way rather than deleting the check, which would orphan the
+# disposition binding and test the compiler instead of the rule.
+P_TICK_NODES_ALL = (NAT,
+                    "\t\tif c.firstTickPending && admittedToStore(disposition) {",
+                    "\t\tif c.firstTickPending && disposition != graph.PublishRejected {")
+# The list grows on every tick, so it names nodes from ticks nobody waits on.
+P_TICK_NODES_FOREVER = (NAT,
+                        "\t\t\tc.firstTickPending = false\n",
+                        "")
+# A dropped event counted as taken.
+P_TICK_ADMIT_DROPS = (NAT,
+                      "\tcase graph.PublishAcceptedNormal, graph.PublishAcceptedCritical,\n\t\tgraph.PublishDuplicate, graph.PublishCoalesced:\n\t\treturn true",
+                      "\tcase graph.PublishAcceptedNormal, graph.PublishAcceptedCritical,\n\t\tgraph.PublishDuplicate, graph.PublishCoalesced,\n\t\tgraph.PublishDroppedNormal, graph.PublishDroppedCritical:\n\t\treturn true")
+
+# --- fix round 1: the bounded wait ----------------------------------------
+
+# The visibility half dropped: the one-shot waits for the lane to finish and
+# samples immediately, which is the flake this replaced.
+P_EV_NO_VISIBILITY = (ATT,
+                      "\twaitNodesVisible(shadow, lanes[:ready], deadline)",
+                      "\t_ = ready")
+# A per-lane budget rather than a shared one, so three slow homes cost three
+# bounds and the wait is not bounded by what the caller asked for.
+P_EV_PER_LANE = (ATT,
+                 "\t\tremaining := time.Until(deadline)",
+                 "\t\tremaining := budget")
+# The bound removed entirely: a pathological store hangs the command.
+P_EV_UNBOUNDED = (ATT,
+                  "\t\texpired := time.NewTimer(remaining)\n\t\tselect {\n\t\tcase <-lane.FirstTick():\n\t\t\tready++\n\t\tcase <-expired.C:\n\t\t\texpired.Stop()\n\t\t\treturn ready\n\t\t}\n\t\texpired.Stop()",
+                  "\t\t<-lane.FirstTick()\n\t\tready++")
+# Lanes that never came in consulted anyway, which is a read of ids a still
+# running tick is writing.
+P_EV_ALL_LANES = (ATT,
+                  "\twaitNodesVisible(shadow, lanes[:ready], deadline)",
+                  "\twaitNodesVisible(shadow, lanes, deadline)")
+# The lane list dropped on the floor: a home registers a collector nobody waits
+# on, which reads exactly like a fast lane.
+P_ATT_NO_LANES = (ATT,
+                  "\t\tlanes = append(lanes, lane)\n\t}\n\tif codexHome != \"\" {",
+                  "\t}\n\tif codexHome != \"\" {")
+
+# --- fix round 1: the production one-shot ---------------------------------
+
+P_MAI_NO_WAIT = (MAI,
+                 "\tlanes.WaitNativeEvidence(shadow, nativeFirstTickBudget)",
+                 "\t_ = lanes")
+# The budget widened to a minute. Both timing tests still pass: the fast lane
+# lands and the slow one is still dropped by the enclosing context. Only the
+# pinned constant sees it, and a one-shot that can take a minute is a hung
+# command.
+P_MAI_HUGE_BUDGET = (MAI,
+                     "const nativeFirstTickBudget = 2 * time.Second",
+                     "const nativeFirstTickBudget = 60 * time.Second")
+
+# --- fix round 1: the portable ordering test ------------------------------
+
+# The overlay injection removed, which is the pre-fix state: the assertion then
+# depends on the box having an agent-shaped process running.
+P_ORDER_NO_INJECT = (MAIT,
+                     "\t\teng.Overlay = func() ([]types.Overlay, error) {\n\t\t\treturn []types.Overlay{{\n\t\t\t\tRuntime:     types.RuntimeLocal,\n\t\t\t\tSessionName: \"aitop-test-dark-unit\",\n\t\t\t\tStatus:      \"off\",\n\t\t\t}}, nil\n\t\t}\n",
+                     "\t\teng.Overlay = func() ([]types.Overlay, error) { return nil, nil }\n")
 
 # --- the horizon rule's live-process clause -------------------------------
 
@@ -187,19 +286,19 @@ P_JOIN_FAKE_PROC = (JOI,
 
 P_ATT_NO_CLAUDE = (ATT, '\tif claudeHome != "" {', "\tif false {")
 P_ATT_NO_APPEND = (ATT,
-                   "\t\tcollectors = append(collectors, native.NewClaude(claudeHome, latest))",
-                   "\t\t_ = claudeHome")
+                   "\t\tcollectors = append(collectors, lane)\n\t\tlanes = append(lanes, lane)\n\t}\n\tif codexHome != \"\" {",
+                   "\t\tlanes = append(lanes, lane)\n\t}\n\tif codexHome != \"\" {")
 # The wrapper delegating with the engine's own homes, which is the refactor that
 # looks like tidying up and gives every existing caller three collectors.
 P_ATT_WRAPPER_HOMES = (ATT,
-                       "\treturn AttachGraph(eng, GraphHomes{})",
-                       "\treturn AttachGraph(eng, GraphHomes{Claude: eng.ClaudeHome, Codex: eng.CodexHome, Grok: eng.GrokHome})")
+                       "\tshadow, occ, _, err := AttachGraph(eng, GraphHomes{})",
+                       "\tshadow, occ, _, err := AttachGraph(eng, GraphHomes{Claude: eng.ClaudeHome, Codex: eng.CodexHome, Grok: eng.GrokHome})")
 # The native collectors handed no rows. Every scanner test passes latest=nil, so
 # this is exactly the state Task 3's review flagged: it looks harmless and it
 # costs every native node its process incarnation.
 P_ATT_NIL_LATEST = (ATT,
-                    "\t\tcollectors = append(collectors, native.NewClaude(claudeHome, latest))",
-                    "\t\tcollectors = append(collectors, native.NewClaude(claudeHome, nil))")
+                    "\t\tlane := native.NewClaude(claudeHome, latest)",
+                    "\t\tlane := native.NewClaude(claudeHome, nil)")
 # Homes used as given. A relative home makes a node's identity a function of the
 # process's working directory, because Location joins the record digest.
 # The disable switch dropped: filepath.Abs("") returns the working directory, so
@@ -230,11 +329,11 @@ P_JSN_ALWAYS_UNKNOWN = (JSN, '\tif value == "" {', "\tif true {")
 # --- the production run paths ----------------------------------------------
 
 P_MAI_CAP_EMPTY = (MAI,
-                   "\tshadow, occ, err := attachGraph(eng, productionGraphHomes(eng))",
-                   "\tshadow, occ, err := attachGraph(eng, snapshot.GraphHomes{})")
+                   "\tshadow, occ, lanes, err := attachGraph(eng, productionGraphHomes(eng))",
+                   "\tshadow, occ, lanes, err := attachGraph(eng, snapshot.GraphHomes{})")
 P_MAI_INT_EMPTY = (MAI,
-                   "\tshadow, _, err := attachGraph(eng, productionGraphHomes(eng))",
-                   "\tshadow, _, err := attachGraph(eng, snapshot.GraphHomes{})")
+                   "\tshadow, _, _, err := attachGraph(eng, productionGraphHomes(eng))",
+                   "\tshadow, _, _, err := attachGraph(eng, snapshot.GraphHomes{})")
 # One home missed in the helper both paths share. This is the lapse the helper
 # exists to make impossible to make twice, so it must red BOTH paths.
 P_MAI_DROP_CODEX = (MAI,
@@ -365,6 +464,57 @@ W_SCHEMA_WRITE = (ATTT,
 # Removing the mapping makes WriteJSON fail, so nothing is written and the
 # decode fails on empty input. The write assertion and the decode assertion are
 # two witnesses of one rule, and a weakened cycle has to relax both.
+W_TICK_AFTER_OPEN = (NATT,
+                     "\t\tt.Fatalf(\"native-first-tick-is-open-before-the-collector-runs rule violated: signal closed with no tick taken\")",
+                     "\t\t_ = t")
+W_TICK_AFTER_MID = (NATT,
+                    "\t\tt.Fatalf(\"native-first-tick-closes-only-when-the-tick-finishes rule violated: signal closed while scan was still running\")",
+                    "\t\t_ = t")
+W_TICK_ERR = (NATT,
+              "\t\tt.Fatalf(\"native-first-tick-closes-on-a-failed-scan rule violated: signal still open 3s after a scan error\")",
+              "\t\t_ = t")
+W_TICK_STAYS = (NATT,
+                "\t\t\tt.Fatalf(\"native-first-tick-stays-closed rule violated: signal reopened after tick %d\", scanner.callCount())",
+                "\t\t\t_ = scanner")
+W_TICK_NODES = (NATT,
+                "\tif len(got) != 2 || got[0] != parent || got[1] != second {",
+                "\tif false && (len(got) != 2 || got[0] != parent || got[1] != second) {")
+W_TICK_NODES_DROP = (NATT,
+                     "\tif got := dropped.FirstTickNodes(); len(got) != 0 {",
+                     "\tif got := dropped.FirstTickNodes(); false && len(got) != 0 {")
+W_TICK_NODES_ONE = (NATT,
+                    "\tif got := len(collector.FirstTickNodes()); got != first {",
+                    "\tif got := len(collector.FirstTickNodes()); false && got != first {")
+
+W_EV_COUNT = (ATTT,
+              "\tif ready := lanes.WaitNativeEvidence(nil, 2*time.Second); ready != 3 {",
+              "\tif ready := lanes.WaitNativeEvidence(nil, 2*time.Second); false && ready != 3 {")
+W_EV_FAST = (ATTT,
+             "\tif elapsed := time.Since(started); elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-returns-on-the-lanes-not-the-budget",
+             "\tif false {\n\t\tt.Fatalf(\"wait-native-evidence-returns-on-the-lanes-not-the-budget")
+W_EV_BOUND = (ATTT,
+              "\tif elapsed > 2*time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-is-bounded",
+              "\tif false {\n\t\tt.Fatalf(\"wait-native-evidence-is-bounded")
+W_EV_SHARED = (ATTT,
+               "\tif elapsed := time.Since(started); elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes",
+               "\tif elapsed := time.Since(started); false && elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes")
+W_LANES_COUNT = (ATTT,
+                 "\t\tif len(lanes) != tc.want {",
+                 "\t\tif false && len(lanes) != tc.want {")
+
+W_CAP_UNDER = (MAIT,
+               "\tif !graphHasNode(snap, id) {",
+               "\tif false && !graphHasNode(snap, id) {")
+W_CAP_OVER = (MAIT,
+              "\tif elapsed > 15*time.Second {",
+              "\tif false && elapsed > 15*time.Second {")
+W_BUDGET = (MAIT,
+            "\tif nativeFirstTickBudget != 2*time.Second {",
+            "\tif false && nativeFirstTickBudget != 2*time.Second {")
+W_ORDER_CANARY = (MAIT,
+                  "\tif rowsAfter == 0 {",
+                  "\tif false && rowsAfter == 0 {")
+
 W_SCHEMA_JSON = (ATTT,
                  "\tif err := json.Unmarshal([]byte(out.String()), &decoded); err != nil {",
                  "\tif err := json.Unmarshal([]byte(out.String()), &decoded); false && err != nil {")
@@ -483,6 +633,39 @@ CYCLES = [
 
     ("S-T5-32-prod", [P_MAI_OLD_ORDER], P_MAIN, T_ORDER, "RED", "capture-once-fills-rows-before-running-collectors rule violated"),
     ("S-T5-32-weak", [P_MAI_OLD_ORDER, W_MAIN_ORDER], P_MAIN, T_ORDER, "GREEN", None),
+
+    # --- fix round 1: the first-tick signal ------------------------------
+    ("S-T5-33-prod", [P_TICK_ON_ENTRY], P_NATIVE, T_TICK_AFTER, "RED", "native-first-tick-closes-only-when-the-tick-finishes rule violated"),
+    ("S-T5-33-weak", [P_TICK_ON_ENTRY, W_TICK_AFTER_MID], P_NATIVE, T_TICK_AFTER, "GREEN", None),
+    ("S-T5-34-prod", [P_TICK_NOT_ON_ERROR], P_NATIVE, T_TICK_ERR, "RED", "native-first-tick-closes-on-a-failed-scan rule violated"),
+    ("S-T5-34-weak", [P_TICK_NOT_ON_ERROR, W_TICK_ERR], P_NATIVE, T_TICK_ERR, "GREEN", None),
+    ("S-T5-35-prod", [P_TICK_NO_ONCE], P_NATIVE, T_TICK_STAYS, "RED", "panic"),
+    ("S-T5-36-prod", [P_TICK_NODES_ALL], P_NATIVE, T_TICK_NODES, "RED", "native-first-tick-nodes-exclude-what-the-store-refused rule violated"),
+    ("S-T5-36-weak", [P_TICK_NODES_ALL, W_TICK_NODES_DROP], P_NATIVE, T_TICK_NODES, "GREEN", None),
+    ("S-T5-37-prod", [P_TICK_ADMIT_DROPS], P_NATIVE, T_TICK_NODES, "RED", "native-first-tick-nodes-exclude-what-the-store-refused rule violated"),
+    ("S-T5-37-weak", [P_TICK_ADMIT_DROPS, W_TICK_NODES_DROP], P_NATIVE, T_TICK_NODES, "GREEN", None),
+    ("S-T5-38-prod", [P_TICK_NODES_FOREVER], P_NATIVE, T_TICK_NODES_ONE, "RED", "native-first-tick-nodes-stop-at-the-first-tick rule violated"),
+    ("S-T5-38-weak", [P_TICK_NODES_FOREVER, W_TICK_NODES_ONE], P_NATIVE, T_TICK_NODES_ONE, "GREEN", None),
+
+    # --- fix round 1: the bounded wait -----------------------------------
+    ("S-T5-39-prod", [P_EV_UNBOUNDED], P_SNAP, T_EV_BOUND, "RED", "panic"),
+    ("S-T5-40-prod", [P_EV_PER_LANE], P_SNAP, T_EV_SHARED, "RED", "wait-native-evidence-shares-one-budget-across-lanes rule violated"),
+    ("S-T5-40-weak", [P_EV_PER_LANE, W_EV_SHARED], P_SNAP, T_EV_SHARED, "GREEN", None),
+    ("S-T5-41-prod", [P_ATT_NO_LANES], P_SNAP, T_LANES, "RED", "attach-graph-returns-one-lane-per-home rule violated"),
+    ("S-T5-41-weak", [P_ATT_NO_LANES, W_LANES_COUNT], P_SNAP, T_LANES, "GREEN", None),
+
+    # --- fix round 1: the production one-shot ----------------------------
+    ("S-T5-42-prod", [P_EV_NO_VISIBILITY], P_MAIN, T_CAP_UNDER, "RED", "capture-once-waits-for-a-native-lane-under-the-cap rule violated"),
+    ("S-T5-42-weak", [P_EV_NO_VISIBILITY, W_CAP_UNDER], P_MAIN, T_CAP_UNDER, "GREEN", None),
+    ("S-T5-43-prod", [P_MAI_NO_WAIT], P_MAIN, T_CAP_UNDER, "RED", "capture-once-waits-for-a-native-lane-under-the-cap rule violated"),
+    ("S-T5-43-weak", [P_MAI_NO_WAIT, W_CAP_UNDER], P_MAIN, T_CAP_UNDER, "GREEN", None),
+    ("S-T5-44-prod", [P_MAI_HUGE_BUDGET], P_MAIN, T_BUDGET, "RED", "native-first-tick-budget-is-two-seconds rule violated"),
+    ("S-T5-44b-prod", [P_MAI_HUGE_BUDGET], P_MAIN, T_CAP_UNDER, "GREEN", None),
+    ("S-T5-44-weak", [P_MAI_HUGE_BUDGET, W_BUDGET], P_MAIN, T_BUDGET, "GREEN", None),
+
+    # --- fix round 1: the portable ordering test --------------------------
+    ("S-T5-45-prod", [P_ORDER_NO_INJECT], P_MAIN, T_ORDER, "RED", "capture-once-fixture-produces-a-row rule violated"),
+    ("S-T5-45-weak", [P_ORDER_NO_INJECT, W_ORDER_CANARY], P_MAIN, T_ORDER, "GREEN", None),
 ]
 
 
