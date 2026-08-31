@@ -545,6 +545,12 @@ W_NB_INCARNATION = (NATT,
 W_NB_NEVER_INV = (NATT,
                   "\t\tif e.ActorIncarnation == never {",
                   "\t\tif false && e.ActorIncarnation == never {")
+# The every-tick plant trips both witnesses: the node is never published at all,
+# so "waited for only once" reds AND "stays published" reds. Found by running
+# the weakened cycle after relaxing the first.
+W_NB_STAYS = (NATT,
+              "\tif sink.count() <= before {",
+              "\tif false && sink.count() <= before {")
 W_NB_ONCE = (NATT,
              "\tif n := sink.count(); n == 0 {\n\t\tt.Fatalf(\"newborn-sighting-is-waited-for-only-once",
              "\tif false {\n\t\tt.Fatalf(\"newborn-sighting-is-waited-for-only-once")
@@ -799,7 +805,7 @@ CYCLES = [
     ("S-T5-47-prod", [P_NB_NO_WAIT], P_NATIVE, T_NEWBORN, "RED", "newborn-sighting-waits-for-its-binding rule violated"),
     ("S-T5-47-weak", [P_NB_NO_WAIT, W_NB_TICK1, W_NB_INCARNATION, W_NB_NEVER_INV], P_NATIVE, T_NEWBORN, "GREEN", None),
     ("S-T5-48-prod", [P_NB_ALWAYS], P_NATIVE, T_NEWBORN_ONCE, "RED", "newborn-sighting-is-waited-for-only-once rule violated"),
-    ("S-T5-48-weak", [P_NB_ALWAYS, W_NB_ONCE], P_NATIVE, T_NEWBORN_ONCE, "GREEN", None),
+    ("S-T5-48-weak", [P_NB_ALWAYS, W_NB_ONCE, W_NB_STAYS], P_NATIVE, T_NEWBORN_ONCE, "GREEN", None),
     ("S-T5-49-prod", [P_NB_IGNORES_BINDING], P_NATIVE, T_BOUND_NOW, "RED", "bound-sighting-publishes-immediately rule violated"),
     ("S-T5-49-weak", [P_NB_IGNORES_BINDING, W_NB_BOUND], P_NATIVE, T_BOUND_NOW, "GREEN", None),
     ("S-T5-50-prod", [P_NB_WIDE_WINDOW], P_NATIVE, T_STALE_NOW, "RED", "stale-unbound-sighting-publishes-immediately rule violated"),
