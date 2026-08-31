@@ -1,0 +1,72 @@
+head: 5590291f516cc120eb724719b5fb2ba64e9e7673
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+tz_offset: -0700
+
+===== S-X1a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                       | 2 +-
+ tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
+    codex_test.go:245: codex-node-is-own-thread-id rule violated: thread=019fbeff-6378-7902-a6b2-57e3d8e09cc2 absent ids=[codex:thread:019faa13-fd80-7db0-a2fa-a71ffaa87690 codex:thread:019fb670-f95b-7000-9c92-82d163400945]
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-X1a-prod: AS-PREDICTED
+S-X1a-prod: restored, porcelain clean, focused test green again
+
+===== S-X1b-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                       | 2 +-
+ tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
+    codex_test.go:251: codex-node-short-id-is-own-thread-id rule violated: sessionID="019faa13-fd80-7db0-a2fa-a71ffaa87690" want="019fbeff-6378-7902-a6b2-57e3d8e09cc2" id=codex:thread:019fbeff-6378-7902-a6b2-57e3d8e09cc2
+FAIL
+FAIL	aitop/internal/native	0.001s
+FAIL
+S-X1b-prod: AS-PREDICTED
+S-X1b-prod: restored, porcelain clean, focused test green again
+
+===== S-X1b-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                       | 2 +-
+ internal/native/codex_test.go                  | 3 ---
+ tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+exit=0 wall=0.2s
+ok  	aitop/internal/native	0.001s
+S-X1b-weak: AS-PREDICTED
+S-X1b-weak: restored, porcelain clean, focused test green again
+
+===== S-X2a-prod expect=RED run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                       | 2 +-
+ tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+exit=1 wall=0.2s
+--- FAIL: TestCodexScannerNodeUsesOwnThreadID (0.00s)
+    codex_test.go:275: codex-session-id-is-never-a-node rule violated: nodes for session_id=019faa13-fd80-7db0-a2fa-a71ffaa87690 count=1 ids=[codex:thread:019fbeff-6378-7902-a6b2-57e3d8e09cc2 codex:thread:019faa13-fd80-7db0-a2fa-a71ffaa87690]
+FAIL
+FAIL	aitop/internal/native	0.002s
+FAIL
+S-X2a-prod: AS-PREDICTED
+S-X2a-prod: restored, porcelain clean, focused test green again
+
+===== S-X2a-weak expect=GREEN run=^TestCodexScannerNodeUsesOwnThreadID$
+plant diffstat:
+internal/native/codex.go                       | 2 +-
+ internal/native/codex_test.go                  | 6 +++---
+ tests/sabotage-native-task3/sabotage_driver.py | 8 +++++++-
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+exit=1 wall=0.0s
+FAIL	aitop/internal/native [build failed]
+FAIL
+# aitop/internal/native [aitop/internal/native.test]
+internal/native/codex_test.go:240:2: declared and not used: root
+internal/native/codex_test.go:275:120: undefined: seen
+S-X2a-weak: MISMATCH
+S-X2a-weak: restored, porcelain clean, focused test green again
+STOP on mismatch for inspection

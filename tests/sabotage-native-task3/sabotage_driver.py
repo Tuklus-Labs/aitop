@@ -171,97 +171,99 @@ P_NO_DEDUP = (COD,
               "")
 
 # --- weakened assertions --------------------------------------------------
+#
+# Every weakening keeps its original condition and its init statement, guarded
+# by `false &&`. A weakening that DELETES the condition also deletes the only
+# use of some local, and the compile error that follows is a fact about Go's
+# unused-variable rule rather than about the assertion: the plant never runs and
+# the cycle proves nothing. Deleting the whole block is used only where nothing
+# else references what it declares.
 
 W_SHORTID = (CODT,
              '\tif node.SessionID != codexNestedThread {\n\t\tt.Fatalf("codex-node-short-id-is-own-thread-id rule violated: sessionID=%q want=%q id=%s", node.SessionID, codexNestedThread, node.ID)\n\t}\n',
              '')
 W_NAME = (CODT,
           "\tif node.Name != codexNestedNick {",
-          "\tif false {")
+          "\tif false && node.Name != codexNestedNick {")
 W_PROJECT = (CODT,
              '\tif node.Project != "aitop" {',
-             "\tif false {")
+             '\tif false && node.Project != "aitop" {')
+# "the location is somewhere on the path" -- true of the file, and equally true
+# of the directory the plant substitutes for it.
 W_LOCATION_ID = (CODT,
                  "\tif node.Location != path {",
-                 '\tif !strings.Contains(node.Location, "sessions") {')
+                 "\tif !strings.HasPrefix(path, node.Location) {")
 W_NOCLAIM_ID = (CODT,
                 '\tif node.State != "" || node.Exit != "" || node.ExitAt != nil {',
-                "\tif false {")
+                '\tif false && (node.State != "" || node.Exit != "" || node.ExitAt != nil) {')
 W_NOCLAIM_COLLECTOR = (CODT,
                        "\tfor _, banned := range []graph.EventKind{graph.EventStateObserved, graph.EventExitObserved, graph.EventHeartbeatObserved} {",
                        "\tfor _, banned := range []graph.EventKind{} {")
 W_ROOT_IS_NEVER_NODE = (CODT,
                         "\tif seen := countNodeID(nodes, root); seen != 0 {",
-                        "\tif false {")
+                        "\tif seen := countNodeID(nodes, root); false && seen != 0 {")
 W_ID_NODECOUNT = (CODT,
-                  "\tif len(nodes) != 2 {",
-                  "\tif false {")
+                  "\tif len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-node-count rule violated:",
+                  "\tif false && len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-node-count rule violated:")
 W_PARENT_PRESENT = (CODT,
                     "\tif _, ok := nodeByID(nodes, mid); !ok {",
-                    "\tif false {")
+                    "\tif _, ok := nodeByID(nodes, mid); false && !ok {")
 W_SPAWN_PARENT_ID = (CODT,
                      "\tif spawn.ParentID != mid || spawn.ParentSessionID != codexMidThread {",
-                     "\tif false {")
+                     "\tif false && (spawn.ParentID != mid || spawn.ParentSessionID != codexMidThread) {")
 W_RELATIONSHIP_ID = (CODT,
                      "\tif spawn.Relationship != graph.RelationshipID(codexNestedThread) {",
-                     "\tif false {")
+                     "\tif false && spawn.Relationship != graph.RelationshipID(codexNestedThread) {")
 W_USER_IDENTITY = (CODT,
                    '\tif userNode.Role != types.RolePrimary || userNode.Name != "" || userNode.Project != "aitop" || userNode.Location != userPath {',
-                   "\tif false {")
+                   '\tif false && (userNode.Role != types.RolePrimary || userNode.Name != "" || userNode.Project != "aitop" || userNode.Location != userPath) {')
 W_NOT_DUPLICATED = (CODT,
                     "\tif seen := countNodeID(nodes, user); seen != 1 {",
-                    "\tif false {")
+                    "\tif seen := countNodeID(nodes, user); false && seen != 1 {")
 W_SPAWN_NODECOUNT = (CODT,
                      "\tif len(nodes) != 4 {",
-                     "\tif false {")
+                     "\tif false && len(nodes) != 4 {")
 W_MINIMAL_PARENT = (CODT,
                     '\tif rootNode.Role != types.RolePrimary || rootNode.Name != "" || rootNode.Project != "" {',
-                    "\tif false {")
+                    '\tif false && (rootNode.Role != types.RolePrimary || rootNode.Name != "" || rootNode.Project != "") {')
 W_PARENT_ANCHOR = (CODT,
                    "\tif rootNode.SessionID != codexRootThread || rootNode.Location != secondPath {",
-                   "\tif false {")
-W_FORK_RELATIONSHIP = (CODT,
-                       "\tif forkSpawn.Relationship != graph.RelationshipID(codexForkChild) || forkSpawn.ChildSessionID != codexForkChild {",
-                       "\tif false {")
-W_SECOND_SPAWN = (CODT,
-                  "\tif secondSpawn.ParentID != root || secondSpawn.Relationship != graph.RelationshipID(codexSecondChild) {",
-                  "\tif false {")
+                   "\tif false && (rootNode.SessionID != codexRootThread || rootNode.Location != secondPath) {")
 W_SKIP_NODECOUNT = (CODT,
                     "\tif len(nodes) != 1 {",
-                    "\tif false {")
+                    "\tif false && len(nodes) != 1 {")
 W_SKIP_SPAWNCOUNT = (CODT,
                      "\tif len(spawns) != 0 {",
-                     "\tif false {")
+                     "\tif false && len(spawns) != 0 {")
 W_SKIP_ABSENT = (CODT,
                  "\t\tif seen := countNodeID(nodes, absent.id); seen != 0 {",
-                 "\t\tif false {")
+                 "\t\tif seen := countNodeID(nodes, absent.id); false && seen != 0 {")
 W_ROLLOUT_SKIPS = (CODT,
-                   "\tif skipped := scanner.skippedRollouts.Load(); skipped != 3 {",
-                   "\tif false {")
+                   "\tif skipped := scanner.skippedRollouts.Load(); skipped != 4 {",
+                   "\tif skipped := scanner.skippedRollouts.Load(); false && skipped != 4 {")
 W_THREAD_SKIPS = (CODT,
                   "\tif skipped := scanner.skippedThreads.Load(); skipped != 1 {",
-                  "\tif false {")
+                  "\tif skipped := scanner.skippedThreads.Load(); false && skipped != 1 {")
 W_DIRS_ABSENT = (CODT,
                  "\t\tif seen := countNodeID(nodes, mustThreadID(t, absent.thread)); seen != 0 {",
-                 "\t\tif false {")
+                 "\t\tif seen := countNodeID(nodes, mustThreadID(t, absent.thread)); false && seen != 0 {")
+# Disambiguated by its own message: two tests assert a node count of 2, and a
+# patch that matched both would be a patch aimed at neither.
 W_DIRS_NODECOUNT = (CODT,
-                    "\tif len(nodes) != 2 {",
-                    "\tif false {")
+                    "\tif len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-walk-skips-old-date-dirs rule violated:",
+                    "\tif false && len(nodes) != 2 {\n\t\tt.Fatalf(\"codex-walk-skips-old-date-dirs rule violated:")
 W_DIRS_COVER = (CODT,
                 "\t\t\tif !seen[dir] {",
-                "\t\t\tif false {")
+                "\t\t\tif false && !seen[dir] {")
 W_DIRS_DEDUP = (CODT,
                 "\t\t\tif seen[dir] {\n\t\t\t\tt.Fatalf(\"codex-date-dirs-deduped rule violated:",
-                "\t\t\tif false {\n\t\t\t\tt.Fatalf(\"codex-date-dirs-deduped rule violated:")
-W_DIRS_PRESENT = (CODT,
-                  "\t\tnode, ok := nodeByID(nodes, mustThreadID(t, want.thread))\n\t\tif !ok {",
-                  "\t\tnode, ok := nodeByID(nodes, mustThreadID(t, want.thread))\n\t\tif false {")
+                "\t\t\tif false && seen[dir] {\n\t\t\t\tt.Fatalf(\"codex-date-dirs-deduped rule violated:")
 W_COLLECTOR_EDGES = (CODT,
                      "\tif edges := countKind(events, graph.EventRelationshipObserved); edges != 1 {",
-                     "\tif false {")
+                     "\tif edges := countKind(events, graph.EventRelationshipObserved); false && edges != 1 {")
 W_COLLECTOR_ORDER = (CODT,
                      "\tif !parentSeen || !childSeen || parentIndex >= edgeIndex || childIndex >= edgeIndex {",
-                     "\tif false {")
+                     "\tif false && (!parentSeen || !childSeen || parentIndex >= edgeIndex || childIndex >= edgeIndex) {")
 
 CYCLES = [
     # --- the named disk trap ------------------------------------------------
@@ -339,7 +341,13 @@ def main():
         return subprocess.run(args, cwd=REPO, capture_output=True, text=True, timeout=timeout)
 
     def porcelain():
-        return sh(["git", "status", "--porcelain"]).stdout.strip()
+        # The log this driver is writing lives in the repo on purpose, so the
+        # evidence is re-runnable from a clean checkout rather than from someone's
+        # scratch directory. It is therefore the one path that is expected to be
+        # dirty while the run is in progress, and the only one excluded here: the
+        # check still has to see any plant that failed to restore.
+        lines = sh(["git", "status", "--porcelain"]).stdout.strip().splitlines()
+        return "\n".join(l for l in lines if "tests/sabotage-native-task3/" not in l).strip()
 
     def apply_patch(path, old, new):
         full = os.path.join(REPO, path)
