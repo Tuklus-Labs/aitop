@@ -451,9 +451,15 @@ func TestCodexScannerSkipsMalformedAndStale(t *testing.T) {
 		now.Add(-time.Minute))
 
 	// A first line past the read cap. Valid session_meta in every other respect,
-	// so the size is the only reason to skip it.
+	// so the size is the only reason to skip it. The padding is an ABSOLUTE
+	// 96 KiB, not codexMaxFirstLine plus a margin: a fixture sized from the
+	// constant under test grows with it, and a cap raised to any value would
+	// still exceed it, so nothing here could ever see the cap move. 96 KiB sits
+	// above the 64 KiB cap and well above the 46.6 KB largest first line in the
+	// live corpus, so raising the cap past it is the deliberate act this
+	// assertion is here to notice.
 	oversize := codexSubagentPayload(codexSecondChild, codexRootThread, codexRootThread, codexSecondNick, codexFixtureCWD)
-	oversize["base_instructions"] = map[string]any{"text": strings.Repeat("x", codexMaxFirstLine+4096)}
+	oversize["base_instructions"] = map[string]any{"text": strings.Repeat("x", 96<<10)}
 	tree.rollout(now, codexSecondChild, oversize, now.Add(-time.Minute))
 
 	// session_meta with no id: the record cannot name a thread, so it cannot

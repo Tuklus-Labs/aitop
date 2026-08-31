@@ -142,10 +142,13 @@ P_ANY_FIRST_RECORD = (COD,
                       "\tif err := json.Unmarshal(line, &record); err != nil || record.Type != codexSessionMetaType {",
                       "\tif err := json.Unmarshal(line, &record); err != nil {")
 
-# C4: raise the first-line cap past the oversized fixture.
+# C4: raise the first-line cap past the oversized fixture, the edit somebody
+# makes when a prompt grows. 128 KiB rather than something enormous: the fixture
+# is a fixed 96 KiB, so this is the smallest doubling that actually admits it,
+# and a plant that cannot admit the fixture measures nothing.
 P_WIDE_LINE_CAP = (COD,
                    "\tcodexMaxFirstLine = 64 << 10",
-                   "\tcodexMaxFirstLine = 1 << 20")
+                   "\tcodexMaxFirstLine = 128 << 10")
 
 # C5: stop counting a session_meta whose id cannot name a node.
 P_NO_THREAD_SKIP_COUNT = (COD,
