@@ -1,0 +1,71 @@
+aitop native provenance Task 5 tally (post-sabotage-epoch)
+date: 2026-08-31T03:47:11-07:00
+go: go version go1.27.0-X:nodwarf5 linux/amd64
+worktree: /home/aegis/Projects/aitop/.worktrees/native-provenance
+branch: native-provenance
+head: cac6e25f0ac25b12673a2ea5e89d4d36392870d2
+note: certifies production wiring of the four graph collectors, the horizon
+note: rule's live-process clause across all three scanners, and the fork
+note: runtime fix. Measured after the sabotage epoch, before the
+note: SABOTAGE_LOG/tally commit.
+
+commands (exact, from worktree root):
+  gofmt -l internal/ cmd/
+  go vet ./...
+  go build ./...
+  go test ./... -count=1
+  go test -race ./internal/native ./internal/snapshot ./cmd/aitop -count=1
+
+== gofmt -l internal/ cmd/ ==
+(empty above = formatted)
+
+== go vet ./... ==
+vet_exit=0
+
+== go build ./... ==
+build_exit=0
+
+== go test ./... -count=1 ==
+packages_ok=25 non_ok_lines=0 all_exit=0
+
+== go test -race ./internal/native ./internal/snapshot ./cmd/aitop -count=1 ==
+ok  	aitop/internal/native	1.494s
+ok  	aitop/internal/snapshot	2.388s
+ok  	aitop/cmd/aitop	2.391s
+race_exit=0
+
+== Task 5 tests added ==
+internal/native/claude_test.go   TestClaudeScannerLiveSessionIsInsideHorizon
+internal/native/codex_test.go    TestCodexScannerLiveThreadIsInsideHorizon
+internal/native/grok_test.go     TestGrokScannerLiveSessionIsInsideHorizon
+internal/act/sidecar_test.go     TestForkSidecarCarriesRuntime
+internal/act/sidecar_test.go     TestForkSidecarRuntimeFollowsTheTarget
+internal/overlay/forks/          TestForksOverlayReadsRuntime
+internal/join/join_test.go       TestForkChildRowCarriesSubagentRole
+internal/snapshot/               TestAttachGraphRegistersNativeCollectors
+internal/snapshot/               TestAttachGraphEmptyHomesIsOccupancyOnly
+internal/snapshot/               TestAttachGraphBindsNativeNodesToLiveProcesses
+internal/snapshot/               TestAttachGraphResolvesRelativeHomes
+internal/snapshot/               TestSchema2WritesUnclaimedStateAsUnknown
+cmd/aitop/main_test.go           TestProductionCaptureOncePassesEngineHomes
+cmd/aitop/main_test.go           TestProductionRunInteractivePassesEngineHomes
+cmd/aitop/main_test.go           TestProductionCaptureOnceFillsRowsBeforeRunningCollectors
+count=15
+
+== sabotage epoch (final run, from a clean tree) ==
+total=72 as_predicted=72 mismatches=0
+production_RED=33 predicted_GREEN=39
+patch preflight: 71 distinct patches, each applied alone and vetted, all build
+log: tests/sabotage-native-task5/sabotage_runs_native_task5.log
+driver: tests/sabotage-native-task5/sabotage_driver.py
+epoch_head: cac6e25f0ac25b12673a2ea5e89d4d36392870d2
+
+== live probe on this box, real homes, three consecutive one-shots ==
+command: go run ./cmd/aitop --json --once
+nodes=32  edges=4  gaps=0  partial_nodes=0   (identical on all three runs)
+node id prefixes: claude:session=4  claude:agent=4  codex:thread=1
+                  grok:session=2   proc:*=21
+edges: 4 spawn, all provenance=native, all from this session's own root
+       claude session to its four subagents
+baseline for comparison, pre-task binary built from 70f2594 in a scratch dir:
+       nodes=26 edges=0 gaps=0   (occupancy only, no native ids, no edges)

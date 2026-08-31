@@ -2420,3 +2420,87 @@ All six corrections are the same lesson as Task 3's S-X8a, arrived at
 independently: a mutation's blast radius is a claim, and the honest way to test
 it is to run the mutation rather than to reason about which assertion it should
 touch.
+
+## Native provenance Task 5
+
+Production wiring (`AttachGraph`, both `cmd/aitop` run paths), the horizon
+rule's live-process clause across all three scanners, and the fork-runtime fix.
+Driver `tests/sabotage-native-task5/sabotage_driver.py`, log
+`tests/sabotage-native-task5/sabotage_runs_native_task5.log`. Epoch head
+`cac6e25f0ac25b12673a2ea5e89d4d36392870d2`. 72 cycles, 72 as predicted, 33
+production REDs and 39 predicted GREENs. Six packages, so each cycle names its
+own package as well as its own test.
+
+**The cycle that matters most is S-T5-16.** It removes the joiner's role while
+LEAVING the sidecar runtime in place, which is exactly the state a fix following
+the brief's letter would have shipped, and `fork-child-reaches-the-graph` still
+reds. `occupancyEventsForRow` drops a row on two conditions in one line, an
+unknown runtime and an invalid role, and a fork child failed both. This is the
+whole reason the regression proof drives sidecar -> Collect -> Join -> occupancy
+events instead of asserting against a hand-built row: a constructed row can
+satisfy either condition by accident and certify a child production never
+publishes. The measurement came first and the second gate was found by running
+the chain, not by reading it.
+
+**S-T5-24 is the end-to-end proof for the rows closure.** Handing the native
+constructors `nil` instead of the shared `latest` is a mutation that looks
+harmless, and it is the state every scanner unit test runs in. It reds
+`attach-graph-native-spawn-edge-survives-admission` rather than any node
+assertion, which is the informative outcome: occupancy still publishes the
+parent session at its process incarnation, so the NODE looks right, and only the
+edge, whose admission requires the endpoint incarnations to match exactly, can
+tell that the native side never saw the process binding. A node assertion alone
+would have been satisfied by occupancy and proved nothing about the wiring.
+
+**S-T5-32 pins the collector ordering.** Restoring the pre-task order (shadow
+first, capture second) reds `capture-once-fills-rows-before-running-collectors`.
+That order put 3 collision gaps and a Partial occupancy source into every
+one-shot on this box, reproducibly, because a native collector ticking against
+an empty engine dates its nodes by invocation incarnation while occupancy dates
+the same sessions by process. The probe asserts the ordering directly rather
+than counting gaps: a gap count depends on what happens to be running, and would
+read clean on a machine with no live claude session at all.
+
+### Corrections made during the epoch, all found by running the mutation
+
+**Five plants and weakenings failed to BUILD rather than failing an assertion.**
+`if false {` in place of a condition orphans anything the condition was the only
+syntactic use of: `info` in the codex walk, `base` in the live-rollout match,
+`found` in the fork regression proof, `n` and `scanner` in three skip-counter
+assertions, `deadID` in the codex selectivity check. A cycle that does not
+compile measures the compiler, not the rule. Every simple weakening is now
+`if false && (<original condition>)`, short-statement forms keep their statement
+and disable only the condition, and the bounds are widened 100x rather than
+removed. A preflight now applies all 71 distinct patches individually and vets
+each one's package, which found the last of them in a single pass instead of one
+per epoch run.
+
+**S-T5-10 was aimed at one of two sufficient gates.** Widening grok's recorded
+`last_active_at` horizon alone left `grok-cold-session-with-no-process-is-not-
+observed` correctly GREEN, because the stat prefilter rejects the cold session
+on its own; the reverse is also true. Both are now recorded as their own GREEN
+cycles (S-T5-10a, S-T5-10b) with the two-patch plant beside them, so the log
+carries the finding rather than hiding it: for grok's absence claim the two
+bounds are redundant, and either one alone still enforces it.
+
+**S-T5-20's first plant wrote the value the assertion already expected.**
+Copying `c.PID` into the fork child's row went green, because a fork overlay's
+PID is always 0 and the assertion demands 0. Re-aimed at the parent's whole
+Process struct, which is both the plausible edit (a child "attached" to its
+parent's process) and one the fixture can actually move.
+
+**S-T5-26 had two witnesses and the weakened cycle relaxed one.** Removing the
+unclaimed-state mapping makes `WriteJSON` fail, so nothing is written and the
+decode then fails on empty input. The write assertion and the decode assertion
+watch the same rule from two sides; both are relaxed now.
+
+### Where the coverage is honestly thinner
+
+`schema-2-unclaimed-state-invents-no-source` and `-invents-no-since` have no
+plant that reds them independently. S-T5-27b stamps a `since` alongside the
+value, which is the plausible "complete the pair" edit, and the schema's own
+pair rule rejects the payload before either assertion is reached, so the cycle
+reds on `schema-2-writes-an-unclaimed-state` instead. The two assertions
+therefore stand as documentation of the intent plus a guard against a future
+relaxation of that pair rule, and not as independently exercised gates. Said
+here rather than left for a reader to infer from a cycle list.
