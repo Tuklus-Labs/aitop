@@ -529,6 +529,13 @@ W_EV_SHARED = (ATTT,
 W_EV_SHARED_COUNT = (ATTT,
                      "\tif ready > 1 {",
                      "\tif false && ready > 1 {")
+# The third witness, and it is named for a different rule on purpose: a budget
+# per lane is also a wait not bounded by the number the caller supplied, so the
+# boundedness assertion catches it too. Found by running the weakened cycle,
+# which reddened on this one after the other two were relaxed.
+W_EV_SHARED_ELAPSED = (ATTT,
+                       "\tif elapsed > 2*budget {",
+                       "\tif false && elapsed > 2*budget {")
 W_DARK_ROWS = (JOIT,
                "\tif len(rows) != 1 {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine",
                "\tif len(rows) != 1 {\n\t\treturn\n\t}\n\tif false {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine")
@@ -688,7 +695,7 @@ CYCLES = [
     # --- fix round 1: the bounded wait -----------------------------------
     ("S-T5-39-prod", [P_EV_UNBOUNDED], P_SNAP, T_EV_BOUND, "RED", "panic"),
     ("S-T5-40-prod", [P_EV_PER_LANE], P_SNAP, T_EV_SHARED, "RED", "wait-native-evidence-shares-one-budget-across-lanes rule violated"),
-    ("S-T5-40-weak", [P_EV_PER_LANE, W_EV_SHARED, W_EV_SHARED_COUNT], P_SNAP, T_EV_SHARED, "GREEN", None),
+    ("S-T5-40-weak", [P_EV_PER_LANE, W_EV_SHARED, W_EV_SHARED_COUNT, W_EV_SHARED_ELAPSED], P_SNAP, T_EV_SHARED, "GREEN", None),
     ("S-T5-41-prod", [P_ATT_NO_LANES], P_SNAP, T_LANES, "RED", "attach-graph-returns-one-lane-per-home rule violated"),
     ("S-T5-41-weak", [P_ATT_NO_LANES, W_LANES_COUNT], P_SNAP, T_LANES, "GREEN", None),
 
