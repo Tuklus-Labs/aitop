@@ -32,10 +32,13 @@ import (
 //     common shape that carries NO terminal under the exit rule.
 //   - bucket directory mtimes move when a session directory is CREATED inside
 //     them, never when a session writes: 0 of 28 buckets were inside the horizon
-//     while a session was active two minutes earlier.
-//   - bucket names escape slashes (149) AND spaces (2). The scanner encodes only
-//     slashes, per contract, so a cwd with a space is unreachable by the roster
-//     path; TestGrokScannerCWDEncoding pins both halves of that.
+//     while a session was active two minutes earlier. That is why the walk is
+//     unbounded at the directory level and gated on each session's own
+//     summary.json instead.
+//   - bucket names escape slashes (149) AND spaces (2), and the scanner encodes
+//     both. 0 of 434 summaries have a file mtime older than the last_active_at
+//     written inside them, which is what makes the mtime gate a safe prefilter
+//     for the recorded horizon.
 const (
 	// Mains, all real session ids off the live box.
 	grokLiveSession   = "01a05553-afa1-7ea3-b658-96498482568b" // in the roster
@@ -43,6 +46,10 @@ const (
 	grokDarkSession   = "019fbb2b-40be-7cc2-89a5-ca62441eaf5b" // never in a roster
 	grokHostSession   = "01a01634-b76e-76e0-a27d-192cc5da9fd3" // parent whose summary is stale
 	grokBuriedSession = "019ffdf3-85af-7171-8216-331c7e11bc19" // parent whose whole store is stale
+	// The two halves of the summary-mtime gate: one reached only by the walk,
+	// one reached only by the roster.
+	grokStaleFileSession = "01a01639-60c4-7fd0-82a9-b1fca7bbd026"
+	grokQuietFileSession = "01a01639-60c4-7fd0-82a9-b20e11c2885c"
 
 	// Children, all real child_session_ids off the live box.
 	grokRunningChild    = "019fc18b-9518-7283-900c-e9e6450ba842"
@@ -73,11 +80,12 @@ func grokBase() time.Time { return time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC) 
 
 func grokStamp(at time.Time) string { return at.UTC().Format(time.RFC3339Nano) }
 
-// grokDiskEncode is what grok ITSELF writes: slashes and spaces are both
-// escaped, measured across the 28 bucket names on disk. The scanner encodes only
-// slashes, per the verified contract and internal/overlay/grok. The fixtures
-// write at grok's encoding rather than at the scanner's, so the gap between them
-// is a property of the fixture tree instead of something the test arranged.
+// grokDiskEncode is what grok ITSELF writes: slashes and spaces both escaped,
+// measured across the 28 bucket names on disk. It is spelled out here rather
+// than calling grokEncodeCWD on purpose. The fixture tree has to be a statement
+// about where grok puts its files, independent of what the scanner computes; a
+// fixture built by the code under test agrees with that code by construction and
+// can never show it reading the wrong path.
 func grokDiskEncode(cwd string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "%2F"), " ", "%20")
 }
@@ -264,31 +272,45 @@ func newGrokCollector(home string, now time.Time) *Collector {
 	return c
 }
 
-// TestGrokScannerRosterAndDarkMains covers where a primary comes from and, more
-// importantly, where one must NOT come from. Three absences carry the test: a
-// session whose bucket is outside the walk bound, a session whose recorded
-// activity is outside the horizon, and a session whose summary says it is
-// somebody's subagent. That last one is the majority shape on disk (228 of 434
-// summaries), so a walk that ignores session_kind duplicates every subagent as a
-// primary of its own.
+// TestGrokScannerRosterAndDarkMains covers where a primary comes from, where one
+// must NOT come from, and the seam between the two routes into a session.
+//
+// The walk reaches every session directory on the box and gates on each
+// session's own summary.json; the roster reaches its sessions by path and is not
+// gated that way at all. Each route therefore finds a session the other cannot,
+// and this fixture carries one of each.
 func TestGrokScannerRosterAndDarkMains(t *testing.T) {
 	now := grokBase()
 	tree := newGrokTree(t)
 
-	// The live shape, measured: the roster's own sessions sit in a bucket whose
-	// mtime is hours old, because a bucket's mtime moves when a session directory
-	// is created in it and never when a session writes. A roster lookup routed
-	// through the walk bound would find nothing at all on this box.
 	livePath := tree.summary(grokProjectCWD, grokLiveSession,
 		grokMainFields(grokLiveSession, grokProjectCWD, grokBuildAgent, grokModel, "native provenance task 4",
 			now.Add(-40*time.Minute), now.Add(-2*time.Minute)),
 		now.Add(-2*time.Minute))
-	// Same stale bucket, not in the roster: only the walk could reach it, and the
-	// walk must not.
-	tree.summary(grokProjectCWD, grokHostSession,
-		grokMainFields(grokHostSession, grokProjectCWD, grokBuildAgent, grokModel, "stale bucket",
+	// The measured live shape, and the case a bucket-mtime bound used to lose: an
+	// active session in a bucket nobody has added a directory to for hours. A
+	// bucket's mtime moves on creation and never on a write, so on this box every
+	// bucket is stale while sessions inside them are live.
+	hostPath := tree.summary(grokProjectCWD, grokHostSession,
+		grokMainFields(grokHostSession, grokProjectCWD, grokBuildAgent, grokModel, "stale bucket, live session",
 			now.Add(-30*time.Minute), now.Add(-5*time.Minute)),
 		now.Add(-5*time.Minute))
+	// Reachable ONLY by the roster: its file has not been written in two hours,
+	// so the walk's mtime gate refuses it, while the roster's opened_at says a
+	// process took this session twenty minutes ago.
+	quietPath := tree.summary(grokProjectCWD, grokQuietFileSession,
+		grokMainFields(grokQuietFileSession, grokProjectCWD, grokBuildAgent, grokModel, "quiet file, live process",
+			now.Add(-3*time.Hour), now.Add(-2*time.Hour)),
+		now.Add(-2*time.Hour))
+	// The price of gating the walk on a stat: a file whose mtime is OLDER than
+	// the last_active_at recorded inside it. That cannot happen on a live box --
+	// summary.json is where that timestamp is written, and 0 of 434 summaries
+	// break the relation -- so this is what a restored backup or a copied tree
+	// looks like, and it is the one shape the prefilter costs us.
+	tree.summary(grokProjectCWD, grokStaleFileSession,
+		grokMainFields(grokStaleFileSession, grokProjectCWD, grokBuildAgent, grokModel, "restored backup",
+			now.Add(-4*time.Hour), now.Add(-2*time.Minute)),
+		now.Add(-2*time.Hour))
 
 	darkPath := tree.summary(grokDaemonCWD, grokDarkSession,
 		grokMainFields(grokDarkSession, grokDaemonCWD, grokBuildAgent, grokModel, "pensive daemon v3",
@@ -315,9 +337,13 @@ func TestGrokScannerRosterAndDarkMains(t *testing.T) {
 
 	tree.roster([]map[string]any{
 		grokRosterEntryFields(grokLiveSession, grokProjectCWD, now.Add(-20*time.Minute)),
+		grokRosterEntryFields(grokQuietFileSession, grokProjectCWD, now.Add(-20*time.Minute)),
 	}, now.Add(-20*time.Minute))
+	// Both buckets are sealed stale on purpose. Nothing in this test may depend
+	// on a bucket's own mtime any more, and a fixture that left them fresh could
+	// not tell a walk that ignores them from one that does not.
 	tree.seal(grokProjectCWD, now.Add(-3*time.Hour))
-	tree.seal(grokDaemonCWD, now.Add(-10*time.Minute))
+	tree.seal(grokDaemonCWD, now.Add(-3*time.Hour))
 
 	nodes, spawns, scanner := scanGrok(t, tree.home, now)
 
@@ -377,20 +403,41 @@ func TestGrokScannerRosterAndDarkMains(t *testing.T) {
 		t.Fatalf("grok-non-build-agent-is-unnamed rule violated: name=%q agentName=%q location=%q want=%q/%q", second.Name, "grok-plan", second.Location, "", secondPath)
 	}
 
+	// The reach a bucket-mtime bound did not have. This session is not in the
+	// roster and its bucket has not been touched in three hours, so the walk
+	// reaching it is the whole amendment.
+	host, ok := nodeByID(nodes, mustGrokID(t, grokHostSession))
+	if !ok {
+		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: session=%s absent, bucketAge=3h summaryAge=5m ids=%v", grokHostSession, nodeIDs(nodes))
+	}
+	if host.Location != hostPath || host.State != "" {
+		t.Fatalf("grok-dark-walk-reaches-a-stale-bucket rule violated: location=%q state=%q want=%q/%q", host.Location, host.State, hostPath, "")
+	}
+
+	// The other route, which the walk's gate cannot supply: the file is two
+	// hours cold and the roster says a process holds the session.
+	quiet, ok := nodeByID(nodes, mustGrokID(t, grokQuietFileSession))
+	if !ok {
+		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: session=%s absent, summaryAge=2h openedAge=20m ids=%v", grokQuietFileSession, nodeIDs(nodes))
+	}
+	if quiet.Location != quietPath || quiet.StartedAt == nil || !quiet.StartedAt.Equal(now.Add(-20*time.Minute)) {
+		t.Fatalf("grok-roster-route-is-not-gated-on-file-mtime rule violated: location=%q startedAt=%v want=%q/%s", quiet.Location, quiet.StartedAt, quietPath, now.Add(-20*time.Minute))
+	}
+
 	for _, absent := range []struct {
 		session string
 		reason  string
 	}{
-		{grokHostSession, "not in the roster, and its bucket mtime is outside the walk bound"},
 		{grokBuriedSession, "last_active_at outside the horizon, however fresh the file is"},
 		{grokRunningChild, "its own summary says session_kind=subagent, so it is somebody's child"},
+		{grokStaleFileSession, "file mtime outside the horizon, so the walk's stat gate never opens it; the fresh last_active_at inside it is the price of that prefilter"},
 	} {
 		if seen := countNodeID(nodes, mustGrokID(t, absent.session)); seen != 0 {
 			t.Fatalf("grok-dark-walk-admits-only-live-mains rule violated: session=%s count=%d reason=%q ids=%v", absent.session, seen, absent.reason, nodeIDs(nodes))
 		}
 	}
-	if len(nodes) != 3 {
-		t.Fatalf("grok-dark-walk-admits-only-live-mains rule violated: nodes=%d want=3 ids=%v", len(nodes), nodeIDs(nodes))
+	if len(nodes) != 5 {
+		t.Fatalf("grok-dark-walk-admits-only-live-mains rule violated: nodes=%d want=5 ids=%v", len(nodes), nodeIDs(nodes))
 	}
 	if len(spawns) != 0 {
 		t.Fatalf("grok-no-store-no-edges rule violated: spawns=%d want=0 ids=%v", len(spawns), nodeIDs(nodes))
@@ -849,11 +896,11 @@ func TestGrokScannerSpawnEdges(t *testing.T) {
 }
 
 // TestGrokScannerCWDEncoding pins the path arithmetic that finds a roster
-// session at all, and the one place it measurably falls short. grok escapes both
-// slashes and spaces in a bucket name; the contract encodes only slashes, so a
-// session whose cwd contains a space is unreachable by the roster path. That is
-// 1 of the 434 sessions on the live box, and the bucket walk, which reads
-// directory names off disk, is not affected by it.
+// session at all. grok escapes both slashes and spaces in a bucket name, so the
+// scanner does too: encoding only slashes resolves a spaced cwd to a path that
+// does not exist and loses the session entirely, which is 1 of the 434 sessions
+// on the live box. The walk reads directory names off disk and never computes a
+// path, so it is unaffected either way; that is the second fixture here.
 func TestGrokScannerCWDEncoding(t *testing.T) {
 	now := grokBase()
 	tree := newGrokTree(t)
@@ -876,19 +923,18 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 			now.Add(-30*time.Minute), now.Add(-2*time.Minute)),
 		now.Add(-2*time.Minute))
 
-	// The measured limit. This session is written where grok writes it, at
-	// %20 for the space; the contract's encoding leaves the space alone and
-	// resolves to a path that does not exist.
+	// A cwd with a space, written where grok writes it: %20 for the space. This
+	// is the shape that slash-only encoding loses, and 1 of the 434 sessions on
+	// the live box has it.
 	const spacedCWD = "/home/x/Obsidian Vault"
-	tree.summary(spacedCWD, grokSecondSession,
+	spacedPath := tree.summary(spacedCWD, grokSecondSession,
 		grokMainFields(grokSecondSession, spacedCWD, grokBuildAgent, grokModel, "vault session",
 			now.Add(-30*time.Minute), now.Add(-2*time.Minute)),
 		now.Add(-2*time.Minute))
 
-	// The other half, which turns that absence into something provable: the same
-	// spaced encoding, found through the bucket walk, which never computes a path
-	// at all. A scanner that could not read a spaced bucket by ANY route would
-	// fail here, so the miss above is a property of the roster lookup alone.
+	// The same spaced encoding reached the other way, by a walk that never
+	// computes a path at all. Keeping both routes in one fixture is what
+	// separates "the encoder is right" from "the walk happened to find it".
 	const walkedCWD = "/home/y/Heph Journal"
 	walkedPath := tree.summary(walkedCWD, grokDarkSession,
 		grokMainFields(grokDarkSession, walkedCWD, grokBuildAgent, grokModel, "journal session",
@@ -920,14 +966,19 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 			live.Model, live.Project, grokModel, "x")
 	}
 
-	if seen := countNodeID(nodes, mustGrokID(t, grokSecondSession)); seen != 0 {
-		t.Fatalf("grok-spaced-cwd-is-unreachable-by-roster-path rule violated: session=%s count=%d cwd=%q; if the encoding now escapes spaces, this limit is fixed and the assertion is stale",
-			grokSecondSession, seen, spacedCWD)
+	spaced, ok := nodeByID(nodes, mustGrokID(t, grokSecondSession))
+	if !ok {
+		t.Fatalf("grok-spaced-cwd-is-reachable-by-roster-path rule violated: session=%s absent cwd=%q want dir=%q ids=%v",
+			grokSecondSession, spacedCWD, grokDiskEncode(spacedCWD), nodeIDs(nodes))
 	}
-	// The consequence, made countable: the roster entry was READ and its summary
-	// could not be opened, which is a different thing from never looking.
-	if skipped := scanner.skippedSummaries.Load(); skipped != 1 {
-		t.Fatalf("grok-unreachable-roster-summary-counted rule violated: skippedSummaries=%d want=1 cwd=%q ids=%v", skipped, spacedCWD, nodeIDs(nodes))
+	if spaced.Location != spacedPath || spaced.Project != "Obsidian Vault" {
+		t.Fatalf("grok-spaced-cwd-is-reachable-by-roster-path rule violated: location=%q project=%q want=%q/%q", spaced.Location, spaced.Project, spacedPath, "Obsidian Vault")
+	}
+	// Nothing was looked for and missed. This counter is what told us the space
+	// was being lost in the first place, so it is asserted at zero rather than
+	// left to speak only when it moves.
+	if skipped := scanner.skippedSummaries.Load(); skipped != 0 {
+		t.Fatalf("grok-every-roster-summary-resolves rule violated: skippedSummaries=%d want=0 cwd=%q ids=%v", skipped, spacedCWD, nodeIDs(nodes))
 	}
 
 	walked, ok := nodeByID(nodes, mustGrokID(t, grokDarkSession))
@@ -937,8 +988,11 @@ func TestGrokScannerCWDEncoding(t *testing.T) {
 	if walked.Location != walkedPath || walked.Project != "Heph Journal" {
 		t.Fatalf("grok-bucket-walk-needs-no-encoding rule violated: location=%q project=%q want=%q/%q", walked.Location, walked.Project, walkedPath, "Heph Journal")
 	}
-	if len(nodes) != 2 {
-		t.Fatalf("grok-encoding-fixture-node-count rule violated: nodes=%d want=2 ids=%v", len(nodes), nodeIDs(nodes))
+	// Three, not five: the two decoy buckets hold the same session id as the real
+	// one, so a scanner that read them all would still publish one node, and only
+	// the location and content assertions above can tell which file it read.
+	if len(nodes) != 3 {
+		t.Fatalf("grok-encoding-fixture-node-count rule violated: nodes=%d want=3 ids=%v", len(nodes), nodeIDs(nodes))
 	}
 }
 

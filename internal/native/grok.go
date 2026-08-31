@@ -189,15 +189,22 @@ func (s *grokScanner) scan(now time.Time) ([]NodeSighting, []SpawnSighting, erro
 	return nodes, spawns, nil
 }
 
-// visits is the walk bound. It is the roster's own sessions, reached by path,
-// plus every session directory in a cwd bucket the horizon still admits.
+// visits is the walk. It is the roster's own sessions, reached by path, plus
+// every session directory under every cwd bucket.
 //
-// The two halves are not interchangeable. A bucket directory's mtime moves when
-// a session directory is CREATED or removed inside it, never when a session
-// writes, so the bucket bound admits sessions BORN within the horizon rather
-// than sessions ACTIVE within it: measured on the live box, 0 of 28 buckets were
-// inside the horizon while a session had been active two minutes earlier, and
-// both of that box's live sessions were reachable only through the roster.
+// The walk is deliberately unbounded at the directory level. A bucket
+// directory's mtime moves when a session directory is CREATED or removed inside
+// it and never when a session writes, so bounding the walk on it admits
+// sessions BORN inside the horizon rather than sessions ACTIVE inside it:
+// measured on the live box, 0 of 28 buckets were inside the horizon while a
+// session had been active two minutes earlier. The freshness gate therefore
+// lives on each session's own summary.json (see readMain), which is the file
+// that actually moves when a session does something.
+//
+// Enumerating a session directory is not the same as reading it. Every visit
+// costs one ReadDir of its subagents store, which is how a live child under a
+// parent whose own summary has gone quiet still reaches the graph; only visits
+// that pass the summary gate cost a read.
 func (s *grokScanner) visits(now time.Time) []grokVisit {
 	sessions := filepath.Join(s.home, grokSessionsDir)
 	roster := s.readRoster()
@@ -219,13 +226,6 @@ func (s *grokScanner) visits(now time.Time) []grokVisit {
 	}
 	for _, bucket := range buckets {
 		if !bucket.IsDir() {
-			continue
-		}
-		info, err := bucket.Info()
-		if err != nil {
-			continue
-		}
-		if now.Sub(info.ModTime()) > nativeHorizon {
 			continue
 		}
 		entries, err := os.ReadDir(filepath.Join(sessions, bucket.Name()))
@@ -299,6 +299,26 @@ func (s *grokScanner) readRoster() []grokRosterEntry {
 func (s *grokScanner) readMain(now time.Time, visit grokVisit) (NodeSighting, bool) {
 	var sighting NodeSighting
 	path := filepath.Join(visit.dir, grokSummaryFile)
+	if visit.roster == nil {
+		// The walk enumerates every session directory on the box, so the file's
+		// own mtime is the cheap gate that keeps a 434-session store from being
+		// read in full every 2 s: one stat, and a read only for the fresh ones.
+		//
+		// It is a prefilter, not the rule. The horizon below is the runtime's own
+		// recorded claim about its activity, and this gate is only safe because
+		// it is a superset of it: summary.json is the file last_active_at is
+		// written into, and 0 of the 434 summaries on the live box have an mtime
+		// older than the timestamp inside them. A session that broke that
+		// relation (a restored backup, a copied tree) would be missed here.
+		//
+		// The roster route is deliberately NOT gated this way. A roster entry is
+		// a live process's claim on a session, dated by opened_at, and it must
+		// not depend on when the session last wrote a file.
+		info, err := os.Stat(path)
+		if err != nil || now.Sub(info.ModTime()) > nativeHorizon {
+			return sighting, false
+		}
+	}
 	body, err := os.ReadFile(path)
 	if err != nil {
 		if visit.roster != nil {
@@ -504,19 +524,24 @@ func (s *grokScanner) childActivity(meta grokChildMeta, metaModTime time.Time, n
 	return info.ModTime()
 }
 
-// grokEncodeCWD is grok's own bucket naming, matching internal/overlay/grok.
+// grokEncodeCWD is grok's own bucket naming, measured off the live box on
+// 2026-08-31 rather than taken from the contract: the 28 bucket names there
+// carry 149 %2F and 2 %20, so the scheme escapes spaces as well as slashes.
 //
-// KNOWN LIMIT, measured 2026-08-31: grok itself also escapes spaces (the live
-// box has 149 %2F and 2 %20 across 28 bucket names), so a session whose cwd
-// contains a space resolves to a path that does not exist and is unreachable by
-// the roster route -- 1 of 434 sessions on that box. The bucket walk reads
-// directory names off the disk and is not affected, so such a session is still
-// observed whenever its bucket is inside the walk bound.
+// Slash-only encoding, which is what internal/overlay/grok still does, resolves
+// a spaced cwd to a path that does not exist and loses the session entirely on
+// the roster route: 1 of the 434 sessions on that box, under
+// /home/aegis/Documents/Obsidian Vault. That gap is still open in the overlay
+// package and is ledgered for review; nothing in this package depends on it.
+//
+// Only these two escapes are claimed. No other character has been observed
+// escaped in a bucket name, and guessing at a wider set from two samples would
+// be inventing a scheme rather than matching one.
 func grokEncodeCWD(cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	return strings.ReplaceAll(cwd, "/", "%2F")
+	return strings.ReplaceAll(strings.ReplaceAll(cwd, "/", "%2F"), " ", "%20")
 }
 
 func grokTime(value string) *time.Time {
