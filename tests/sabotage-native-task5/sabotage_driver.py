@@ -520,9 +520,15 @@ W_EV_FAST = (ATTT,
 W_EV_BOUND = (ATTT,
               "\tif elapsed > 2*time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-is-bounded",
               "\tif false {\n\t\tt.Fatalf(\"wait-native-evidence-is-bounded")
+# The per-lane plant trips BOTH witnesses of the sharing rule: the third lane is
+# consulted, and two lanes come in where one fits. A weakened cycle has to relax
+# both or it reds on the one it did not name.
 W_EV_SHARED = (ATTT,
-               "\tif elapsed := time.Since(started); elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes",
-               "\tif elapsed := time.Since(started); false && elapsed > time.Second {\n\t\tt.Fatalf(\"wait-native-evidence-shares-one-budget-across-lanes")
+               "\tif third.consulted() {",
+               "\tif false && third.consulted() {")
+W_EV_SHARED_COUNT = (ATTT,
+                     "\tif ready > 1 {",
+                     "\tif false && ready > 1 {")
 W_DARK_ROWS = (JOIT,
                "\tif len(rows) != 1 {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine",
                "\tif len(rows) != 1 {\n\t\treturn\n\t}\n\tif false {\n\t\tt.Fatalf(\"dark-local-unit-needs-no-spine")
@@ -682,7 +688,7 @@ CYCLES = [
     # --- fix round 1: the bounded wait -----------------------------------
     ("S-T5-39-prod", [P_EV_UNBOUNDED], P_SNAP, T_EV_BOUND, "RED", "panic"),
     ("S-T5-40-prod", [P_EV_PER_LANE], P_SNAP, T_EV_SHARED, "RED", "wait-native-evidence-shares-one-budget-across-lanes rule violated"),
-    ("S-T5-40-weak", [P_EV_PER_LANE, W_EV_SHARED], P_SNAP, T_EV_SHARED, "GREEN", None),
+    ("S-T5-40-weak", [P_EV_PER_LANE, W_EV_SHARED, W_EV_SHARED_COUNT], P_SNAP, T_EV_SHARED, "GREEN", None),
     ("S-T5-41-prod", [P_ATT_NO_LANES], P_SNAP, T_LANES, "RED", "attach-graph-returns-one-lane-per-home rule violated"),
     ("S-T5-41-weak", [P_ATT_NO_LANES, W_LANES_COUNT], P_SNAP, T_LANES, "GREEN", None),
 
@@ -763,7 +769,20 @@ def preflight():
 def main():
     if "--preflight" in sys.argv:
         sys.exit(preflight())
-    logf = open(LOG, "w")
+    # --range A B runs CYCLES[A:B] and APPENDS to the log, so a long epoch can be
+    # run as consecutive bounded chunks whose combined log is one record. The
+    # chunk boundaries are recorded in the log; a chunk still refuses a dirty
+    # tree and still stops the whole run on the first mismatch.
+    lo, hi = 0, len(CYCLES)
+    mode = "w"
+    if "--range" in sys.argv:
+        at = sys.argv.index("--range")
+        lo, hi = int(sys.argv[at + 1]), int(sys.argv[at + 2])
+        mode = "w" if lo == 0 else "a"
+    if "--count" in sys.argv:
+        print(len(CYCLES))
+        sys.exit(0)
+    logf = open(LOG, mode)
 
     def emit(msg):
         print(msg)
@@ -813,8 +832,9 @@ def main():
         emit("ABORT: tree not clean before start")
         sys.exit(1)
 
+    emit(f"chunk: cycles [{lo}:{hi}) of {len(CYCLES)}")
     results = []
-    for cid, patches, pkg, rx, expect, phrase in CYCLES:
+    for cid, patches, pkg, rx, expect, phrase in CYCLES[lo:hi]:
         emit(f"\n===== {cid} expect={expect} pkg={pkg} run={rx}")
         if not all(apply_patch(*p) for p in patches):
             sh(["git", "checkout", "--"] + SOURCES)
@@ -852,7 +872,7 @@ def main():
             emit("STOP on mismatch for inspection")
             sys.exit(2)
 
-    emit("\n===== SUMMARY")
+    emit(f"\n===== SUMMARY for cycles [{lo}:{hi})")
     for cid, verdict in results:
         emit(f"{cid}: {verdict}")
     reds = sum(1 for c in CYCLES if c[4] == "RED")
