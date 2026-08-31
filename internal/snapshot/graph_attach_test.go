@@ -32,8 +32,12 @@ const (
 )
 
 // attachHomes writes a ~/.claude-shaped home holding one live session and, when
-// withAgent is set, one subagent under it. Every file is stamped now so the
-// horizon is not what this test is measuring.
+// withAgent is set, one subagent under it. Callers stamp the files WELL INSIDE
+// the horizon but PAST the core's bind window, which is what keeps these tests
+// about the wiring: a sighting that is both unbound and newborn is deliberately
+// held back one poll so the engine can bind a process to it first, and a
+// fixture stamped `now` would make every assertion here a race against the 2s
+// poll rather than a statement about the attach.
 func attachClaudeHome(t *testing.T, now time.Time, withAgent bool) string {
 	t.Helper()
 	home := t.TempDir()
@@ -90,6 +94,11 @@ func attachClaudeHome(t *testing.T, now time.Time, withAgent bool) string {
 	}
 	return home
 }
+
+// attachFixtureClock is two minutes ago: comfortably inside the one hour
+// horizon, and comfortably past the six second window in which the core holds a
+// newborn back for its process binding.
+func attachFixtureClock() time.Time { return time.Now().Add(-2 * time.Minute) }
 
 // attachProcRoot writes a /proc-shaped tree holding one claude process. Only
 // stat is required: proc.readOne reads it first and everything else is
@@ -170,7 +179,7 @@ func runShadow(t *testing.T, shadow *graph.Shadow) {
 // handed to AttachGraph becomes a source in the shadow. Occupancy alone cannot
 // produce a claude session node here, because the engine has no rows at all.
 func TestAttachGraphRegistersNativeCollectors(t *testing.T) {
-	now := time.Now()
+	now := attachFixtureClock()
 	homes := GraphHomes{
 		Claude: attachClaudeHome(t, now, false),
 		Codex:  t.TempDir(),
@@ -202,7 +211,7 @@ func TestAttachGraphRegistersNativeCollectors(t *testing.T) {
 // task. The claude fixture is present on disk and unreachable, so the test
 // separates "no home was passed" from "no fixture existed".
 func TestAttachGraphEmptyHomesIsOccupancyOnly(t *testing.T) {
-	now := time.Now()
+	now := attachFixtureClock()
 	// The engine knows where the claude home is, and the wrapper still must not
 	// pass it. That is the plausible refactor this test exists to catch: the
 	// engine already carries the homes, so delegating with them looks like
@@ -241,7 +250,7 @@ func TestAttachGraphEmptyHomesIsOccupancyOnly(t *testing.T) {
 // satisfied by occupancy alone and cannot be satisfied by a native collector
 // that never saw the process binding.
 func TestAttachGraphBindsNativeNodesToLiveProcesses(t *testing.T) {
-	now := time.Now()
+	now := attachFixtureClock()
 	homes := GraphHomes{Claude: attachClaudeHome(t, now, true)}
 	eng := &Engine{
 		ProcRoot: attachProcRoot(t, attachPID, attachStartTick),
@@ -573,7 +582,7 @@ func TestWaitNativeEvidenceWithNoLanesIsFree(t *testing.T) {
 // on. A home that registers a collector but no lane would be waited on by
 // nobody, which reads exactly like a fast lane.
 func TestAttachGraphReturnsOneLanePerHome(t *testing.T) {
-	now := time.Now()
+	now := attachFixtureClock()
 	eng := &Engine{ProcRoot: t.TempDir()}
 	for _, tc := range []struct {
 		name  string

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode"
@@ -934,5 +935,186 @@ func TestCollectorFirstTickNodesStopAtTheFirstTick(t *testing.T) {
 	}
 	if got := len(collector.FirstTickNodes()); got != first {
 		t.Fatalf("native-first-tick-nodes-stop-at-the-first-tick rule violated: nodes grew from %d to %d over %d ticks", first, got, scanner.callCount())
+	}
+}
+
+// bindableScanner returns one sighting whose activity the test controls.
+type bindableScanner struct {
+	mu       sync.Mutex
+	sighting NodeSighting
+	calls    int
+}
+
+func (b *bindableScanner) scan(time.Time, map[string]bool) ([]NodeSighting, []SpawnSighting, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls++
+	return []NodeSighting{b.sighting}, nil, nil
+}
+
+func (b *bindableScanner) callCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.calls
+}
+
+// TestNewbornSightingWaitsOneTickForItsProcessBinding covers the incarnation
+// race that only the interactive path can hit. A session writes its file before
+// the engine's next capture binds the row behind it, and a native tick landing
+// in that window establishes the node under its INVOCATION incarnation.
+//
+// That is unrecoverable rather than merely early. Rotating an established
+// incarnation requires a strict increase on an anchor pair where BOTH sides are
+// non-nil, and the two sides never supply one: native's node carries StartedAt
+// but never a Process, occupancy's carries both, and the two StartedAt values
+// are the same instant read from the same sidecar. So the startTicks pair is
+// half-nil and the startedAt pair is equal, no anchor is strictly newer, and
+// occupancy's node, state and metrics for that session are refused on identity
+// for the whole life of the node: a live busy session renders unknown and
+// stale, with no metrics and no terminal, until it is evicted.
+//
+// One tick of latency for a newborn closes the engine's binding window. The
+// cost falls only on sightings that are BOTH unbound and fresh.
+func TestNewbornSightingWaitsOneTickForItsProcessBinding(t *testing.T) {
+	id := mustSessionID(t, testParentSession)
+	born := time.Now()
+	scanner := &bindableScanner{sighting: NodeSighting{
+		ID:         id,
+		SessionID:  testParentSession,
+		Runtime:    types.RuntimeClaude,
+		Role:       types.RolePrimary,
+		Location:   testParentFile,
+		ActivityAt: &born,
+	}}
+
+	// latest() starts empty, exactly as the engine is before its next capture.
+	var bound atomic.Bool
+	process := graph.ProcessIdentity{PID: 4242, StartTicks: 7241979}
+	latest := func() []types.Row {
+		if !bound.Load() {
+			return nil
+		}
+		return []types.Row{{
+			Process: types.Process{PID: process.PID, StartTime: process.StartTicks, Runtime: types.RuntimeClaude, Role: types.RolePrimary},
+			Overlay: types.Overlay{SessionID: testParentSession, PID: process.PID, StartTime: process.StartTicks, Runtime: types.RuntimeClaude},
+		}}
+	}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, latest)
+	sink := &recordingSink{}
+
+	collector.tick(sink)
+	if n := sink.count(); n != 0 {
+		events, _ := sink.snapshot()
+		t.Fatalf("newborn-sighting-waits-for-its-binding rule violated: tick 1 published %d events for an unbound session %s old: %+v", n, time.Since(born), events[0].ActorIncarnation)
+	}
+
+	// The engine catches up, which is the whole point of the wait.
+	bound.Store(true)
+	collector.tick(sink)
+	events, invalid := sink.snapshot()
+	if len(invalid) != 0 {
+		t.Fatalf("newborn-sighting-publishes-valid-events rule violated: %v", invalid)
+	}
+	if len(events) == 0 {
+		t.Fatalf("newborn-sighting-is-published-on-the-next-tick rule violated: still nothing after %d scans", scanner.callCount())
+	}
+	want := mustProcessIncarnation(t, process)
+	if events[0].Actor != id || events[0].ActorIncarnation != want {
+		t.Fatalf("newborn-sighting-is-published-at-its-process-incarnation rule violated: actor=%s incarnation=%s want=%s", events[0].Actor, events[0].ActorIncarnation, want)
+	}
+	// The invocation incarnation is the one that must never have been
+	// established, because nothing can rotate away from it afterwards.
+	never := mustInvocationIncarnation(t, testParentSession)
+	for _, e := range events {
+		if e.ActorIncarnation == never {
+			t.Fatalf("newborn-sighting-never-establishes-an-invocation-incarnation rule violated: %s at %s", e.Kind, never)
+		}
+	}
+}
+
+// TestNewbornSightingIsWaitedForOnlyOnce keeps the wait to one tick. A session
+// aitop can never bind -- one in a container, or on the other side of a pid
+// namespace -- stays unbound and keeps writing, and a rule that deferred it
+// every tick would make it permanently invisible rather than one tick late.
+func TestNewbornSightingIsWaitedForOnlyOnce(t *testing.T) {
+	born := time.Now()
+	scanner := &bindableScanner{sighting: NodeSighting{
+		ID:         mustSessionID(t, testParentSession),
+		SessionID:  testParentSession,
+		Runtime:    types.RuntimeClaude,
+		Role:       types.RolePrimary,
+		Location:   testParentFile,
+		ActivityAt: &born,
+	}}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, nil)
+	sink := &recordingSink{}
+
+	collector.tick(sink)
+	if n := sink.count(); n != 0 {
+		t.Fatalf("newborn-sighting-waits-for-its-binding rule violated: tick 1 published %d events", n)
+	}
+	collector.tick(sink)
+	if n := sink.count(); n == 0 {
+		t.Fatalf("newborn-sighting-is-waited-for-only-once rule violated: still nothing after 2 ticks with no binding in sight")
+	}
+	// It stays published, rather than alternating between deferred and not.
+	before := sink.count()
+	collector.tick(sink)
+	if sink.count() <= before {
+		t.Fatalf("newborn-sighting-stays-published rule violated: tick 3 added nothing (events %d -> %d)", before, sink.count())
+	}
+}
+
+// TestStaleUnboundSightingPublishesImmediately keeps the wait aimed at newborns
+// only. A session whose file has not moved for minutes is not waiting on the
+// engine to bind anything -- aitop simply cannot see a process for it -- and
+// delaying it would cost a tick for no reason on every quiet session on the box.
+func TestStaleUnboundSightingPublishesImmediately(t *testing.T) {
+	old := time.Now().Add(-10 * time.Minute)
+	scanner := &bindableScanner{sighting: NodeSighting{
+		ID:         mustSessionID(t, testSecondSession),
+		SessionID:  testSecondSession,
+		Runtime:    types.RuntimeClaude,
+		Role:       types.RolePrimary,
+		Location:   testParentFile,
+		ActivityAt: &old,
+	}}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, nil)
+	sink := &recordingSink{}
+	collector.tick(sink)
+	if n := sink.count(); n == 0 {
+		t.Fatalf("stale-unbound-sighting-publishes-immediately rule violated: nothing published for a sighting %s old", time.Since(old))
+	}
+}
+
+// TestBoundSightingPublishesImmediately is the other half: a session the engine
+// has already bound has nothing to wait for, and its incarnation is the process
+// one from the first event.
+func TestBoundSightingPublishesImmediately(t *testing.T) {
+	born := time.Now()
+	process := graph.ProcessIdentity{PID: 4242, StartTicks: 7241979}
+	scanner := &bindableScanner{sighting: NodeSighting{
+		ID:         mustSessionID(t, testParentSession),
+		SessionID:  testParentSession,
+		Runtime:    types.RuntimeClaude,
+		Role:       types.RolePrimary,
+		Location:   testParentFile,
+		ActivityAt: &born,
+	}}
+	latest := func() []types.Row {
+		return []types.Row{{
+			Process: types.Process{PID: process.PID, StartTime: process.StartTicks, Runtime: types.RuntimeClaude, Role: types.RolePrimary},
+			Overlay: types.Overlay{SessionID: testParentSession, PID: process.PID, StartTime: process.StartTicks, Runtime: types.RuntimeClaude},
+		}}
+	}
+	collector := newCollector(testSourceID, types.RuntimeClaude, scanner, latest)
+	sink := &recordingSink{}
+	collector.tick(sink)
+	events, _ := sink.snapshot()
+	if len(events) == 0 {
+		t.Fatalf("bound-sighting-publishes-immediately rule violated: nothing published for an already bound session")
+	}
+	if want := mustProcessIncarnation(t, process); events[0].ActorIncarnation != want {
+		t.Fatalf("bound-sighting-publishes-at-its-process-incarnation rule violated: incarnation=%s want=%s", events[0].ActorIncarnation, want)
 	}
 }

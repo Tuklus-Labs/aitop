@@ -35,7 +35,13 @@ const (
 	nativeHorizon = time.Hour
 	// nativeExitWindow sits under the 5 min success-ghost TTL, so a terminal
 	// is either fresh enough to observe or not observed at all.
-	nativeExitWindow  = 4 * time.Minute
+	nativeExitWindow = 4 * time.Minute
+	// nativeBindWindow is how fresh an UNBOUND sighting has to be for the core
+	// to give the engine one more tick to bind a process to it. The engine
+	// refreshes overlays every second, so a session whose file moved within
+	// this window may simply not have been captured yet; one whose file has
+	// been still for longer is not waiting on anything.
+	nativeBindWindow  = 6 * time.Second
 	sourceIncarnation = graph.SourceIncarnationID(1)
 
 	// maxDisplayBytes mirrors the graph package's own display bound.
@@ -59,9 +65,14 @@ type NodeSighting struct {
 	Worktree  string
 	TaskName  string
 	StartedAt *time.Time
-	State     graph.State       // "" = no claim; v1 uses only graph.StateActive
-	Exit      graph.ExitOutcome // "" = none; when set, ExitAt must be set
-	ExitAt    *time.Time
+	// ActivityAt is the freshest thing the scanner knows about this node: the
+	// same timestamp it judged the horizon on. The core uses it to recognise a
+	// NEWBORN, which is the one case where publishing immediately does lasting
+	// harm. nil means undatable, which cannot be shown to be new.
+	ActivityAt *time.Time
+	State      graph.State       // "" = no claim; v1 uses only graph.StateActive
+	Exit       graph.ExitOutcome // "" = none; when set, ExitAt must be set
+	ExitAt     *time.Time
 	// Location is the absolute path of the file the fact came from. It joins
 	// the record digest in the event id, so two files describing one node
 	// cannot collide on a replay key.
@@ -119,8 +130,14 @@ type Collector struct {
 	disp Dispositions
 	// Counters below record decisions that publish nothing, so a silent tick
 	// and a tick that deliberately emitted nothing are distinguishable.
+	// awaitingBinding holds the nodes already given their one tick of grace, so
+	// no node waits twice. It is pruned to the ids seen each tick, which keeps
+	// it the size of the newborns in flight rather than of everything ever seen.
+	awaitingBinding map[graph.NodeID]bool
+
 	scanErrors             atomic.Uint64
 	identityErrors         atomic.Uint64
+	deferredNewborns       atomic.Uint64
 	staleTerminals         atomic.Uint64
 	heartbeatErrors        atomic.Uint64
 	malformedRelationships atomic.Uint64
@@ -137,6 +154,7 @@ func newCollector(id graph.SourceID, rt types.Runtime, sc scanner, latest func()
 		firstTick: make(chan struct{}),
 
 		firstTickPending: true,
+		awaitingBinding:  map[graph.NodeID]bool{},
 	}
 }
 
@@ -248,6 +266,7 @@ func liveSessions(processes map[string]graph.ProcessIdentity) map[string]bool {
 // the state claims alive.
 func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[string]graph.ProcessIdentity, nodes []NodeSighting, spawns []SpawnSighting) {
 	published := make(map[graph.NodeID]graph.IncarnationID, len(nodes))
+	seen := make(map[graph.NodeID]bool, len(nodes))
 	claims := make([]NodeSighting, 0, len(nodes))
 	exits := make([]NodeSighting, 0, len(nodes))
 
@@ -259,6 +278,11 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 		incarnation, err := c.incarnationFor(processes, sighting)
 		if err != nil {
 			c.identityErrors.Add(1)
+			continue
+		}
+		seen[sighting.ID] = true
+		if c.awaitBinding(processes, sighting, now) {
+			c.deferredNewborns.Add(1)
 			continue
 		}
 		disposition := c.publish(sink, c.nodeEvent(sighting, incarnation, now))
@@ -308,6 +332,53 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 			c.heartbeatErrors.Add(1)
 		}
 	}
+
+	// A node that has gone away stops being owed its one tick, so the next
+	// sighting of it under a new incarnation gets the same grace.
+	for id := range c.awaitingBinding {
+		if !seen[id] {
+			delete(c.awaitingBinding, id)
+		}
+	}
+}
+
+// awaitBinding reports whether this sighting should skip one tick so the engine
+// can bind a process to it first.
+//
+// The harm it prevents is not lateness, it is a permanent wrong identity. A
+// node established under InvocationIncarnation can never be rotated to the
+// process one: rotation demands a strictly newer anchor where BOTH sides are
+// non-nil, native's node carries StartedAt but never a Process, and occupancy's
+// StartedAt is the same instant read from the same file. So the startTicks pair
+// is half-nil, the startedAt pair is equal, and every occupancy node, state and
+// metrics event for that session is refused on identity until the node is
+// evicted -- a live busy session rendering unknown and stale, with no metrics
+// and no terminal.
+//
+// Three conditions, and each excludes a case that must not pay the tick:
+// already-bound sightings have the right incarnation now, terminal ones are
+// never going to be bound by anything, and undatable ones cannot be shown to be
+// new. And the grace is given ONCE, so a session aitop can never bind -- in a
+// container, or across a pid namespace -- is one tick late rather than
+// permanently invisible.
+func (c *Collector) awaitBinding(processes map[string]graph.ProcessIdentity, sighting NodeSighting, now time.Time) bool {
+	if _, bound := processes[sighting.SessionID]; bound {
+		return false
+	}
+	if sighting.Exit != "" {
+		return false
+	}
+	if sighting.ActivityAt == nil {
+		return false
+	}
+	if now.Sub(*sighting.ActivityAt) >= nativeBindWindow {
+		return false
+	}
+	if c.awaitingBinding[sighting.ID] {
+		return false
+	}
+	c.awaitingBinding[sighting.ID] = true
+	return true
 }
 
 // processBindings maps session id to the live process holding it, walking

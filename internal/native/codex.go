@@ -117,7 +117,11 @@ func (meta codexSessionMeta) role() types.Role {
 type codexRollout struct {
 	meta codexSessionMeta
 	path string
-	id   graph.NodeID
+	// mod is the rollout's mtime, the timestamp readRecentRollouts already
+	// judged the horizon on. It dates the sighting so the core can tell a
+	// newborn thread from a quiet one.
+	mod time.Time
+	id  graph.NodeID
 }
 
 // scan never returns an error: a box with no Codex on it, an unreadable
@@ -143,14 +147,16 @@ func (s *codexScanner) scan(now time.Time, live map[string]bool) ([]NodeSighting
 		published[id] = true
 		rollout.id = id
 		observed = append(observed, rollout)
+		rolloutMod := rollout.mod
 		nodes = append(nodes, NodeSighting{
-			ID:        id,
-			SessionID: rollout.meta.ID,
-			Runtime:   types.RuntimeCodex,
-			Role:      rollout.meta.role(),
-			Name:      rollout.meta.nickname(),
-			Project:   join.ProjectName(rollout.meta.CWD),
-			Location:  rollout.path,
+			ID:         id,
+			SessionID:  rollout.meta.ID,
+			Runtime:    types.RuntimeCodex,
+			Role:       rollout.meta.role(),
+			Name:       rollout.meta.nickname(),
+			Project:    join.ProjectName(rollout.meta.CWD),
+			ActivityAt: &rolloutMod,
+			Location:   rollout.path,
 			// No state claim and no terminal in v1: a rollout says a thread
 			// existed, never that it is still running or that it stopped. A node
 			// ages past the horizon and reads Stale rather than being asserted.
@@ -187,12 +193,14 @@ func (s *codexScanner) scan(now time.Time, live map[string]bool) ([]NodeSighting
 			// names its parent and says nothing else about it, and its cwd is the
 			// child's, not the parent's. Anchored on the child's rollout, which
 			// is the file the fact came from.
+			parentMod := rollout.mod
 			nodes = append(nodes, NodeSighting{
-				ID:        parentID,
-				SessionID: parent,
-				Runtime:   types.RuntimeCodex,
-				Role:      types.RolePrimary,
-				Location:  rollout.path,
+				ID:         parentID,
+				SessionID:  parent,
+				Runtime:    types.RuntimeCodex,
+				Role:       types.RolePrimary,
+				ActivityAt: &parentMod,
+				Location:   rollout.path,
 			})
 		}
 		spawns = append(spawns, SpawnSighting{
@@ -235,7 +243,7 @@ func (s *codexScanner) readRecentRollouts(now time.Time, live map[string]bool) [
 			if !ok {
 				continue
 			}
-			rollouts = append(rollouts, codexRollout{meta: meta, path: path})
+			rollouts = append(rollouts, codexRollout{meta: meta, path: path, mod: info.ModTime()})
 		}
 	}
 	return rollouts

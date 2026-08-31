@@ -297,9 +297,11 @@ claims `approval` or `blocked`.
   disk distinguishes crashed from idle, so no terminal is published and the node
   waits out the horizon instead of being ghosted. Presence is not death evidence.
 - **Fork children are visible but unparented.** aitop's own forks now carry a
-  runtime and appear in the graph, but nothing yet ties a fork child back to the
-  session that launched it; that needs the launch-intent handshake, which is a
-  later phase. Until then a fork child renders as a root of its own.
+  runtime and appear in the graph. The parentage is not missing from the
+  evidence: the fork sidecar names both ends, `parent` and `fork_of` and
+  `child_session`. What is missing is a collector that turns that record into a
+  spawn edge, so until one publishes it a fork child renders as a root of its
+  own.
 
 `internal/join.Join` is a pure left join on `(pid, starttime)`. Overlays with
 no live process never create rows; processes with no overlay keep theirs with

@@ -261,9 +261,16 @@ func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegis
 	// Rows before collectors, for the reason recorded in productionCaptureOnce.
 	// Start refreshes the overlay synchronously before it returns, so by the
 	// time the shadow runs every collector's first tick sees the engine's rows.
-	// The interactive path would converge on its own two seconds later; the
-	// ordering is the same here so that a session's incarnation does not move
-	// under the graph in the first frames anyone actually looks at.
+	//
+	// Lateness converges here and a wrong incarnation does not, which is why
+	// the ordering matters as much on this path as on the one-shot. A lane that
+	// merely walks late is in by the next poll. A node ESTABLISHED under an
+	// invocation incarnation is stuck there: rotation needs a strictly newer
+	// anchor with both sides non-nil, and native never carries a Process while
+	// its StartedAt equals occupancy's, so occupancy's events for that session
+	// are refused on identity until the node is evicted. The core holds a
+	// newborn back one poll for the same reason (see awaitBinding); this
+	// ordering closes the window that exists before the first poll.
 	src := eng.Start(ctx)
 	reapEngineOnCancel(ctx, eng.Wait)
 	if reg != nil {

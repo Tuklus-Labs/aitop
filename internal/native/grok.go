@@ -415,16 +415,17 @@ func (s *grokScanner) readMain(now time.Time, visit grokVisit, live map[string]b
 		name = grokHarnessName
 	}
 	return NodeSighting{
-		ID:        id,
-		SessionID: visit.session,
-		Runtime:   types.RuntimeGrok,
-		Role:      types.RolePrimary,
-		Name:      name,
-		Model:     summary.CurrentModelID,
-		Project:   join.ProjectName(cwd),
-		TaskName:  summary.GeneratedTitle,
-		StartedAt: started,
-		Location:  path,
+		ID:         id,
+		SessionID:  visit.session,
+		Runtime:    types.RuntimeGrok,
+		Role:       types.RolePrimary,
+		Name:       name,
+		Model:      summary.CurrentModelID,
+		Project:    join.ProjectName(cwd),
+		TaskName:   summary.GeneratedTitle,
+		StartedAt:  started,
+		ActivityAt: activity,
+		Location:   path,
 	}, true
 }
 
@@ -475,21 +476,26 @@ func (s *grokScanner) scanStore(now time.Time, visit grokVisit) ([]NodeSighting,
 			s.skippedChildren.Add(1)
 			continue
 		}
-		if now.Sub(s.childActivity(meta, info.ModTime(), now)) > nativeHorizon {
+		// Computed once and used twice: the horizon judges it and the core's
+		// newborn rule is dated by it, so the two can never disagree about how
+		// fresh this child is.
+		childActivity := s.childActivity(meta, info.ModTime(), now)
+		if now.Sub(childActivity) > nativeHorizon {
 			continue
 		}
 
 		sighting := NodeSighting{
-			ID:        childID,
-			SessionID: child,
-			Runtime:   types.RuntimeGrok,
-			Role:      types.RoleSubagent,
-			Name:      meta.SubagentType,
-			Model:     meta.EffectiveModelID,
-			Project:   join.ProjectName(meta.ChildCWD),
-			TaskName:  meta.Description,
-			StartedAt: grokTime(meta.StartedAt),
-			Location:  metaPath,
+			ID:         childID,
+			SessionID:  child,
+			Runtime:    types.RuntimeGrok,
+			Role:       types.RoleSubagent,
+			Name:       meta.SubagentType,
+			Model:      meta.EffectiveModelID,
+			Project:    join.ProjectName(meta.ChildCWD),
+			TaskName:   meta.Description,
+			StartedAt:  grokTime(meta.StartedAt),
+			ActivityAt: &childActivity,
+			Location:   metaPath,
 		}
 		switch meta.Status {
 		case grokStatusRunning:

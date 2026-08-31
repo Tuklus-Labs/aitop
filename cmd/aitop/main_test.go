@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -16,6 +17,9 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"aitop/internal/act"
 	"aitop/internal/graph"
@@ -869,6 +873,20 @@ func TestProductionRunInteractiveRegistersGraph(t *testing.T) {
 	}
 }
 
+// TestMain pins the colour profile, for the same reason internal/ui does.
+// Under `go test` there is no terminal, so lipgloss detects Ascii and renders
+// every style as the bare word: dim text and bright text come out
+// byte-identical and any assertion about colour is vacuously true. This
+// package's screenshot tests render real frames through the production
+// RenderScreenshot dep, which sets TrueColor for the process when it runs --
+// so without this pin the answer depends on whether a screenshot test happened
+// to run first, which is test-order-dependent colour and worse than either
+// profile chosen deliberately.
+func TestMain(m *testing.M) {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	os.Exit(m.Run())
+}
+
 func occupancyMappableRows(rows []types.Row) int {
 	n := 0
 	for _, ev := range graph.OccupancyEventsFromRows(rows, time.Unix(1, 0).UTC()) {
@@ -1373,8 +1391,27 @@ func TestScreenshotGraphRendersTheGraphPane(t *testing.T) {
 		if status != 0 {
 			t.Fatalf("screenshot-graph-leaves-the-table-flag-alone rule violated: status=%d stderr=%q", status, stderr.String())
 		}
-		if frame := ansi.Strip(stdout.String()); strings.Contains(frame, "┤ graph ├") {
+		frame := ansi.Strip(stdout.String())
+		if strings.Contains(frame, "┤ graph ├") {
 			t.Fatalf("screenshot-graph-leaves-the-table-flag-alone rule violated: --screenshot drew the graph pane:\n%s", frame)
+		}
+		// The older flag gets the same size assertions as the newer one. This
+		// subtest already renders a real frame through the production deps, so
+		// the hole the graph flag had -- a hardcoded width passing the entire
+		// suite, because a frame of the right HEIGHT is the right height at any
+		// width -- was open here too and nothing else closes it: the spy
+		// renderers discard their int arguments, and internal/ui's geometry
+		// tests call Render directly rather than through runScreenshot.
+		lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+		if len(lines) != graphFrameH {
+			t.Fatalf("screenshot-renders-the-requested-size rule violated: %d lines want %d", len(lines), graphFrameH)
+		}
+		// Cell width, not byte length: the table is drawn in box glyphs.
+		for i, l := range lines {
+			if w := ansi.StringWidth(l); w != graphFrameW {
+				t.Fatalf("screenshot-renders-the-requested-size rule violated: line %d is %d cells wide, want %d: %q",
+					i, w, graphFrameW, l)
+			}
 		}
 	})
 }

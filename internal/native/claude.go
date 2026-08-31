@@ -121,7 +121,11 @@ func (s *claudeScanner) scan(now time.Time, liveProcs map[string]bool) ([]NodeSi
 			Name:      sidecar.Name,
 			Project:   join.ProjectName(sidecar.CWD),
 			StartedAt: epochMillis(sidecar.StartedAt),
-			Location:  sidecar.path,
+			// The same timestamp the horizon above judged, so the core's
+			// newborn rule and the horizon can never disagree about how
+			// fresh this session is.
+			ActivityAt: &sidecar.modTime,
+			Location:   sidecar.path,
 			// No state claim: occupancy holds the process truth for a primary,
 			// and a native claim would fight it every tick.
 		})
@@ -283,15 +287,17 @@ func (s *claudeScanner) scanStore(now time.Time, store, session string, parent *
 			continue
 		}
 
+		childActivity := activity
 		sighting := NodeSighting{
-			ID:        childID,
-			SessionID: agent,
-			Runtime:   types.RuntimeClaude,
-			Role:      types.RoleSubagent,
-			Name:      firstNonEmpty(meta.Name, meta.AgentType),
-			Model:     meta.Model,
-			TaskName:  meta.Description,
-			Location:  metaPath,
+			ID:         childID,
+			SessionID:  agent,
+			Runtime:    types.RuntimeClaude,
+			Role:       types.RoleSubagent,
+			Name:       firstNonEmpty(meta.Name, meta.AgentType),
+			Model:      meta.Model,
+			TaskName:   meta.Description,
+			ActivityAt: &childActivity,
+			Location:   metaPath,
 		}
 		if parent != nil {
 			sighting.Project = join.ProjectName(parent.CWD)
@@ -351,11 +357,12 @@ func (s *claudeScanner) appendSessionParent(session string, anchor claudeStoreAn
 	}
 	emitted[id] = true
 	sighting := NodeSighting{
-		ID:        id,
-		SessionID: session,
-		Runtime:   types.RuntimeClaude,
-		Role:      types.RolePrimary,
-		Location:  anchor.location,
+		ID:         id,
+		SessionID:  session,
+		Runtime:    types.RuntimeClaude,
+		Role:       types.RolePrimary,
+		ActivityAt: &anchor.newestActivity,
+		Location:   anchor.location,
 	}
 	if orphaned {
 		// The same absence that proves the children died proves the session
