@@ -49,6 +49,12 @@ func NewGrok(home string, latest func() []types.Row) *Collector {
 	return newCollector(grokSourceID, types.RuntimeGrok, &grokScanner{home: home}, latest)
 }
 
+// NewGrokOnce builds a collector for a one-shot over already-frozen Engine
+// rows. Fresh unbound sightings publish on the first and only poll.
+func NewGrokOnce(home string, latest func() []types.Row) *Collector {
+	return newCaptureCollector(grokSourceID, types.RuntimeGrok, &grokScanner{home: home}, latest)
+}
+
 // grokScanner reads ~/.grok. Every read tolerates a missing or unreadable path
 // by skipping it, so a half-written summary costs one session rather than the
 // whole runtime.

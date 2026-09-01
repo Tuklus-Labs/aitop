@@ -210,7 +210,7 @@ type frame struct {
 
 func (s *Styles) render(f frame) string {
 	if f.width < minWidth || f.height < minHeight {
-		return fmt.Sprintf("aitop  80x24 required (now %dx%d)  %s\n", f.width, f.height, snapshot.Canary)
+		return fmt.Sprintf("aitop  %dx%d required (now %dx%d)  %s\n", minWidth, minHeight, f.width, f.height, snapshot.Canary)
 	}
 	if f.mode == modePager {
 		return s.renderPager(f)

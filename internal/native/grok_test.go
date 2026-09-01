@@ -712,10 +712,10 @@ func TestGrokScannerChildLifecycle(t *testing.T) {
 	if states := countKind(events, graph.EventStateObserved); states != 2 {
 		t.Fatalf("grok-only-running-children-claim-state rule violated: state_observed=%d want=2 kinds=%v", states, kindsOf(events))
 	}
-	// Every state claim needs a heartbeat lane or it decays inside 6s and the
-	// node reads Stale two ticks later.
-	if beats := countKind(events, graph.EventHeartbeatObserved); beats != 2 {
-		t.Fatalf("grok-state-claims-get-heartbeat-lanes rule violated: heartbeat_observed=%d state_observed=%d kinds=%v", beats, countKind(events, graph.EventStateObserved), kindsOf(events))
+	// Every admitted nonterminal node gets a visibility lease. State claims use
+	// the same lane; terminal nodes are health-exempt and get none.
+	if beats := countKind(events, graph.EventHeartbeatObserved); beats != 6 {
+		t.Fatalf("grok nonterminal identity visibility lease rule violated: heartbeat_observed=%d want=6 state_observed=%d node_observed=%d exit_observed=%d kinds=%v", beats, countKind(events, graph.EventStateObserved), countKind(events, graph.EventNodeObserved), countKind(events, graph.EventExitObserved), kindsOf(events))
 	}
 	if exits := countKind(events, graph.EventExitObserved); exits != 2 {
 		t.Fatalf("grok-only-completed-and-failed-exit rule violated: exit_observed=%d want=2 kinds=%v", exits, kindsOf(events))

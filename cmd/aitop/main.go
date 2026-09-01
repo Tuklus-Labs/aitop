@@ -20,6 +20,7 @@ import (
 	actcodex "aitop/internal/act/codex"
 	actgrok "aitop/internal/act/grok"
 	actlocal "aitop/internal/act/local"
+	"aitop/internal/graph"
 	"aitop/internal/overlay/inference"
 	"aitop/internal/price"
 	"aitop/internal/snapshot"
@@ -153,6 +154,26 @@ func productionRunDeps() runDeps {
 // tell "wired to the engine's homes" from "wired to some homes".
 var attachGraph = snapshot.AttachGraph
 
+// attachGraphOnce is the matching one-shot seam. Its collectors publish from
+// the Engine rows CaptureOnce already froze rather than waiting for a binding
+// update that this path will never perform.
+var attachGraphOnce = snapshot.AttachGraphOnce
+
+var runGraphShadow = func(ctx context.Context, shadow *graph.Shadow) error {
+	return shadow.Run(ctx)
+}
+
+var runInteractiveProgram = func(ctx context.Context, model tea.Model, out io.Writer) error {
+	p := tea.NewProgram(
+		model,
+		tea.WithAltScreen(),
+		tea.WithOutput(out),
+		tea.WithContext(ctx),
+	)
+	_, err := p.Run()
+	return err
+}
+
 // nativeFirstTickBudget bounds how long a one-shot waits for the native lanes'
 // first disk walk, in total across every lane. A one-shot has no next tick: it
 // samples the graph once and exits, so a lane still walking a session store
@@ -207,7 +228,7 @@ func reapEngineOnCancel(ctx context.Context, wait func()) {
 
 func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snapshot, error) {
 	eng := productionEngine(opt)
-	shadow, occ, lanes, err := attachGraph(eng, productionGraphHomes(eng))
+	shadow, occ, lanes, err := attachGraphOnce(eng, productionGraphHomes(eng))
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +248,7 @@ func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snaps
 		return snap, err
 	}
 	done := make(chan error, 1)
-	go func() { done <- shadow.Run(runCtx) }()
+	go func() { done <- runGraphShadow(runCtx, shadow) }()
 	occ.Notify()
 	rows := []types.Row(nil)
 	if snap != nil {
@@ -238,13 +259,17 @@ func productionCaptureOnce(ctx context.Context, opt runOptions) (*snapshot.Snaps
 	// well before a native lane has finished walking a home, so it says nothing
 	// about whether the native evidence is in. This is the wait that does.
 	lanes.WaitNativeEvidence(shadow, nativeFirstTickBudget)
+	cancel()
+	var graphErr error
+	select {
+	case graphErr = <-done:
+	case <-time.After(2 * time.Second):
+	}
 	if snap != nil {
 		snap.Graph = shadow.Snapshot()
 	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
+	if graphErr != nil {
+		return snap, fmt.Errorf("capture graph: %w", graphErr)
 	}
 	return snap, nil
 }
@@ -281,14 +306,7 @@ func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegis
 		go func() { _ = shadow.Run(ctx) }()
 	}
 	th := theme.Resolve(opt.ThemePath, "")
-	p := tea.NewProgram(
-		ui.New(src, th, actor.Enqueue),
-		tea.WithAltScreen(),
-		tea.WithOutput(out),
-		tea.WithContext(ctx),
-	)
-	_, err = p.Run()
-	return err
+	return runInteractiveProgram(ctx, ui.New(src, th, actor.Enqueue), out)
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {

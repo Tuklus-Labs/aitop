@@ -1108,6 +1108,7 @@ func (r *Reconciler) stageDueStateExpiry(txn *reconcileTxn, now time.Time) error
 		incarnation IncarnationID
 	}
 	affected := make(map[actorIncarnation]struct{})
+	expiredNativePoll := make(map[actorIncarnation]struct{})
 	stateKeys := make(map[contributionKey]struct{}, len(r.stateContributions)+len(txn.stateContributions))
 	for key := range r.stateContributions {
 		stateKeys[key] = struct{}{}
@@ -1133,35 +1134,20 @@ func (r *Reconciler) stageDueStateExpiry(txn *reconcileTxn, now time.Time) error
 		if epoch == nil || now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
 			continue
 		}
-		if txn.healthEpochs == nil {
-			txn.healthEpochs = make(map[contributionKey]*healthEpoch)
+		owner := actorIncarnation{actor: key.actor, incarnation: key.incarnation}
+		if r.nativeIdentityMatchesHealthKey(key.actor, key.incarnation, txn, key) {
+			expiredNativePoll[owner] = struct{}{}
 		}
-		txn.healthEpochs[key] = nil
-		txn.historyUnits--
-		if state := candidateStateContribution(r.stateContributions, txn.stateContributions, key); state != nil && !state.evidence.Value.Terminal() {
-			if txn.stateContributions == nil {
-				txn.stateContributions = make(map[contributionKey]*stateContribution)
-			}
-			txn.stateContributions[key] = nil
-			txn.historyUnits--
+		r.purgeHealthLane(txn, key)
+		affected[owner] = struct{}{}
+	}
+	for owner, deadline := range r.missingNativeHealthDeadlines(txn) {
+		if now.Before(deadline) || !r.nativeIdentityShouldBeStale(owner.actor, owner.incarnation, txn, now) {
+			continue
 		}
-		approvalKeys := make(map[approvalKey]struct{}, len(r.approvalRelationships)+len(txn.approvalRelationships))
-		for approval := range r.approvalRelationships {
-			approvalKeys[approval] = struct{}{}
-		}
-		for approval := range txn.approvalRelationships {
-			approvalKeys[approval] = struct{}{}
-		}
-		for approval := range approvalKeys {
-			if approval.actor == key.actor && approval.incarnation == key.incarnation && approval.source == key.source && candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
-				if txn.approvalRelationships == nil {
-					txn.approvalRelationships = make(map[approvalKey]*stateContribution)
-				}
-				txn.approvalRelationships[approval] = nil
-				txn.historyUnits--
-			}
-		}
-		affected[actorIncarnation{actor: key.actor, incarnation: key.incarnation}] = struct{}{}
+		key := actorIncarnation{actor: owner.actor, incarnation: owner.incarnation}
+		expiredNativePoll[key] = struct{}{}
+		affected[key] = struct{}{}
 	}
 	actors := make([]actorIncarnation, 0, len(affected))
 	for key := range affected {
@@ -1180,6 +1166,11 @@ func (r *Reconciler) stageDueStateExpiry(txn *reconcileTxn, now time.Time) error
 		}
 		if err := r.stageStateProjection(txn, key.actor, key.incarnation, now); err != nil {
 			return err
+		}
+		if _, expired := expiredNativePoll[key]; expired {
+			if err := r.stageNativeStaleBit(txn, key.actor, key.incarnation, r.nativeIdentityShouldBeStale(key.actor, key.incarnation, txn, now)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1443,6 +1434,9 @@ func (r *Reconciler) nextDeadline(after time.Time) (time.Time, bool) {
 		if epoch != nil {
 			consider(epoch.lastHeartbeat.Add(r.config.HookFreshness))
 		}
+	}
+	for _, deadline := range r.missingNativeHealthDeadlines(&reconcileTxn{}) {
+		consider(deadline)
 	}
 	for key := range r.messageExpiryIndex {
 		consider(key.expiresAt)
@@ -2681,11 +2675,17 @@ func (r *Reconciler) stageHeartbeatObserved(txn *reconcileTxn, event Event, now 
 	if current == nil || current.incarnation != event.ActorIncarnation {
 		return &AdmissionError{Kind: AdmissionEndpointIdentity}
 	}
+	if candidateNodeRecord(r.nodes, txn.nodes, event.Actor) == nil {
+		return &AdmissionError{Kind: AdmissionEndpointIdentity}
+	}
 	key := contributionKey{actor: event.Actor, incarnation: event.ActorIncarnation, source: event.Source}
 	txn.acceptedOrdinal++
-	rolled := r.refreshHealthEpoch(txn, key, event.ReceivedAt, txn.acceptedOrdinal)
-	if rolled {
-		return r.stageStateProjection(txn, event.Actor, event.ActorIncarnation, now)
+	r.refreshHealthEpoch(txn, key, event.ReceivedAt, txn.acceptedOrdinal)
+	if err := r.stageStateProjection(txn, event.Actor, event.ActorIncarnation, now); err != nil {
+		return err
+	}
+	if event.Source.Ref.Authority == AuthorityNative && event.Source.Mode == SourceObservation && r.nativeIdentityMatchesHealthKey(event.Actor, event.ActorIncarnation, txn, key) {
+		return r.stageNativeStaleBit(txn, event.Actor, event.ActorIncarnation, false)
 	}
 	return nil
 }
@@ -3146,6 +3146,10 @@ func (r *Reconciler) stageNodeObserved(txn *reconcileTxn, event Event) error {
 				after.value.Transitions = cloneTransitions(before.value.Transitions, r.config.TransitionLimit)
 			}
 		}
+	}
+	if before != nil && after.value.State.Stale && event.Source.Ref.Authority != AuthorityNative {
+		after.value.State.Stale = false
+		txn.change.State = true
 	}
 	after.value.Partial = nodePartialWithGaps(after, r.gaps, txn.gaps)
 	if before != nil && after.value.Partial != before.value.Partial {
@@ -3611,7 +3615,7 @@ func (r *Reconciler) stageStateObserved(txn *reconcileTxn, event Event, now time
 	}
 	txn.acceptedOrdinal++
 	if !data.State.Terminal() && (event.Source.Ref.Authority == AuthorityNative || event.Source.Ref.Authority == AuthorityHook) {
-		r.refreshHealthEpoch(txn, key, event.ReceivedAt, txn.acceptedOrdinal)
+		r.refreshHealthEpoch(txn, stateHealthEpochKey(key), event.ReceivedAt, txn.acceptedOrdinal)
 	}
 	contribution := &stateContribution{order: contributionOrder{receivedAt: event.ReceivedAt, ordinal: txn.acceptedOrdinal}, evidence: evidence, capability: CapabilityState}
 	if data.State == StateApproval || data.State == StateBlocked {
@@ -3705,6 +3709,29 @@ func (r *Reconciler) refreshHealthEpoch(txn *reconcileTxn, key contributionKey, 
 	return rolled
 }
 
+// stateHealthEpochKey maps immutable native state/identity evidence onto the
+// observation-mode heartbeat lane PublishNativePollHeartbeats owns. The
+// direction is deliberately one-way: a malformed immutable heartbeat remains
+// a distinct lane and cannot refresh observation evidence.
+func stateHealthEpochKey(key contributionKey) contributionKey {
+	if key.source.Ref.Authority == AuthorityNative && key.source.Mode == SourceImmutable {
+		key.source.Mode = SourceObservation
+	}
+	return key
+}
+
+func nativePollIdentityKey(key contributionKey) bool {
+	if key.source.Ref.Authority != AuthorityNative || key.source.Mode != SourceImmutable {
+		return false
+	}
+	switch key.source.Ref.ID {
+	case "aitop:native:claude", "aitop:native:codex", "aitop:native:grok":
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *Reconciler) purgeHealthLane(txn *reconcileTxn, key contributionKey) {
 	if candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, key) != nil {
 		if txn.healthEpochs == nil {
@@ -3713,11 +3740,25 @@ func (r *Reconciler) purgeHealthLane(txn *reconcileTxn, key contributionKey) {
 		txn.healthEpochs[key] = nil
 		txn.historyUnits--
 	}
-	if state := candidateStateContribution(r.stateContributions, txn.stateContributions, key); state != nil && !state.evidence.Value.Terminal() {
+	stateKeys := make(map[contributionKey]struct{}, len(r.stateContributions)+len(txn.stateContributions))
+	for stateKey := range r.stateContributions {
+		stateKeys[stateKey] = struct{}{}
+	}
+	for stateKey := range txn.stateContributions {
+		stateKeys[stateKey] = struct{}{}
+	}
+	for stateKey := range stateKeys {
+		state := candidateStateContribution(r.stateContributions, txn.stateContributions, stateKey)
+		if stateHealthEpochKey(stateKey) != key || state == nil || state.evidence.Value.Terminal() {
+			continue
+		}
+		if stateKey.source.Ref.Authority == AuthorityNative && stateKey.source.Mode == SourceImmutable {
+			continue
+		}
 		if txn.stateContributions == nil {
 			txn.stateContributions = make(map[contributionKey]*stateContribution)
 		}
-		txn.stateContributions[key] = nil
+		txn.stateContributions[stateKey] = nil
 		txn.historyUnits--
 	}
 	keys := make(map[approvalKey]struct{}, len(r.approvalRelationships)+len(txn.approvalRelationships))
@@ -3728,7 +3769,8 @@ func (r *Reconciler) purgeHealthLane(txn *reconcileTxn, key contributionKey) {
 		keys[approval] = struct{}{}
 	}
 	for approval := range keys {
-		if approval.actor == key.actor && approval.incarnation == key.incarnation && approval.source == key.source && candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
+		approvalHealthKey := stateHealthEpochKey(contributionKey{actor: approval.actor, incarnation: approval.incarnation, source: approval.source})
+		if approvalHealthKey == key && candidateApproval(r.approvalRelationships, txn.approvalRelationships, approval) != nil {
 			if txn.approvalRelationships == nil {
 				txn.approvalRelationships = make(map[approvalKey]*stateContribution)
 			}
@@ -3795,7 +3837,7 @@ func (r *Reconciler) foldState(actor NodeID, incarnation IncarnationID, txn *rec
 	var winnerKey contributionKey
 	for _, candidate := range values {
 		if !candidate.value.evidence.Value.Terminal() && candidate.key.source.Ref.Authority != AuthorityPassive {
-			epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, candidate.key)
+			epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, stateHealthEpochKey(candidate.key))
 			if epoch == nil || !now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
 				continue
 			}
@@ -3861,7 +3903,7 @@ func (r *Reconciler) approvalValues(actor NodeID, incarnation IncarnationID, txn
 		if key.actor != actor || key.incarnation != incarnation || value == nil {
 			return
 		}
-		healthKey := contributionKey{actor: key.actor, incarnation: key.incarnation, source: key.source}
+		healthKey := stateHealthEpochKey(contributionKey{actor: key.actor, incarnation: key.incarnation, source: key.source})
 		epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, healthKey)
 		if epoch == nil || !now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
 			return
@@ -3912,12 +3954,18 @@ func (r *Reconciler) stageStateProjection(txn *reconcileTxn, actor NodeID, incar
 		after.stateSources = sources
 	}
 	after.value.State = projectNodeState(winner)
-	if before.value.State != after.value.State {
+	after.value.State.Stale = before.value.State.Stale
+	if winner.Value.Terminal() {
+		after.value.State.Stale = false
+	}
+	if !nodeStateEvidenceEqual(before.value.State, after.value.State) {
 		transitions, err := r.nextTransitions(txn, actor, now, after.value.State)
 		if err != nil {
 			return err
 		}
 		after.value.Transitions = transitions
+	}
+	if before.value.State != after.value.State {
 		txn.change.State = true
 	}
 	applyTerminalMetadata(&after.value, winner, r.config)
@@ -3937,6 +3985,150 @@ func (r *Reconciler) stageStateProjection(txn *reconcileTxn, actor NodeID, incar
 		}
 		txn.nodes[actor] = after
 	}
+	return nil
+}
+
+func nodeStateEvidenceEqual(left, right NodeState) bool {
+	return left.Value == right.Value && left.Source == right.Source && left.Since.Equal(right.Since) && left.ValidUntil.Equal(right.ValidUntil)
+}
+
+func (r *Reconciler) visitNodeContributions(actor NodeID, incarnation IncarnationID, txn *reconcileTxn, accept func(contributionKey, *nodeFieldContribution)) {
+	visitCandidate := func(key contributionKey, value *nodeFieldContribution) {
+		if key.actor != actor || key.incarnation != incarnation || value == nil {
+			return
+		}
+		accept(key, value)
+	}
+	for key, value := range r.nodeContributions {
+		if replacement, exists := txn.nodeContributions[key]; exists {
+			value = replacement
+		}
+		visitCandidate(key, value)
+	}
+	for key, value := range txn.nodeContributions {
+		if _, exists := r.nodeContributions[key]; !exists {
+			visitCandidate(key, value)
+		}
+	}
+}
+
+func (r *Reconciler) nativeIdentityMatchesHealthKey(actor NodeID, incarnation IncarnationID, txn *reconcileTxn, healthKey contributionKey) bool {
+	matched := false
+	r.visitNodeContributions(actor, incarnation, txn, func(key contributionKey, _ *nodeFieldContribution) {
+		if key.source.Ref.Authority == AuthorityNative && stateHealthEpochKey(key) == healthKey {
+			matched = true
+		}
+	})
+	return matched
+}
+
+func (r *Reconciler) missingNativeHealthDeadlines(txn *reconcileTxn) map[contributionKey]time.Time {
+	type ownerHealth struct {
+		native, nonNative, hasHealth bool
+		deadline                     time.Time
+	}
+	owners := make(map[contributionKey]*ownerHealth)
+	keys := make(map[contributionKey]struct{}, len(r.nodeContributions))
+	for key := range r.nodeContributions {
+		keys[key] = struct{}{}
+	}
+	if txn != nil {
+		for key := range txn.nodeContributions {
+			keys[key] = struct{}{}
+		}
+	}
+	for key := range keys {
+		var overlay map[contributionKey]*nodeFieldContribution
+		var healthOverlay map[contributionKey]*healthEpoch
+		if txn != nil {
+			overlay, healthOverlay = txn.nodeContributions, txn.healthEpochs
+		}
+		contribution := candidateNodeContribution(r.nodeContributions, overlay, key)
+		if contribution == nil {
+			continue
+		}
+		owner := contributionKey{actor: key.actor, incarnation: key.incarnation}
+		info := owners[owner]
+		if info == nil {
+			info = &ownerHealth{}
+			owners[owner] = info
+		}
+		if !nativePollIdentityKey(key) {
+			if key.source.Ref.Authority != AuthorityNative {
+				info.nonNative = true
+			} else if candidateHealthEpoch(r.healthEpochs, healthOverlay, stateHealthEpochKey(key)) != nil {
+				info.hasHealth = true
+			}
+			continue
+		}
+		info.native = true
+		if candidateHealthEpoch(r.healthEpochs, healthOverlay, stateHealthEpochKey(key)) != nil {
+			info.hasHealth = true
+		}
+		deadline := contribution.order.receivedAt.Add(r.config.HookFreshness)
+		if info.deadline.IsZero() || deadline.Before(info.deadline) {
+			info.deadline = deadline
+		}
+	}
+	result := make(map[contributionKey]time.Time)
+	for owner, info := range owners {
+		if info == nil || !info.native || info.nonNative || info.hasHealth || info.deadline.IsZero() {
+			continue
+		}
+		var nodeOverlay map[NodeID]*nodeRecord
+		if txn != nil {
+			nodeOverlay = txn.nodes
+		}
+		node := candidateNodeRecord(r.nodes, nodeOverlay, owner.actor)
+		if node == nil || node.value.Incarnation != owner.incarnation || node.value.State.Stale || node.value.State.Value.Terminal() {
+			continue
+		}
+		result[owner] = info.deadline
+	}
+	return result
+}
+
+func (r *Reconciler) nativeIdentityShouldBeStale(actor NodeID, incarnation IncarnationID, txn *reconcileTxn, now time.Time) bool {
+	node := candidateNodeRecord(r.nodes, txn.nodes, actor)
+	if node == nil || node.value.State.Value.Terminal() {
+		return false
+	}
+	hasNative := false
+	hasNonNative := false
+	freshNative := false
+	r.visitNodeContributions(actor, incarnation, txn, func(key contributionKey, _ *nodeFieldContribution) {
+		if key.source.Ref.Authority != AuthorityNative {
+			hasNonNative = true
+			return
+		}
+		hasNative = true
+		epoch := candidateHealthEpoch(r.healthEpochs, txn.healthEpochs, stateHealthEpochKey(key))
+		if epoch != nil && now.Before(epoch.lastHeartbeat.Add(r.config.HookFreshness)) {
+			freshNative = true
+		}
+	})
+	return hasNative && !hasNonNative && !freshNative
+}
+
+func (r *Reconciler) stageNativeStaleBit(txn *reconcileTxn, actor NodeID, incarnation IncarnationID, stale bool) error {
+	current := r.currentIncarnations[actor]
+	if current == nil || current.incarnation != incarnation {
+		return nil
+	}
+	before := candidateNodeRecord(r.nodes, txn.nodes, actor)
+	if before == nil {
+		return reconcileActorInvariant("state-owner", actor)
+	}
+	if before.value.State.Stale == stale {
+		return nil
+	}
+	after := cloneNodeRecord(before, r.config.TransitionLimit)
+	after.value.State.Stale = stale
+	if txn.nodes == nil {
+		txn.nodes = make(map[NodeID]*nodeRecord)
+	}
+	txn.nodes[actor] = after
+	txn.change.State = true
 	return nil
 }
 

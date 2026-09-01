@@ -3188,6 +3188,289 @@ func TestReconcileNativeHeartbeatRefreshesOnlyMatchingActorLane(t *testing.T) {
 		t.Fatalf("Task6 actorless heartbeat validation atomicity rule violated: event=%+v change=%+v err=%v isAdmission=%t ownersBefore=%+v ownersAfter=%+v", actorless, actorlessChange, actorlessErr, errors.Is(actorlessErr, ErrAdmission), beforeActorless, task6ReducerOwners(r))
 	}
 }
+
+func TestReconcileNativeObservationHeartbeatRefreshesImmutableStateLane(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	stateSource := task6Source("native-cross-mode-source", SourceImmutable, AuthorityNative, 601)
+	heartbeatSource := stateSource
+	heartbeatSource.Mode = SourceObservation
+	t0 := reconcileTestEpoch
+	nodeEvent := task5NodeEventFromSource("native-cross-mode-node", stateSource, "native-cross-mode", "native-cross-mode-inc", t0.Add(-time.Second))
+	task6MustApplyAt(t, r, nodeEvent, nodeEvent.ReceivedAt)
+	state := task6StateEvent("native-cross-mode-state", stateSource, "native-cross-mode", "native-cross-mode-inc", t0, StateActive, "", 0)
+	task6MustApplyAt(t, r, state, t0)
+	heartbeatAt := t0.Add(4 * time.Second)
+	heartbeat := task6HeartbeatEvent("native-cross-mode-heartbeat", heartbeatSource, "native-cross-mode", "native-cross-mode-inc", nil, heartbeatAt)
+	task6MustApplyAt(t, r, heartbeat, heartbeatAt)
+
+	deadline := t0.Add(r.config.HookFreshness)
+	change := task6MustAdvance(t, r, deadline)
+	node := task6Node(t, r, "native-cross-mode", deadline)
+	if node.State.Value != StateActive || node.State.Source != stateSource.Ref || !node.State.Since.Equal(t0) {
+		t.Fatalf("native observation heartbeat refreshes immutable state lane rule violated: change=%+v node=%+v stateSource=%+v heartbeatSource=%+v deadline=%s health=%s", change, node, stateSource, heartbeatSource, deadline, task6HealthImage(r))
+	}
+}
+
+func TestReconcileNativePollFreshnessProjectsStale(t *testing.T) {
+	cfg := DefaultReconcileConfig()
+	cfg.MaxNodes = 1
+	r := task5MustReconciler(t, cfg)
+	const actor = NodeID("native-stale-node")
+	const incarnation = IncarnationID("native-stale-inc")
+	identitySource := task6Source("native-stale-source", SourceImmutable, AuthorityNative, 602)
+	heartbeatSource := identitySource
+	heartbeatSource.Mode = SourceObservation
+	t0 := reconcileTestEpoch
+	nodeEvent := task5NodeEventFromSource("native-stale-node", identitySource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, nodeEvent, t0)
+	heartbeat := task6HeartbeatEvent("native-stale-heartbeat", heartbeatSource, actor, incarnation, nil, t0)
+	task6MustApplyAt(t, r, heartbeat, t0)
+	deadline := t0.Add(r.config.HookFreshness)
+
+	beforeDeadline := task6MustAdvance(t, r, deadline.Add(-time.Nanosecond))
+	fresh := task6Node(t, r, actor, deadline.Add(-time.Nanosecond))
+	if fresh.State.Stale {
+		t.Fatalf("native poll freshness remains fresh through D-minus-one rule violated: change=%+v node=%+v deadline=%s health=%s", beforeDeadline, fresh, deadline, task6HealthImage(r))
+	}
+	beforeStateRevision := r.stateRevision
+	beforeTopologyRevision := r.topologyRevision
+	beforeTransitions := len(fresh.Transitions)
+	beforeNodeContributions := len(r.nodeContributions)
+	beforeFingerprints := len(r.fingerprints)
+	change := task6MustAdvance(t, r, deadline)
+	stale := task6Node(t, r, actor, deadline)
+	if !stale.State.Stale || stale.ID != actor || stale.Incarnation != incarnation || stale.Process != nil || stale.CompletedAt != nil || stale.FailedAt != nil || stale.GhostExpiresAt != nil {
+		t.Fatalf("native poll exact-expiry stale projection rule violated: change=%+v node=%+v deadline=%s health=%s", change, stale, deadline, task6HealthImage(r))
+	}
+	if len(r.nodes) != 1 || len(r.nodeContributions) != beforeNodeContributions || len(r.fingerprints) != beforeFingerprints || r.topologyRevision != beforeTopologyRevision || r.stateRevision != beforeStateRevision+1 || len(stale.Transitions) != beforeTransitions || len(r.gaps) != 0 {
+		t.Fatalf("native stale projection in-place ownership rule violated: change=%+v nodes=%d nodeContributions=%d/%d fingerprints=%d/%d topology=%d/%d stateRevision=%d/%d transitions=%d/%d gaps=%d", change, len(r.nodes), len(r.nodeContributions), beforeNodeContributions, len(r.fingerprints), beforeFingerprints, r.topologyRevision, beforeTopologyRevision, r.stateRevision, beforeStateRevision+1, len(stale.Transitions), beforeTransitions, len(r.gaps))
+	}
+
+	lateAt := deadline.Add(time.Second)
+	late := task6HeartbeatEvent("native-stale-heartbeat-late", heartbeatSource, actor, incarnation, nil, lateAt)
+	lateChange := task6MustApplyAt(t, r, late, lateAt)
+	restored := task6Node(t, r, actor, lateAt)
+	if restored.State.Stale || restored.State.Value != "" || len(r.stateContributions) != 0 || len(restored.Transitions) != beforeTransitions || r.stateRevision != beforeStateRevision+2 {
+		t.Fatalf("native late poll clears only stale projection rule violated: change=%+v node=%+v stateContributions=%d transitions=%d/%d stateRevision=%d/%d health=%s", lateChange, restored, len(r.stateContributions), len(restored.Transitions), beforeTransitions, r.stateRevision, beforeStateRevision+2, task6HealthImage(r))
+	}
+
+	spawnReducer := task5MustReconciler(t, DefaultReconcileConfig())
+	const parent = NodeID("native-stale-parent")
+	const child = NodeID("native-stale-child")
+	const parentIncarnation = IncarnationID("native-stale-parent-inc")
+	const childIncarnation = IncarnationID("native-stale-child-inc")
+	spawnSource := task6Source("native-stale-spawn-source", SourceImmutable, AuthorityNative, 605)
+	spawnHeartbeatSource := spawnSource
+	spawnHeartbeatSource.Mode = SourceObservation
+	parentEvent := task5NodeEventFromSource("native-stale-parent-node", spawnSource, parent, parentIncarnation, t0)
+	childEvent := task5NodeEventFromSource("native-stale-child-node", spawnSource, child, childIncarnation, t0.Add(time.Nanosecond))
+	task6MustApplyAt(t, spawnReducer, parentEvent, parentEvent.ReceivedAt)
+	task6MustApplyAt(t, spawnReducer, childEvent, childEvent.ReceivedAt)
+	spawn := Event{
+		Schema: 1, Source: spawnSource,
+		ID: ImmutableEventID(types.RuntimeCodex, "native-stale-spawn", "native-stale-test"), ReceivedAt: t0.Add(2 * time.Nanosecond),
+		Kind: EventRelationshipObserved, Actor: parent, ActorIncarnation: parentIncarnation, Target: child, TargetIncarnation: childIncarnation,
+		Data: RelationshipObserved{Type: EdgeSpawn, Provenance: ProvenanceNative, Relationship: "native-stale-child"},
+	}
+	task6MustApplyAt(t, spawnReducer, spawn, spawn.ReceivedAt)
+	childHeartbeat := task6HeartbeatEvent("native-stale-child-heartbeat", spawnHeartbeatSource, child, childIncarnation, nil, t0)
+	task6MustApplyAt(t, spawnReducer, childHeartbeat, childHeartbeat.ReceivedAt)
+	task6MustAdvance(t, spawnReducer, t0.Add(spawnReducer.config.HookFreshness))
+	spawnSnapshot := spawnReducer.Snapshot(t0.Add(spawnReducer.config.HookFreshness))
+	staleChild := task6Node(t, spawnReducer, child, t0.Add(spawnReducer.config.HookFreshness))
+	if !staleChild.State.Stale || len(spawnSnapshot.Nodes) != 2 || len(spawnSnapshot.Edges) != 1 || spawnSnapshot.Edges[0].Lifecycle != LifecycleActive || spawnSnapshot.Edges[0].Provenance != ProvenanceNative || spawnSnapshot.Edges[0].Source != parent || spawnSnapshot.Edges[0].Target != child {
+		t.Fatalf("native stale identity preserves spawn provenance rule violated: child=%+v nodes=%d edges=%+v", staleChild, len(spawnSnapshot.Nodes), spawnSnapshot.Edges)
+	}
+}
+
+func TestReconcileNativeIdentityWithoutHeartbeatBecomesStale(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-missing-heartbeat")
+	const incarnation = IncarnationID("native-missing-heartbeat-inc")
+	nativeSource := task6Source("aitop:native:codex", SourceImmutable, AuthorityNative, 615)
+	t0 := reconcileTestEpoch
+	nodeEvent := task5NodeEventFromSource("native-missing-heartbeat-node", nativeSource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, nodeEvent, t0)
+	customNative := task6Source("custom-native-without-poll-lease", SourceImmutable, AuthorityNative, 616)
+	customNode := task5NodeEventFromSource("native-missing-heartbeat-custom-node", customNative, actor, incarnation, t0.Add(time.Nanosecond))
+	task6MustApplyAt(t, r, customNode, customNode.ReceivedAt)
+	deadline := t0.Add(r.config.HookFreshness)
+	next, ok := r.nextDeadline(time.Time{})
+	if !ok || !next.Equal(deadline) || len(r.healthEpochs) != 0 {
+		t.Fatalf("native missing-heartbeat fallback deadline rule violated: available=%t next=%s want=%s health=%s", ok, next, deadline, task6HealthImage(r))
+	}
+	task6MustAdvance(t, r, deadline.Add(-time.Nanosecond))
+	fresh := task6Node(t, r, actor, deadline.Add(-time.Nanosecond))
+	if fresh.State.Stale {
+		t.Fatalf("native missing-heartbeat remains fresh through D-minus-one rule violated: node=%+v deadline=%s", fresh, deadline)
+	}
+	change := task6MustAdvance(t, r, deadline)
+	stale := task6Node(t, r, actor, deadline)
+	if !stale.State.Stale || stale.State.Value != "" || len(r.healthEpochs) != 0 || len(r.nodeContributions) != 2 {
+		t.Fatalf("native missing-heartbeat exact-expiry stale projection rule violated: change=%+v node=%+v health=%s nodeContributions=%d", change, stale, task6HealthImage(r), len(r.nodeContributions))
+	}
+}
+
+func TestReconcileNativePollExpiryPreservesProcessBoundNode(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-process-bound")
+	const incarnation = IncarnationID("native-process-inc")
+	nativeSource := task6Source("native-process-source", SourceImmutable, AuthorityNative, 603)
+	heartbeatSource := nativeSource
+	heartbeatSource.Mode = SourceObservation
+	passiveSource := task6Source("occupancy-process-source", SourceOccupancy, AuthorityPassive, 604)
+	t0 := reconcileTestEpoch
+	task6MustApplyAt(t, r, task5NodeEventFromSource("native-process-node", nativeSource, actor, incarnation, t0), t0)
+	process := &ProcessIdentity{PID: 4242, StartTicks: 7241979}
+	passiveNode := task5NodeEventFromSource("occupancy-process-node", passiveSource, actor, incarnation, t0.Add(time.Nanosecond))
+	passiveNode.Data = NodeObserved{Runtime: types.RuntimeCodex, Role: types.RolePrimary, Process: process}
+	task6MustApplyAt(t, r, passiveNode, passiveNode.ReceivedAt)
+	passiveState := task6StateEvent("occupancy-process-state", passiveSource, actor, incarnation, t0.Add(2*time.Nanosecond), StateActive, "", 0)
+	task6MustApplyAt(t, r, passiveState, passiveState.ReceivedAt)
+	heartbeat := task6HeartbeatEvent("native-process-heartbeat", heartbeatSource, actor, incarnation, nil, t0)
+	task6MustApplyAt(t, r, heartbeat, t0)
+	deadline := t0.Add(r.config.HookFreshness)
+	change := task6MustAdvance(t, r, deadline)
+	node := task6Node(t, r, actor, deadline)
+	if node.State.Stale || node.State.Value != StateActive || node.State.Source != passiveSource.Ref || node.Process == nil || *node.Process != *process || node.CompletedAt != nil || node.FailedAt != nil || node.GhostExpiresAt != nil {
+		t.Fatalf("native poll expiry preserves process-bound fallback rule violated: change=%+v node=%+v wantProcess=%+v passiveSource=%+v deadline=%s health=%s", change, node, process, passiveSource, deadline, task6HealthImage(r))
+	}
+}
+
+func TestReconcileNativePollRecoveryRestoresRetainedState(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-state-recovery")
+	const incarnation = IncarnationID("native-state-recovery-inc")
+	stateSource := task6Source("native-state-recovery-source", SourceImmutable, AuthorityNative, 609)
+	heartbeatSource := stateSource
+	heartbeatSource.Mode = SourceObservation
+	t0 := reconcileTestEpoch
+	node := task5NodeEventFromSource("native-state-recovery-node", stateSource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, node, t0)
+	state := task6StateEvent("native-state-recovery-active", stateSource, actor, incarnation, t0, StateActive, "", 0)
+	task6MustApplyAt(t, r, state, t0)
+	heartbeat := task6HeartbeatEvent("native-state-recovery-heartbeat", heartbeatSource, actor, incarnation, nil, t0)
+	task6MustApplyAt(t, r, heartbeat, t0)
+	deadline := t0.Add(r.config.HookFreshness)
+	task6MustAdvance(t, r, deadline)
+	stale := task6Node(t, r, actor, deadline)
+	if !stale.State.Stale || stale.State.Value != "" || len(r.stateContributions) != 1 {
+		t.Fatalf("native poll expiry retains gated state evidence rule violated: node=%+v stateContributions=%d deadline=%s health=%s", stale, len(r.stateContributions), deadline, task6HealthImage(r))
+	}
+	recoveryAt := deadline.Add(time.Second)
+	replayChange, replayErr := r.Apply(state, recoveryAt)
+	if replayErr != nil || replayChange != (ChangeSet{}) {
+		t.Fatalf("native poll recovery immutable state replay fixture rule violated: change=%+v error=%v event=%+v", replayChange, replayErr, state)
+	}
+	recovery := task6HeartbeatEvent("native-state-recovery-heartbeat-late", heartbeatSource, actor, incarnation, nil, recoveryAt)
+	recoveryChange := task6MustApplyAt(t, r, recovery, recoveryAt)
+	restored := task6Node(t, r, actor, recoveryAt)
+	if restored.State.Stale || restored.State.Value != StateActive || restored.State.Source != stateSource.Ref || len(r.stateContributions) != 1 {
+		t.Fatalf("native matching poll restores retained state evidence rule violated: change=%+v node=%+v stateSource=%+v stateContributions=%d health=%s", recoveryChange, restored, stateSource, len(r.stateContributions), task6HealthImage(r))
+	}
+}
+
+func TestReconcileStateWithoutIdentityDoesNotClearNativeStale(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-stale-with-hook-state")
+	const incarnation = IncarnationID("native-stale-with-hook-state-inc")
+	nativeSource := task6Source("native-stale-with-hook-state-source", SourceImmutable, AuthorityNative, 610)
+	heartbeatSource := nativeSource
+	heartbeatSource.Mode = SourceObservation
+	t0 := reconcileTestEpoch
+	node := task5NodeEventFromSource("native-stale-with-hook-state-node", nativeSource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, node, t0)
+	heartbeat := task6HeartbeatEvent("native-stale-with-hook-state-heartbeat", heartbeatSource, actor, incarnation, nil, t0)
+	task6MustApplyAt(t, r, heartbeat, t0)
+	deadline := t0.Add(r.config.HookFreshness)
+	task6MustAdvance(t, r, deadline)
+
+	hookSource := task6Source("native-stale-with-hook-state-hook", SourceProtocol, AuthorityHook, 611)
+	hookAt := deadline.Add(time.Second)
+	hookState := task6StateEvent("native-stale-with-hook-state-active", hookSource, actor, incarnation, hookAt, StateActive, "", 1)
+	task6MustApplyAt(t, r, hookState, hookAt)
+	hookOnly := task6Node(t, r, actor, hookAt)
+	if !hookOnly.State.Stale || hookOnly.State.Value != StateActive || hookOnly.State.Source != hookSource.Ref || len(r.nodeContributions) != 1 {
+		t.Fatalf("non-identity state cannot clear native stale rule violated: node=%+v hookSource=%+v nodeContributions=%d health=%s", hookOnly, hookSource, len(r.nodeContributions), task6HealthImage(r))
+	}
+
+	passiveSource := task6Source("native-stale-with-hook-state-passive", SourceOccupancy, AuthorityPassive, 612)
+	passiveAt := hookAt.Add(time.Second)
+	passiveNode := task5NodeEventFromSource("native-stale-with-hook-state-passive-node", passiveSource, actor, incarnation, passiveAt)
+	passiveNode.Data = NodeObserved{Runtime: types.RuntimeCodex, Role: types.RolePrimary}
+	passiveChange := task6MustApplyAt(t, r, passiveNode, passiveAt)
+	owned := task6Node(t, r, actor, passiveAt)
+	if owned.State.Stale || owned.State.Value != StateActive || owned.State.Source != hookSource.Ref || len(r.nodeContributions) != 2 {
+		t.Fatalf("non-native identity clears native stale rule violated: change=%+v node=%+v hookSource=%+v nodeContributions=%d", passiveChange, owned, hookSource, len(r.nodeContributions))
+	}
+}
+
+func TestReconcileTerminalEvidenceClearsNativeStale(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-stale-before-terminal")
+	const incarnation = IncarnationID("native-stale-before-terminal-inc")
+	nativeSource := task6Source("native-stale-before-terminal-source", SourceImmutable, AuthorityNative, 613)
+	heartbeatSource := nativeSource
+	heartbeatSource.Mode = SourceObservation
+	t0 := reconcileTestEpoch
+	node := task5NodeEventFromSource("native-stale-before-terminal-node", nativeSource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, node, t0)
+	heartbeat := task6HeartbeatEvent("native-stale-before-terminal-heartbeat", heartbeatSource, actor, incarnation, nil, t0)
+	task6MustApplyAt(t, r, heartbeat, t0)
+	deadline := t0.Add(r.config.HookFreshness)
+	task6MustAdvance(t, r, deadline)
+	stale := task6Node(t, r, actor, deadline)
+	if !stale.State.Stale || stale.State.Value != "" {
+		t.Fatalf("native stale-before-terminal fixture rule violated: node=%+v deadline=%s health=%s", stale, deadline, task6HealthImage(r))
+	}
+	exitAt := deadline.Add(time.Second)
+	exit := task6ExitEvent("native-stale-before-terminal-exit", nativeSource, actor, incarnation, nil, exitAt, OutcomeCompleted)
+	exitChange := task6MustApplyAt(t, r, exit, exitAt)
+	terminal := task6Node(t, r, actor, exitAt)
+	if terminal.State.Stale || terminal.State.Value != StateCompleted || terminal.State.Source != nativeSource.Ref || terminal.CompletedAt == nil || !terminal.CompletedAt.Equal(exitAt) || terminal.GhostExpiresAt == nil {
+		t.Fatalf("terminal evidence clears native stale rule violated: change=%+v node=%+v source=%+v exitAt=%s", exitChange, terminal, nativeSource, exitAt)
+	}
+}
+
+func TestReconcileTombstonedNativeHeartbeatRejectsAtomically(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	const actor = NodeID("native-heartbeat-tombstone")
+	const incarnation = IncarnationID("native-heartbeat-tombstone-inc")
+	nodeSource := task6Source("native-heartbeat-tombstone-source", SourceImmutable, AuthorityNative, 606)
+	t0 := reconcileTestEpoch
+	node := task5NodeEventFromSource("native-heartbeat-tombstone-node", nodeSource, actor, incarnation, t0)
+	task6MustApplyAt(t, r, node, t0)
+	exitAt := t0.Add(time.Second)
+	exitSource := task6Source("native-heartbeat-tombstone-exit", SourceImmutable, AuthorityNative, 607)
+	exit := task6ExitEvent("native-heartbeat-tombstone-exit", exitSource, actor, incarnation, nil, exitAt, OutcomeCompleted)
+	task6MustApplyAt(t, r, exit, exitAt)
+	deadline := exitAt.Add(r.config.SuccessGhostTTL)
+	task6MustAdvance(t, r, deadline)
+	if r.nodes[actor] != nil || r.currentIncarnations[actor] == nil || r.currentIncarnations[actor].incarnation != incarnation {
+		t.Fatalf("tombstoned native heartbeat fixture rule violated: node=%+v current=%+v deadline=%s", r.nodes[actor], r.currentIncarnations[actor], deadline)
+	}
+
+	heartbeatSource := nodeSource
+	heartbeatSource.Mode = SourceObservation
+	heartbeatAt := deadline.Add(time.Second)
+	heartbeat := task6HeartbeatEvent("native-heartbeat-tombstone-poll", heartbeatSource, actor, incarnation, nil, heartbeatAt)
+	beforeHealth := len(r.healthEpochs)
+	beforeHistory := r.historyUnits
+	beforeTopology, beforeState, beforeMetrics, beforeVisibility := r.topologyRevision, r.stateRevision, r.metricsRevision, r.visibilityRevision
+	change, err := r.Apply(heartbeat, heartbeatAt)
+	task5RequireAdmission(t, err, AdmissionEndpointIdentity)
+	gap := task5FindGap(t, r.Snapshot(heartbeatAt), nodeSource.Ref.ID, task5Capability(CapabilityState), GapCollision)
+	if change != (ChangeSet{Visibility: true, Gap: true}) || gap.Count != 1 || len(r.healthEpochs) != beforeHealth || r.historyUnits != beforeHistory || r.nodes[actor] != nil || r.currentIncarnations[actor] == nil || r.currentIncarnations[actor].incarnation != incarnation || r.topologyRevision != beforeTopology || r.stateRevision != beforeState || r.metricsRevision != beforeMetrics || r.visibilityRevision != beforeVisibility+1 {
+		t.Fatalf("tombstoned native heartbeat typed rejection atomicity rule violated: change=%+v err=%v gap=%+v health=%d/%d history=%d/%d node=%+v current=%+v revisions=top:%d/%d state:%d/%d metrics:%d/%d visibility:%d/%d", change, err, gap, len(r.healthEpochs), beforeHealth, r.historyUnits, beforeHistory, r.nodes[actor], r.currentIncarnations[actor], r.topologyRevision, beforeTopology, r.stateRevision, beforeState, r.metricsRevision, beforeMetrics, r.visibilityRevision, beforeVisibility+1)
+	}
+
+	valid := task5NodeEventFromSource("native-heartbeat-following-valid", task6Source("native-heartbeat-following-source", SourceImmutable, AuthorityNative, 608), "native-heartbeat-following", "native-heartbeat-following-inc", heartbeatAt.Add(time.Second))
+	validChange, validErr := r.Apply(valid, valid.ReceivedAt)
+	if validErr != nil || !validChange.Topology || r.nodes[valid.Actor] == nil {
+		t.Fatalf("tombstoned native heartbeat following valid apply rule violated: change=%+v err=%v node=%+v priorError=%v", validChange, validErr, r.nodes[valid.Actor], err)
+	}
+}
+
 func TestReconcileApprovalAndBlockedRelationshipsResolveIndependently(t *testing.T) {
 	r := task6SeedActor(t, "actor", "inc-a")
 	hookSource := task6Source("approval-hook", SourceProtocol, AuthorityHook, 414)

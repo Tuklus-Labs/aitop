@@ -82,6 +82,25 @@ func TestEmptyViewContainsCanary(t *testing.T) {
 	}
 }
 
+func TestUndersizeDiagnosticNamesFrozenMinimum(t *testing.T) {
+	const (
+		frozenMinWidth  = 80
+		frozenMinHeight = 12
+		actualWidth     = 79
+		actualHeight    = 11
+	)
+	want := "aitop  80x12 required (now 79x11)  " + snapshot.Canary + "\n"
+	got := ansi.Strip(Render(nil, theme.Nightfable(), actualWidth, actualHeight, now))
+	if got != want {
+		t.Errorf("undersize diagnostic names frozen minimum rule violated: got=%q want=%q constants=(minWidth=%d minHeight=%d) actual=%dx%d", got, want, frozenMinWidth, frozenMinHeight, actualWidth, actualHeight)
+	}
+
+	accepted := ansi.Strip(Render(nil, theme.Nightfable(), frozenMinWidth, frozenMinHeight, now))
+	if strings.Contains(accepted, "required") {
+		t.Fatalf("frozen minimum frame acceptance rule violated: got=%q want=no refusal constants=(minWidth=%d minHeight=%d) actual=%dx%d", accepted, frozenMinWidth, frozenMinHeight, frozenMinWidth, frozenMinHeight)
+	}
+}
+
 func TestTickDoesNotCallOverlay(t *testing.T) {
 	calls := 0
 	src := &atomic.Pointer[snapshot.Snapshot]{}

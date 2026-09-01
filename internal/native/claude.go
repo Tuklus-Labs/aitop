@@ -37,6 +37,12 @@ func NewClaude(home string, latest func() []types.Row) *Collector {
 	return newCollector(claudeSourceID, types.RuntimeClaude, &claudeScanner{home: home}, latest)
 }
 
+// NewClaudeOnce builds a collector for a one-shot over already-frozen Engine
+// rows. Fresh unbound sightings publish on the first and only poll.
+func NewClaudeOnce(home string, latest func() []types.Row) *Collector {
+	return newCaptureCollector(claudeSourceID, types.RuntimeClaude, &claudeScanner{home: home}, latest)
+}
+
 // claudeScanner reads ~/.claude. Every read tolerates a missing or unreadable
 // path by skipping it, so a half-written file costs one session rather than the
 // whole runtime.

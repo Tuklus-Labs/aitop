@@ -628,9 +628,9 @@ func TestCodexScannerScansOnlyRecentDateDirs(t *testing.T) {
 }
 
 // TestCodexCollectorMakesNoStateOrTerminalClaims judges the whole lane by what
-// reaches the sink. Codex v1 knows who spawned whom and nothing about liveness:
-// a state claim here would need a heartbeat lane to survive the 6 s decay
-// window, and a terminal would need death evidence no file on disk carries.
+// reaches the sink. Codex v1 knows who spawned whom and nothing about state or
+// terminal outcomes. Poll heartbeats are visibility leases for the identity
+// sightings; they do not invent a state claim.
 func TestCodexCollectorMakesNoStateOrTerminalClaims(t *testing.T) {
 	now := codexBase()
 	tree := newCodexTree(t)
@@ -653,10 +653,13 @@ func TestCodexCollectorMakesNoStateOrTerminalClaims(t *testing.T) {
 	if edges := countKind(events, graph.EventRelationshipObserved); edges != 1 {
 		t.Fatalf("codex-collector-publishes-spawn-edge rule violated: relationship_observed=%d want=1 kinds=%v", edges, kindsOf(events))
 	}
-	for _, banned := range []graph.EventKind{graph.EventStateObserved, graph.EventExitObserved, graph.EventHeartbeatObserved} {
+	for _, banned := range []graph.EventKind{graph.EventStateObserved, graph.EventExitObserved} {
 		if seen := countKind(events, banned); seen != 0 {
 			t.Fatalf("codex-makes-no-state-or-terminal-claim rule violated: kind=%s count=%d kinds=%v", banned, seen, kindsOf(events))
 		}
+	}
+	if beats := countKind(events, graph.EventHeartbeatObserved); beats != 2 {
+		t.Fatalf("codex native identity visibility lease rule violated: heartbeat_observed=%d want=2 kinds=%v", beats, kindsOf(events))
 	}
 	if rejected := collector.Disp().Rejected.Load(); rejected != 0 {
 		t.Fatalf("codex-collector-emits-nothing-rejected rule violated: rejected=%d published=%d", rejected, collector.Disp().Published.Load())

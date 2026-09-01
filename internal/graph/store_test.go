@@ -1091,6 +1091,707 @@ func TestStoreExactQueuePartition(t *testing.T) { // GF-T8-QUEUE
 	}
 }
 
+func TestStoreFlushWaitsForAppliedPublishedPrefix(t *testing.T) {
+	gate := newHookBarrier()
+	clock := newManualStoreClock(storeTestEpoch)
+	timers := &manualStoreTimers{}
+	store := storeTestNew(t, DefaultStoreConfig(), clock, timers, gate.hook)
+	probe := storeTestProbeFor(t, store)
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	event := storeTestEvent(EventNodeObserved, 250)
+	if disposition := storeTestPublish(t, store, event); disposition != PublishAcceptedCritical {
+		t.Fatalf("store flush fixture admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedCritical, store.Stats())
+	}
+	select {
+	case <-gate.entered:
+	case <-ctx.Done():
+		t.Fatalf("store flush fixture blocked-apply entry rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	flushReturned := make(chan struct{})
+	var flushErr error
+	go func() {
+		flushErr = store.flush(ctx)
+		close(flushReturned)
+	}()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush waiting-prefix entry rule violated: context=%v snapshot=%+v stats=%+v", ctx.Err(), store.Snapshot(), store.Stats())
+	}
+	select {
+	case <-flushReturned:
+		t.Fatalf("store flush waits for blocked apply rule violated: error=%v snapshot=%+v stats=%+v", flushErr, store.Snapshot(), store.Stats())
+	default:
+	}
+	gate.unblock()
+	select {
+	case <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	snapshot := store.Snapshot()
+	if flushErr != nil || snapshot == nil || len(snapshot.Nodes) != 1 || snapshot.Nodes[0].ID != event.Actor || store.Stats().Applied != 1 || store.Stats().Snapshots < 2 {
+		t.Fatalf("store flush applied published prefix rule violated: error=%v snapshot=%+v actor=%s stats=%+v", flushErr, snapshot, event.Actor, store.Stats())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushBoundsPendingRequestQueue(t *testing.T) {
+	applyGate := newHookBarrier()
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{}, applyGate.hook)
+	probe := storeTestProbeFor(t, store)
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	storeTestPublish(t, store, storeTestEvent(EventNodeObserved, 238))
+	storeTestWaitForHook(t, applyGate, "store flush pending bound blocked apply")
+	firstReturned := make(chan error, 1)
+	go func() { firstReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush pending bound registration rule violated: context=%v", ctx.Err())
+	}
+	for attempt := 0; attempt < 64; attempt++ {
+		if err := store.flush(context.Background()); !errors.Is(err, ErrStoreFlushPending) {
+			t.Fatalf("store flush pending bound rejection rule violated: attempt=%d error=%v want=%v", attempt, err, ErrStoreFlushPending)
+		}
+	}
+	store.queueMu.Lock()
+	pending := len(store.flushRequests)
+	store.queueMu.Unlock()
+	if pending != 1 {
+		t.Fatalf("store flush pending request queue bound rule violated: pending=%d want=1 attempts=64", pending)
+	}
+	applyGate.unblock()
+	select {
+	case err := <-firstReturned:
+		if err != nil {
+			t.Fatalf("store flush pending bound first request result rule violated: error=%v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("store flush pending bound first request completion rule violated: context=%v", ctx.Err())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush pending bound run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush pending bound run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushDrainsPrefixAcceptedAfterIdleCheck(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-ctx.Done():
+		t.Fatalf("store flush idle-check race fixture rule violated: context=%v lifecycle=%d", ctx.Err(), store.lifecycleState.Load())
+	}
+	event := storeTestEvent(EventNodeObserved, 249)
+	if disposition := storeTestPublish(t, store, event); disposition != PublishAcceptedCritical {
+		t.Fatalf("store flush idle-check prefix admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedCritical, store.Stats())
+	}
+	select {
+	case <-store.wake:
+	default:
+		t.Fatalf("store flush idle-check wake fixture rule violated: wakeReady=false stats=%+v", store.Stats())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush idle-check handoff fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	close(idleRelease)
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush idle-check completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	snapshot := store.Snapshot()
+	if flushErr != nil || snapshot == nil || len(snapshot.Nodes) != 1 || snapshot.Nodes[0].ID != event.Actor || store.Stats().Applied != 1 {
+		t.Fatalf("store flush idle-check accepted prefix applied before acknowledgement rule violated: error=%v snapshot=%+v actor=%s stats=%+v", flushErr, snapshot, event.Actor, store.Stats())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush idle-check run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush idle-check run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushRegisteredPrefixPrecedesPostCutoffFatal(t *testing.T) {
+	applyGate := newApplyStepGate()
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{}, applyGate.hook)
+	probe := storeTestProbeFor(t, store)
+	fatalErr := errors.New("store flush post-cutoff fatal sentinel")
+	const fatalActor = NodeID("claude:session:post-cutoff-fatal")
+	probe.applyEvent = func(event Event, now time.Time) (ChangeSet, error) {
+		if event.Actor == fatalActor {
+			return ChangeSet{}, fatalErr
+		}
+		return store.reconciler.Apply(event, now)
+	}
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	prefix := storeTestEvent(EventNodeObserved, 242)
+	storeTestPublish(t, store, prefix)
+	select {
+	case <-applyGate.entered:
+	case <-ctx.Done():
+		t.Fatalf("store flush post-cutoff prefix apply fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush post-cutoff registration fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	fatal := storeTestEvent(EventNodeObserved, 243)
+	fatal.Actor = fatalActor
+	fatal.ActorIncarnation = "claude:invocation:post-cutoff-fatal"
+	storeTestPublish(t, store, fatal)
+	applyGate.release <- struct{}{}
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-time.After(250 * time.Millisecond):
+		applyGate.step(t, "store flush post-cutoff fatal cleanup")
+		storeTestAwait(t, run.done, "store flush post-cutoff fatal run cleanup")
+		t.Fatalf("store flush registered prefix priority rule violated: acknowledged=false watchdog=250ms runError=%v", run.err)
+	}
+	snapshot := store.Snapshot()
+	if flushErr != nil || snapshot == nil || len(snapshot.Nodes) != 1 || snapshot.Nodes[0].ID != prefix.Actor || store.Stats().Applied != 1 {
+		applyGate.step(t, "store flush post-cutoff fatal assertion cleanup")
+		storeTestAwait(t, run.done, "store flush post-cutoff fatal assertion run cleanup")
+		t.Fatalf("store flush registered prefix published before post-cutoff fatal rule violated: error=%v snapshot=%+v actor=%s stats=%+v", flushErr, snapshot, prefix.Actor, store.Stats())
+	}
+	applyGate.step(t, "store flush post-cutoff fatal")
+	storeTestAwait(t, run.done, "store flush post-cutoff fatal run stop")
+	if !errors.Is(run.err, fatalErr) || store.Stats().ApplyErrors != 1 || storeLifecycle(store.lifecycleState.Load()) != storeStopped {
+		t.Fatalf("store flush post-cutoff fatal remains fail-closed after prefix rule violated: error=%v want=%v stats=%+v lifecycle=%d", run.err, fatalErr, store.Stats(), store.lifecycleState.Load())
+	}
+}
+
+func TestStoreFlushIncludesPostCutoffCoalescingReplacement(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	seed := storeTestEvent(EventNodeObserved, 241)
+	task5MustApply(t, r, seed, storeTestEpoch)
+	store := storeTestNewWithReconciler(t, DefaultStoreConfig(), r, newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-ctx.Done():
+		t.Fatalf("store flush coalescing idle fixture rule violated: context=%v lifecycle=%d", ctx.Err(), store.lifecycleState.Load())
+	}
+	first := storeTestCoalescibleMetrics(239, storeTestEpoch, 1)
+	if disposition := storeTestPublish(t, store, first); disposition != PublishAcceptedNormal {
+		t.Fatalf("store flush coalescing prefix admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedNormal, store.Stats())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush coalescing cutoff fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	replacement := storeTestCoalescibleMetrics(240, storeTestEpoch.Add(time.Second), 2)
+	if disposition := storeTestPublish(t, store, replacement); disposition != PublishCoalesced {
+		t.Fatalf("store flush coalescing replacement admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishCoalesced, store.Stats())
+	}
+	close(idleRelease)
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush coalescing completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	snapshot := store.Snapshot()
+	var tokenRate *float64
+	if snapshot != nil && len(snapshot.Nodes) == 1 {
+		tokenRate = snapshot.Nodes[0].Metrics.TokenRate
+	}
+	if flushErr != nil || tokenRate == nil || *tokenRate != 2 || store.Stats().Applied != 1 || store.Stats().Coalesced != 1 {
+		t.Fatalf("store flush coalescing replacement remains in captured prefix rule violated: error=%v tokenRate=%v stats=%+v snapshot=%+v", flushErr, tokenRate, store.Stats(), snapshot)
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush coalescing run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush coalescing run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushDefersPostCutoffIngressDiagnostic(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-ctx.Done():
+		t.Fatalf("store flush post-cutoff diagnostic idle fixture rule violated: context=%v lifecycle=%d", ctx.Err(), store.lifecycleState.Load())
+	}
+	prefix := storeTestEvent(EventNodeObserved, 237)
+	storeTestPublish(t, store, prefix)
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush post-cutoff diagnostic registration rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	collision := prefix
+	collision.Data = NodeObserved{Runtime: types.RuntimeClaude, Role: types.RolePrimary, ProvenName: "post-cutoff-diagnostic"}
+	if disposition, err := store.Publish(collision); disposition != PublishRejected || !errors.Is(err, ErrAdmission) {
+		t.Fatalf("store flush post-cutoff diagnostic collision fixture rule violated: disposition=%d error=%v stats=%+v", disposition, err, store.Stats())
+	}
+	close(idleRelease)
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush post-cutoff diagnostic completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	flushed := store.Snapshot()
+	if flushErr != nil || flushed == nil || len(flushed.Nodes) != 1 || flushed.Nodes[0].ID != prefix.Actor || len(flushed.Gaps) != 0 || store.Stats().PendingDiagnostics != 1 {
+		t.Fatalf("store flush excludes post-cutoff ingress diagnostic rule violated: error=%v snapshot=%+v actor=%s stats=%+v", flushErr, flushed, prefix.Actor, store.Stats())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush post-cutoff diagnostic finalization")
+	if run.err != nil {
+		t.Fatalf("store flush post-cutoff diagnostic finalization result rule violated: error=%v", run.err)
+	}
+	final := store.Snapshot()
+	if final == nil || len(final.Nodes) != 1 || len(final.Gaps) != 1 || store.Stats().PendingDiagnostics != 0 {
+		t.Fatalf("store flush post-cutoff diagnostic remains for final publication rule violated: snapshot=%+v stats=%+v", final, store.Stats())
+	}
+}
+
+func TestStoreFlushDefersSemanticCursorWithoutSkippingDeadline(t *testing.T) {
+	r := task5MustReconciler(t, DefaultReconcileConfig())
+	deadline := storeTestEpoch.Add(time.Second)
+	const actor = NodeID("store-flush-semantic-deadline")
+	const incarnation = IncarnationID("store-flush-semantic-deadline-inc")
+	nodeAt := deadline.Add(-r.config.SuccessGhostTTL).Add(-time.Second)
+	task7MustApply(t, r, task7NodeEvent("store-flush-semantic-node", actor, incarnation, nodeAt), nodeAt)
+	exitAt := deadline.Add(-r.config.SuccessGhostTTL)
+	exit := task6ExitEvent("store-flush-semantic-exit", task5NativeSource("store-flush-semantic-source", SourceImmutable, 614), actor, incarnation, nil, exitAt, OutcomeCompleted)
+	task7MustApply(t, r, exit, exitAt)
+	store := storeTestNewWithReconciler(t, DefaultStoreConfig(), r, newManualStoreClock(deadline), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	probe.forceLifecycle(uint8(storeRunning))
+	probe.flushWaiting = make(chan struct{})
+	probe.timerPreAdvanceEntered = make(chan struct{})
+	advanceRelease := make(chan struct{})
+	probe.timerPreAdvanceRelease = advanceRelease
+	target := storeTimerTarget{semantic: deadline, readiness: deadline, cutoff: store.ingressOrdinal, cursor: store.cursorEpoch}
+	firstTimer := make(chan error, 1)
+	go func() {
+		firstTimer <- store.handleTimer(context.Background(), target, target.cutoff, target.cursor, false)
+	}()
+	select {
+	case <-probe.timerPreAdvanceEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("store flush semantic defer fixture rule violated: preAdvance=false deadline=%s", deadline)
+	}
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer flushCancel()
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(flushCtx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-flushCtx.Done():
+		t.Fatalf("store flush semantic defer registration rule violated: context=%v deadlineCursor=%s", flushCtx.Err(), store.deadlineCursor)
+	}
+	close(advanceRelease)
+	select {
+	case err := <-firstTimer:
+		if err != nil {
+			t.Fatalf("store flush semantic deferred timer result rule violated: error=%v", err)
+		}
+	case <-flushCtx.Done():
+		t.Fatalf("store flush semantic deferred timer completion rule violated: context=%v", flushCtx.Err())
+	}
+	if !store.deadlineCursor.IsZero() || r.nodes[actor] == nil {
+		t.Fatalf("store flush semantic deferred cursor remains unclaimed rule violated: cursor=%s node=%+v deadline=%s", store.deadlineCursor, r.nodes[actor], deadline)
+	}
+	request, ok := store.popFlushRequest()
+	if !ok {
+		t.Fatalf("store flush semantic registered request ownership rule violated: requestMissing=true")
+	}
+	if err := store.handleFlushRequest(context.Background(), request); err != nil {
+		t.Fatalf("store flush semantic request handling rule violated: error=%v", err)
+	}
+	select {
+	case err := <-flushReturned:
+		if err != nil {
+			t.Fatalf("store flush semantic caller result rule violated: error=%v", err)
+		}
+	case <-flushCtx.Done():
+		t.Fatalf("store flush semantic caller completion rule violated: context=%v", flushCtx.Err())
+	}
+	if err := store.handleTimer(context.Background(), target, target.cutoff, target.cursor, false); err != nil {
+		t.Fatalf("store flush semantic resumed timer result rule violated: error=%v", err)
+	}
+	if r.nodes[actor] != nil || !store.deadlineCursor.Equal(deadline) || store.Snapshot() == nil || len(store.Snapshot().Nodes) != 0 {
+		t.Fatalf("store flush semantic deadline resumes after barrier rule violated: node=%+v cursor=%s want=%s snapshot=%+v", r.nodes[actor], store.deadlineCursor, deadline, store.Snapshot())
+	}
+}
+
+func TestStoreFlushReportsAdmissionAndKeepsStoreRunning(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	probe.applyEvent = func(Event, time.Time) (ChangeSet, error) {
+		return ChangeSet{}, &AdmissionError{Kind: AdmissionCountLimit}
+	}
+	applied := make(chan struct{}, 1)
+	probe.postOwnerPreCounter = func() { applied <- struct{}{} }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	storeTestPublish(t, store, storeTestEvent(EventNodeObserved, 246))
+	select {
+	case <-applied:
+	case <-ctx.Done():
+		t.Fatalf("store flush prior-admission apply fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	flushErr := store.flush(ctx)
+	var admission *AdmissionError
+	if !errors.Is(flushErr, ErrAdmission) || !errors.As(flushErr, &admission) || admission == nil || admission.Kind != AdmissionCountLimit || storeLifecycle(store.lifecycleState.Load()) != storeRunning || store.Stats().ApplyErrors != 1 {
+		t.Fatalf("store flush prior-admission reports rejection without stopping rule violated: error=%v admission=%+v lifecycle=%d stats=%+v", flushErr, admission, store.lifecycleState.Load(), store.Stats())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush admission run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush admission run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushReportsLowestOrdinalErrorAcrossPriorityReordering(t *testing.T) {
+	applyGate := newApplyStepGate()
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{}, applyGate.hook)
+	probe := storeTestProbeFor(t, store)
+	probe.applyEvent = func(event Event, _ time.Time) (ChangeSet, error) {
+		if event.Kind == EventHeartbeatObserved {
+			return ChangeSet{}, &AdmissionError{Kind: AdmissionHistoryLimit}
+		}
+		return ChangeSet{}, &AdmissionError{Kind: AdmissionCountLimit}
+	}
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-ctx.Done():
+		t.Fatalf("store flush priority-reordering idle fixture rule violated: context=%v lifecycle=%d", ctx.Err(), store.lifecycleState.Load())
+	}
+	if disposition := storeTestPublish(t, store, storeTestNormalEvent(244)); disposition != PublishAcceptedNormal {
+		t.Fatalf("store flush priority-reordering normal-prefix admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedNormal, store.Stats())
+	}
+	if disposition := storeTestPublish(t, store, storeTestCriticalEvent(245)); disposition != PublishAcceptedCritical {
+		t.Fatalf("store flush priority-reordering critical-prefix admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedCritical, store.Stats())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush priority-reordering cutoff fixture rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	close(idleRelease)
+	applyGate.step(t, "store flush priority-reordering critical prefix")
+	applyGate.step(t, "store flush priority-reordering normal prefix")
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush priority-reordering completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	var admission *AdmissionError
+	if !errors.As(flushErr, &admission) || admission == nil || admission.Kind != AdmissionHistoryLimit || store.Stats().ApplyErrors != 2 || storeLifecycle(store.lifecycleState.Load()) != storeRunning {
+		t.Fatalf("store flush lowest-ingress-ordinal rejection rule violated: error=%v admission=%+v stats=%+v lifecycle=%d", flushErr, admission, store.Stats(), store.lifecycleState.Load())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store flush priority-reordering run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush priority-reordering run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushFatalApplyOverridesEarlierAdmission(t *testing.T) {
+	fatalErr := errors.New("store flush mixed-prefix fatal sentinel")
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	var applyCalls atomic.Int32
+	probe.applyEvent = func(Event, time.Time) (ChangeSet, error) {
+		if applyCalls.Add(1) == 1 {
+			return ChangeSet{}, &AdmissionError{Kind: AdmissionCountLimit}
+		}
+		return ChangeSet{}, fatalErr
+	}
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	run := storeTestRun(ctx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-ctx.Done():
+		t.Fatalf("store flush mixed-prefix fixture idle rule violated: context=%v lifecycle=%d", ctx.Err(), store.lifecycleState.Load())
+	}
+	storeTestPublish(t, store, storeTestEvent(EventNodeObserved, 247))
+	storeTestPublish(t, store, storeTestEvent(EventNodeObserved, 248))
+	select {
+	case <-store.wake:
+	default:
+		t.Fatalf("store flush mixed-prefix fixture wake rule violated: wakeReady=false stats=%+v", store.Stats())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-ctx.Done():
+		t.Fatalf("store flush mixed-prefix fixture handoff rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	close(idleRelease)
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush mixed-prefix completion rule violated: context=%v stats=%+v", ctx.Err(), store.Stats())
+	}
+	if !errors.Is(flushErr, fatalErr) || applyCalls.Load() != 2 || store.Stats().ApplyErrors != 2 {
+		cancel()
+		storeTestAwait(t, run.done, "store flush mixed-prefix cleanup")
+		t.Fatalf("store flush fatal apply overrides earlier admission rule violated: error=%v want=%v applyCalls=%d stats=%+v", flushErr, fatalErr, applyCalls.Load(), store.Stats())
+	}
+	select {
+	case <-run.done:
+	case <-time.After(250 * time.Millisecond):
+		cancel()
+		storeTestAwait(t, run.done, "store flush mixed-prefix stop cleanup")
+		t.Fatalf("store flush fatal apply fail-closed lifecycle rule violated: stopped=false watchdog=250ms")
+	}
+	if !errors.Is(run.err, fatalErr) || storeLifecycle(store.lifecycleState.Load()) != storeStopped {
+		t.Fatalf("store flush fatal apply run result rule violated: error=%v want=%v lifecycle=%d stats=%+v", run.err, fatalErr, store.lifecycleState.Load(), store.Stats())
+	}
+}
+
+func TestStoreFlushWaitsForRunStart(t *testing.T) {
+	clock := newManualStoreClock(storeTestEpoch)
+	timers := &manualStoreTimers{}
+	store := storeTestNew(t, DefaultStoreConfig(), clock, timers)
+	probe := storeTestProbeFor(t, store)
+	probe.flushWaiting = make(chan struct{})
+	event := storeTestEvent(EventNodeObserved, 251)
+	if disposition := storeTestPublish(t, store, event); disposition != PublishAcceptedCritical {
+		t.Fatalf("store pre-run flush fixture admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedCritical, store.Stats())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(ctx) }()
+	select {
+	case <-probe.flushWaiting:
+	case err := <-flushReturned:
+		t.Fatalf("store flush waits for run start rule violated: returnedBeforeRun=%v lifecycle=%d stats=%+v", err, store.lifecycleState.Load(), store.Stats())
+	case <-ctx.Done():
+		t.Fatalf("store flush open-state wait entry rule violated: context=%v lifecycle=%d stats=%+v", ctx.Err(), store.lifecycleState.Load(), store.Stats())
+	}
+	run := storeTestRun(ctx, store)
+	var flushErr error
+	select {
+	case flushErr = <-flushReturned:
+	case <-ctx.Done():
+		t.Fatalf("store flush after run start completion rule violated: context=%v lifecycle=%d stats=%+v", ctx.Err(), store.lifecycleState.Load(), store.Stats())
+	}
+	snapshot := store.Snapshot()
+	if flushErr != nil || snapshot == nil || len(snapshot.Nodes) != 1 || snapshot.Nodes[0].ID != event.Actor || store.Stats().Applied != 1 || store.Stats().Snapshots < 2 {
+		t.Fatalf("store pre-run accepted prefix flush rule violated: error=%v snapshot=%+v actor=%s stats=%+v", flushErr, snapshot, event.Actor, store.Stats())
+	}
+	cancel()
+	storeTestAwait(t, run.done, "store pre-run flush cancellation")
+	if run.err != nil {
+		t.Fatalf("store pre-run flush cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushDeadlineDoesNotWaitForPublicationHook(t *testing.T) {
+	publishGate := newHookBarrier()
+	clock := newManualStoreClock(storeTestEpoch)
+	timers := &manualStoreTimers{}
+	store := storeTestNew(t, DefaultStoreConfig(), clock, timers, nil, publishGate.hook)
+	released := false
+	defer func() {
+		if !released {
+			publishGate.unblock()
+		}
+	}()
+	probe := storeTestProbeFor(t, store)
+	applied := make(chan struct{}, 1)
+	probe.postOwnerPreCounter = func() { applied <- struct{}{} }
+	runCtx, runCancel := context.WithCancel(context.Background())
+	run := storeTestRun(runCtx, store)
+	event := storeTestEvent(EventNodeObserved, 252)
+	if disposition := storeTestPublish(t, store, event); disposition != PublishAcceptedCritical {
+		t.Fatalf("store flush deadline fixture admission rule violated: disposition=%d want=%d stats=%+v", disposition, PublishAcceptedCritical, store.Stats())
+	}
+	select {
+	case <-applied:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("store flush deadline fixture apply rule violated: applied=false stats=%+v", store.Stats())
+	}
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer flushCancel()
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(flushCtx) }()
+	storeTestWaitForHook(t, publishGate, "store flush deadline publication")
+	<-flushCtx.Done()
+	select {
+	case err := <-flushReturned:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("store flush deadline result rule violated: error=%v want=%v", err, context.DeadlineExceeded)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatalf("store flush deadline bounds caller wait rule violated: returned=false context=%v watchdog=250ms", flushCtx.Err())
+	}
+	publishGate.unblock()
+	released = true
+	runCancel()
+	storeTestAwait(t, run.done, "store flush deadline run cancellation")
+	if run.err != nil {
+		t.Fatalf("store flush deadline run cancellation result rule violated: error=%v", run.err)
+	}
+}
+
+func TestStoreFlushDeadlineBoundsRequestRegistration(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	store.queueMu.Lock()
+	released := false
+	defer func() {
+		if !released {
+			store.queueMu.Unlock()
+		}
+	}()
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer flushCancel()
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(flushCtx) }()
+	<-flushCtx.Done()
+	select {
+	case err := <-flushReturned:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("store flush registration deadline result rule violated: error=%v want=%v", err, context.DeadlineExceeded)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatalf("store flush registration deadline bounds queue ownership rule violated: returned=false watchdog=250ms")
+	}
+	store.queueMu.Unlock()
+	released = true
+}
+
+func TestStoreFlushReturnsWhenShutdownWinsRequestHandoff(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	probe.flushRegisterEntered = make(chan struct{})
+	flushRelease := make(chan struct{})
+	probe.flushRegisterRelease = flushRelease
+	runCtx, runCancel := context.WithCancel(context.Background())
+	run := storeTestRun(runCtx, store)
+	flushCtx, flushCancel := context.WithCancel(context.Background())
+	defer flushCancel()
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(flushCtx) }()
+	select {
+	case <-probe.flushRegisterEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("store shutdown-race flush handoff fixture rule violated: waiting=false lifecycle=%d", store.lifecycleState.Load())
+	}
+	runCancel()
+	storeTestAwait(t, run.done, "store shutdown-race run stop")
+	close(flushRelease)
+	select {
+	case err := <-flushReturned:
+		if !errors.Is(err, ErrStoreNotAccepting) {
+			t.Fatalf("store shutdown-race flush result rule violated: error=%v want=%v", err, ErrStoreNotAccepting)
+		}
+	case <-time.After(250 * time.Millisecond):
+		flushCancel()
+		t.Fatalf("store shutdown-race flush completion rule violated: returned=false lifecycle=%d watchdog=250ms", store.lifecycleState.Load())
+	}
+}
+
+func TestStoreFlushReturnsWhenShutdownWinsRegisteredRequest(t *testing.T) {
+	store := storeTestNew(t, DefaultStoreConfig(), newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
+	probe := storeTestProbeFor(t, store)
+	idleRelease := make(chan struct{})
+	probe.idleSelectEntered = make(chan struct{})
+	probe.idleSelectRelease = idleRelease
+	probe.flushWaiting = make(chan struct{})
+	runCtx, runCancel := context.WithCancel(context.Background())
+	run := storeTestRun(runCtx, store)
+	select {
+	case <-probe.idleSelectEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("store shutdown registered-request idle fixture rule violated: lifecycle=%d", store.lifecycleState.Load())
+	}
+	flushReturned := make(chan error, 1)
+	go func() { flushReturned <- store.flush(context.Background()) }()
+	select {
+	case <-probe.flushWaiting:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("store shutdown registered-request flush fixture rule violated: lifecycle=%d", store.lifecycleState.Load())
+	}
+	runCancel()
+	close(idleRelease)
+	storeTestAwait(t, run.done, "store shutdown registered-request run stop")
+	select {
+	case err := <-flushReturned:
+		if !errors.Is(err, ErrStoreNotAccepting) {
+			t.Fatalf("store shutdown registered-request flush result rule violated: error=%v want=%v", err, ErrStoreNotAccepting)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatalf("store shutdown registered-request flush completion rule violated: returned=false lifecycle=%d watchdog=250ms", store.lifecycleState.Load())
+	}
+}
+
 func TestStoreQueuedByteLimit(t *testing.T) { // GF-T8-QUEUE, GF-T8-STATS, GF-T8-ERROR-TYPE
 	minimal := storeTestMinimalNodeEvent(1)
 	if got := storeTestEventCharge(minimal); got != 816 {
@@ -3632,11 +4333,11 @@ func storeTestUnpublishedAdvanceRetentionSubrow(t *testing.T) {
 	store := storeTestNewWithReconciler(t, DefaultStoreConfig(), r, newManualStoreClock(storeTestEpoch), &manualStoreTimers{})
 	published := store.snapshot.Load()
 	store.testProbe.forceLifecycle(uint8(storeRunning))
-	if _, err := store.advanceAt(d1, d1); err != nil {
+	if _, _, err := store.advanceAt(d1, d1); err != nil {
 		t.Fatalf("unpublished Advance G1 commit rule violated: error=%v", err)
 	}
 	g1 := r.current
-	if _, err := store.advanceAt(d2, d2); err != nil {
+	if _, _, err := store.advanceAt(d2, d2); err != nil {
 		t.Fatalf("unpublished Advance G2 commit rule violated: error=%v", err)
 	}
 	g2 := r.current

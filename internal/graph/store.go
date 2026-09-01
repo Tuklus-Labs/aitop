@@ -61,6 +61,7 @@ type StoreStats struct {
 
 var ErrStoreAlreadyRun = errors.New("store already run")
 var ErrStoreNotAccepting = errors.New("store not accepting")
+var ErrStoreFlushPending = errors.New("store flush already pending")
 
 type storeTimer interface {
 	C() <-chan time.Time
@@ -122,6 +123,7 @@ type storeQueueItem struct {
 	coalescedPending bool
 	critical         bool
 	sequence         uint64
+	firstSequence    uint64
 	applyFence       *storeApplyFence
 }
 
@@ -132,6 +134,12 @@ type storeStopDisposal struct {
 
 type storeApplyFence struct {
 	done chan struct{}
+}
+
+type storeFlushRequest struct {
+	cutoff   uint64
+	done     chan error
+	canceled atomic.Bool
 }
 
 type storeTimerTarget struct {
@@ -186,32 +194,43 @@ type storeControlImage struct {
 type storeTestProbe struct {
 	store *Store
 
-	mu                    sync.Mutex
-	ingressPlan           *storeIngressPlan
-	replayDigestFn        func(Event) ([32]byte, error)
-	chargeEventFn         func(Event) chargeResult
-	applyEvent            func(Event, time.Time) (ChangeSet, error)
-	postApplyUnlocked     func()
-	postOwnerPreCounter   func()
-	beforeFinalOutcome    func(error)
-	afterPendingPublish   func(error)
-	afterAdvanceUnlocked  func(ChangeSet, error)
-	prepareBatch          *storePrepareBatch
-	prepareAttempted      chan struct{}
-	mutationAttempted     chan struct{}
-	queueAttempted        chan struct{}
-	wakeHandled           chan struct{}
-	timerRecorded         chan struct{}
-	timerReceiptHandled   chan struct{}
-	timerClassified       chan storeTimerClassification
-	timerHandled          chan struct{}
-	timerHandleEntered    chan struct{}
-	timerHandleRelease    <-chan struct{}
-	mutationAttemptedOnce sync.Once
-	queueAttemptedOnce    sync.Once
-	prepareAttemptedOnce  sync.Once
-	prepareAttempts       int
-	lastPrepareError      string
+	mu                     sync.Mutex
+	ingressPlan            *storeIngressPlan
+	replayDigestFn         func(Event) ([32]byte, error)
+	chargeEventFn          func(Event) chargeResult
+	applyEvent             func(Event, time.Time) (ChangeSet, error)
+	postApplyUnlocked      func()
+	postOwnerPreCounter    func()
+	beforeFinalOutcome     func(error)
+	afterPendingPublish    func(error)
+	afterAdvanceUnlocked   func(ChangeSet, error)
+	prepareBatch           *storePrepareBatch
+	prepareAttempted       chan struct{}
+	mutationAttempted      chan struct{}
+	queueAttempted         chan struct{}
+	wakeHandled            chan struct{}
+	timerRecorded          chan struct{}
+	timerReceiptHandled    chan struct{}
+	timerClassified        chan storeTimerClassification
+	timerHandled           chan struct{}
+	timerHandleEntered     chan struct{}
+	timerHandleRelease     <-chan struct{}
+	timerPreAdvanceOnce    sync.Once
+	timerPreAdvanceEntered chan struct{}
+	timerPreAdvanceRelease <-chan struct{}
+	mutationAttemptedOnce  sync.Once
+	queueAttemptedOnce     sync.Once
+	prepareAttemptedOnce   sync.Once
+	flushWaitingOnce       sync.Once
+	flushWaiting           chan struct{}
+	flushRegisterOnce      sync.Once
+	flushRegisterEntered   chan struct{}
+	flushRegisterRelease   <-chan struct{}
+	idleSelectOnce         sync.Once
+	idleSelectEntered      chan struct{}
+	idleSelectRelease      <-chan struct{}
+	prepareAttempts        int
+	lastPrepareError       string
 }
 
 type Store struct {
@@ -227,6 +246,9 @@ type Store struct {
 	lifecycleState atomic.Uint32
 	usedRun        bool
 	wake           chan struct{}
+	flushRequests  []*storeFlushRequest
+	runDone        chan struct{}
+	runDoneOnce    sync.Once
 	timer          storeTimer
 
 	normal                  []*storeQueueItem
@@ -243,6 +265,8 @@ type Store struct {
 	snapshot          atomic.Pointer[generation]
 	testProbe         *storeTestProbe
 	pendingGeneration *generation
+	prefixApplyError  error
+	prefixErrorAt     uint64
 
 	// Scheduler state is owned by Run and protected by queueMu when it is
 	// observed by ingress or the timer watcher.  lastNow is the most recent
@@ -314,7 +338,7 @@ func newStore(config StoreConfig, reconciler *Reconciler, runtime storeRuntime) 
 
 	store := &Store{
 		config: config, reconciler: reconciler, runtime: runtime, clock: runtime.Clock,
-		wake: make(chan struct{}, 1), normal: make([]*storeQueueItem, 0), critical: make([]*storeQueueItem, 0),
+		wake: make(chan struct{}, 1), runDone: make(chan struct{}), normal: make([]*storeQueueItem, 0), critical: make([]*storeQueueItem, 0),
 		pendingReplay: make(map[[32]byte]*storeQueueItem), pendingCoalesce: make(map[string]*storeQueueItem),
 		pendingDiagnostics: make(map[gapKey]*storePendingDiagnostic),
 		stats: StoreStats{
@@ -361,6 +385,79 @@ func (s *Store) Stats() StoreStats {
 	stats.PendingDiagnosticBytes = s.pendingBytesLocked()
 	stats.InFlightBytes = s.inFlightBytes
 	return stats
+}
+
+// flush asks the Store run loop to publish after the queued prefix ahead of the
+// request has applied. The caller may stop waiting without blocking Store
+// ownership on a mutex or publication hook.
+func (s *Store) flush(ctx context.Context) error {
+	if s == nil {
+		return ErrStoreNotAccepting
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	request := &storeFlushRequest{done: make(chan error, 1)}
+	s.waitFlushRegisterProbe()
+	if err := s.lockQueueForFlush(ctx); err != nil {
+		return err
+	}
+	if s.lifecycle == storeStopping || s.lifecycle == storeStopped {
+		s.queueMu.Unlock()
+		return ErrStoreNotAccepting
+	}
+	if err := ctx.Err(); err != nil {
+		s.queueMu.Unlock()
+		return err
+	}
+	request.cutoff = s.ingressOrdinal
+	s.compactFlushRequestsLocked()
+	if len(s.flushRequests) != 0 {
+		s.queueMu.Unlock()
+		return ErrStoreFlushPending
+	}
+	s.flushRequests = append(s.flushRequests, request)
+	s.signalWakeLocked()
+	s.queueMu.Unlock()
+	s.signalFlushWaiting()
+	select {
+	case err := <-request.done:
+		return err
+	case <-ctx.Done():
+		request.canceled.Store(true)
+		return ctx.Err()
+	case <-s.runDone:
+		request.canceled.Store(true)
+		select {
+		case err := <-request.done:
+			return err
+		default:
+			return ErrStoreNotAccepting
+		}
+	}
+}
+
+func (s *Store) lockQueueForFlush(ctx context.Context) error {
+	if s.queueMu.TryLock() {
+		return nil
+	}
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.runDone:
+			return ErrStoreNotAccepting
+		case <-ticker.C:
+			if s.queueMu.TryLock() {
+				return nil
+			}
+		}
+	}
 }
 
 func (s *Store) Publish(input Event) (PublishDisposition, error) {
@@ -499,7 +596,7 @@ func (s *Store) Publish(input Event) (PublishDisposition, error) {
 		return PublishDroppedNormal, nil
 	}
 	s.ingressOrdinal++
-	item := &storeQueueItem{event: owned, replayKey: replayKey, fingerprint: fingerprint, token: token, coalesceKey: coalesceKey, coalescible: coalescible, critical: critical, sequence: s.ingressOrdinal}
+	item := &storeQueueItem{event: owned, replayKey: replayKey, fingerprint: fingerprint, token: token, coalesceKey: coalesceKey, coalescible: coalescible, critical: critical, sequence: s.ingressOrdinal, firstSequence: s.ingressOrdinal}
 	if critical {
 		s.critical = append(s.critical, item)
 		s.stats.AcceptedCritical++
@@ -742,6 +839,29 @@ func (s *Store) signalTimerHandled() {
 	}
 }
 
+func (s *Store) signalFlushWaiting() {
+	if s.testProbe == nil || s.testProbe.flushWaiting == nil {
+		return
+	}
+	s.testProbe.flushWaitingOnce.Do(func() { close(s.testProbe.flushWaiting) })
+}
+
+func (s *Store) waitFlushRegisterProbe() {
+	if s.testProbe == nil || s.testProbe.flushRegisterEntered == nil || s.testProbe.flushRegisterRelease == nil {
+		return
+	}
+	s.testProbe.flushRegisterOnce.Do(func() { close(s.testProbe.flushRegisterEntered) })
+	<-s.testProbe.flushRegisterRelease
+}
+
+func (s *Store) waitIdleSelectProbe() {
+	if s.testProbe == nil || s.testProbe.idleSelectEntered == nil || s.testProbe.idleSelectRelease == nil {
+		return
+	}
+	s.testProbe.idleSelectOnce.Do(func() { close(s.testProbe.idleSelectEntered) })
+	<-s.testProbe.idleSelectRelease
+}
+
 func (s *Store) waitTimerHandleProbe() {
 	if s.testProbe == nil || s.testProbe.timerHandleEntered == nil || s.testProbe.timerHandleRelease == nil {
 		return
@@ -751,6 +871,14 @@ func (s *Store) waitTimerHandleProbe() {
 	default:
 	}
 	<-s.testProbe.timerHandleRelease
+}
+
+func (s *Store) waitTimerPreAdvanceProbe() {
+	if s.testProbe == nil || s.testProbe.timerPreAdvanceEntered == nil || s.testProbe.timerPreAdvanceRelease == nil {
+		return
+	}
+	s.testProbe.timerPreAdvanceOnce.Do(func() { close(s.testProbe.timerPreAdvanceEntered) })
+	<-s.testProbe.timerPreAdvanceRelease
 }
 
 func (s *Store) lockMutation() {
@@ -925,11 +1053,32 @@ func (s *Store) ordinaryPendingCountLocked() int {
 }
 
 func (s *Store) popQueueItem(maxOrdinal uint64, limited bool) *storeQueueItem {
+	return s.popQueueItemMode(maxOrdinal, limited, false, false)
+}
+
+func (s *Store) popFlushQueueItem(cutoff uint64) *storeQueueItem {
+	return s.popQueueItemMode(cutoff, true, true, true)
+}
+
+func (s *Store) popQueueItemMode(maxOrdinal uint64, limited, firstSequence, allowPendingFlush bool) *storeQueueItem {
 	s.lockQueue()
 	defer s.queueMu.Unlock()
+	if !allowPendingFlush {
+		s.compactFlushRequestsLocked()
+		if len(s.flushRequests) != 0 {
+			return nil
+		}
+	}
 	var item *storeQueueItem
 	eligible := func(value *storeQueueItem) bool {
-		return value != nil && (!limited || value.sequence <= maxOrdinal)
+		if value == nil || !limited {
+			return value != nil
+		}
+		ordinal := value.sequence
+		if firstSequence {
+			ordinal = value.firstSequence
+		}
+		return ordinal <= maxOrdinal
 	}
 	eligibleIndex := func(queue []*storeQueueItem) int {
 		if len(queue) == 0 {
@@ -1052,6 +1201,18 @@ func (s *Store) Run(ctx context.Context) error {
 	s.lifecycle, s.usedRun = storeRunning, true
 	s.lifecycleState.Store(uint32(storeRunning))
 	s.queueMu.Unlock()
+	for {
+		request, ok := s.popFlushRequest()
+		if !ok {
+			break
+		}
+		if err := s.handleFlushRequest(ctx, request); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return s.stopRun(nil)
+			}
+			return s.stopRun(err)
+		}
+	}
 	if target, due := s.armScheduler(); due {
 		if err := s.handleTimer(ctx, target, target.cutoff, target.cursor, false); err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -1064,6 +1225,15 @@ func (s *Store) Run(ctx context.Context) error {
 	for {
 		if ctx.Err() != nil {
 			return s.stopRun(nil)
+		}
+		if request, ok := s.popFlushRequest(); ok {
+			if err := s.handleFlushRequest(ctx, request); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return s.stopRun(nil)
+				}
+				return s.stopRun(err)
+			}
+			continue
 		}
 
 		// A timer watcher records the ingress cutoff as soon as its payload is
@@ -1110,6 +1280,7 @@ func (s *Store) Run(ctx context.Context) error {
 			continue
 		}
 		if s.timerPresent() {
+			s.waitIdleSelectProbe()
 			select {
 			case <-ctx.Done():
 				return s.stopRun(nil)
@@ -1119,6 +1290,7 @@ func (s *Store) Run(ctx context.Context) error {
 			}
 			continue
 		}
+		s.waitIdleSelectProbe()
 		select {
 		case <-ctx.Done():
 			return s.stopRun(nil)
@@ -1129,7 +1301,92 @@ func (s *Store) Run(ctx context.Context) error {
 	}
 }
 
+func (s *Store) compactFlushRequestsLocked() {
+	kept := s.flushRequests[:0]
+	for _, request := range s.flushRequests {
+		if request != nil && !request.canceled.Load() {
+			kept = append(kept, request)
+		}
+	}
+	for index := len(kept); index < len(s.flushRequests); index++ {
+		s.flushRequests[index] = nil
+	}
+	s.flushRequests = kept
+}
+
+func (s *Store) popFlushRequest() (*storeFlushRequest, bool) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	s.compactFlushRequestsLocked()
+	if len(s.flushRequests) == 0 {
+		return nil, false
+	}
+	request := s.flushRequests[0]
+	copy(s.flushRequests, s.flushRequests[1:])
+	s.flushRequests[len(s.flushRequests)-1] = nil
+	s.flushRequests = s.flushRequests[:len(s.flushRequests)-1]
+	return request, true
+}
+
+func (s *Store) flushRequestPending() bool {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	s.compactFlushRequestsLocked()
+	return len(s.flushRequests) != 0
+}
+
+func (s *Store) handleFlushRequest(ctx context.Context, request *storeFlushRequest) error {
+	var result error
+	for {
+		item := s.popFlushQueueItem(request.cutoff)
+		if item == nil {
+			break
+		}
+		if err := s.applyOneOutcome(ctx, item); err != nil {
+			if result == nil || !isValidAdmission(err) {
+				result = err
+			}
+			if !isValidAdmission(err) {
+				break
+			}
+		}
+	}
+	if err := s.appliedPrefixError(request.cutoff); err != nil && (result == nil || isValidAdmission(result)) {
+		result = err
+	}
+	if result == nil || isValidAdmission(result) {
+		if err := s.publishPendingForFlush(); err != nil && (result == nil || !isValidAdmission(err)) {
+			result = err
+		}
+	}
+	select {
+	case request.done <- result:
+	default:
+	}
+	if result != nil && !isValidAdmission(result) {
+		return result
+	}
+	return nil
+}
+
+func (s *Store) appliedPrefixError(cutoff uint64) error {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.prefixApplyError != nil && s.prefixErrorAt <= cutoff {
+		return s.prefixApplyError
+	}
+	return nil
+}
+
 func (s *Store) applyOne(ctx context.Context, item *storeQueueItem) error {
+	err := s.applyOneOutcome(ctx, item)
+	if isValidAdmission(err) {
+		return nil
+	}
+	return err
+}
+
+func (s *Store) applyOneOutcome(ctx context.Context, item *storeQueueItem) error {
 	if s.runtime.BeforeApply != nil {
 		s.runtime.BeforeApply()
 	}
@@ -1180,17 +1437,15 @@ func (s *Store) applyOne(ctx context.Context, item *storeQueueItem) error {
 	}
 	if err != nil {
 		s.stats.ApplyErrors++
+		if s.prefixApplyError == nil || item.firstSequence < s.prefixErrorAt {
+			s.prefixApplyError = err
+			s.prefixErrorAt = item.firstSequence
+		}
 	} else {
 		s.stats.Applied++
 	}
 	s.queueMu.Unlock()
-	if err != nil {
-		if isValidAdmission(err) {
-			return nil
-		}
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *Store) armScheduler() (storeTimerTarget, bool) {
@@ -1199,6 +1454,10 @@ func (s *Store) armScheduler() (storeTimerTarget, bool) {
 	s.lockQueue()
 	defer s.queueMu.Unlock()
 	if s.lifecycle != storeRunning {
+		return storeTimerTarget{}, false
+	}
+	s.compactFlushRequestsLocked()
+	if len(s.flushRequests) != 0 {
 		return storeTimerTarget{}, false
 	}
 	target := storeTimerTarget{after: s.deadlineCursor, cursor: s.cursorEpoch, cutoff: s.ingressOrdinal}
@@ -1298,6 +1557,10 @@ func (s *Store) timerPresent() bool {
 func (s *Store) takeFiredTimer() (bool, storeTimerTarget, uint64, uint64) {
 	s.queueMu.Lock()
 	defer s.queueMu.Unlock()
+	s.compactFlushRequestsLocked()
+	if len(s.flushRequests) != 0 {
+		return false, storeTimerTarget{}, 0, 0
+	}
 	if !s.timerFired || s.timer == nil {
 		return false, storeTimerTarget{}, 0, 0
 	}
@@ -1356,8 +1619,12 @@ func (s *Store) handleTimer(ctx context.Context, target storeTimerTarget, cutoff
 			return err
 		}
 	}
+	if s.flushRequestPending() {
+		return nil
+	}
 	if !target.semantic.IsZero() && !readiness.Before(target.semantic) {
-		advanceChange, advanceErr := s.advanceAt(target.semantic, readiness)
+		s.waitTimerPreAdvanceProbe()
+		advanceChange, advanced, advanceErr := s.advanceAt(target.semantic, readiness)
 		if s.testProbe != nil && s.testProbe.afterAdvanceUnlocked != nil {
 			s.testProbe.afterAdvanceUnlocked(advanceChange, advanceErr)
 		}
@@ -1367,7 +1634,7 @@ func (s *Store) handleTimer(ctx context.Context, target storeTimerTarget, cutoff
 			}
 		}
 		s.queueMu.Lock()
-		if s.cursorEpoch == cursor {
+		if advanced && s.cursorEpoch == cursor {
 			s.deadlineCursor = target.semantic
 		}
 		s.queueMu.Unlock()
@@ -1415,13 +1682,17 @@ func (s *Store) rearmTimer(target storeTimerTarget, now time.Time) error {
 	return nil
 }
 
-func (s *Store) advanceAt(deadline, readiness time.Time) (ChangeSet, error) {
+func (s *Store) advanceAt(deadline, readiness time.Time) (ChangeSet, bool, error) {
 	s.lockMutation()
 	defer s.mutationMu.Unlock()
 	s.lockQueue()
 	defer s.queueMu.Unlock()
 	if s.lifecycle != storeRunning {
-		return ChangeSet{}, context.Canceled
+		return ChangeSet{}, false, context.Canceled
+	}
+	s.compactFlushRequestsLocked()
+	if len(s.flushRequests) != 0 {
+		return ChangeSet{}, false, nil
 	}
 	before := s.reconciler.current
 	change, err := s.reconciler.Advance(deadline)
@@ -1431,7 +1702,7 @@ func (s *Store) advanceAt(deadline, readiness time.Time) (ChangeSet, error) {
 			s.firstDirty = readiness
 		}
 	}
-	return change, err
+	return change, true, err
 }
 
 // retainUnpublishedCurrentLocked keeps the newest owned commit while anchoring
@@ -1442,6 +1713,14 @@ func (s *Store) retainUnpublishedCurrentLocked() {
 }
 
 func (s *Store) publishPending(final bool) error {
+	return s.publishPendingMode(final, false)
+}
+
+func (s *Store) publishPendingForFlush() error {
+	return s.publishPendingMode(false, true)
+}
+
+func (s *Store) publishPendingMode(final, flushOwner bool) error {
 	s.lockMutation()
 	defer s.mutationMu.Unlock()
 	s.lockQueue()
@@ -1449,7 +1728,13 @@ func (s *Store) publishPending(final bool) error {
 	if !final && s.lifecycle != storeRunning {
 		return context.Canceled
 	}
-	needDiagnostics := len(s.pendingDiagnostics) != 0
+	if !final && !flushOwner {
+		s.compactFlushRequestsLocked()
+		if len(s.flushRequests) != 0 {
+			return nil
+		}
+	}
+	needDiagnostics := !flushOwner && len(s.pendingDiagnostics) != 0
 	candidate := s.pendingGeneration
 	if candidate != nil && candidate == s.snapshot.Load() {
 		candidate = nil
@@ -1518,6 +1803,7 @@ func isValidAdmission(err error) bool {
 }
 
 func (s *Store) stopRun(reason error) error {
+	defer s.signalRunDone()
 	s.lockQueue()
 	if s.lifecycle == storeStopped {
 		s.queueMu.Unlock()
@@ -1556,6 +1842,10 @@ func (s *Store) stopRun(reason error) error {
 		s.stats.CanceledQueued += owned
 	}
 	s.normal, s.critical, s.preApplyItem = nil, nil, nil
+	for index := range s.flushRequests {
+		s.flushRequests[index] = nil
+	}
+	s.flushRequests = nil
 	s.pendingReplay = make(map[[32]byte]*storeQueueItem)
 	s.pendingCoalesce = make(map[string]*storeQueueItem)
 	s.queuedBytes, s.inFlightBytes = 0, 0
@@ -1573,6 +1863,10 @@ func (s *Store) stopRun(reason error) error {
 	s.disposeStopDisposal(&disposal)
 	s.clearPrepareBatch()
 	return reason
+}
+
+func (s *Store) signalRunDone() {
+	s.runDoneOnce.Do(func() { close(s.runDone) })
 }
 
 func (s *Store) disposeStopDisposal(disposal *storeStopDisposal) {

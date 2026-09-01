@@ -284,8 +284,9 @@ claims `approval` or `blocked`.
 
 - **Codex thread liveness is file-based.** There is no per-thread process
   binding to read, so a codex thread's liveness is inferred from its rollout
-  file's mtime. A thread alive but silent for over an hour goes dark in the
-  graph while its process stays visible in the table.
+  file's mtime. A thread alive but silent for over an hour remains in the graph
+  as stale history while its process stays visible in the table; silence is not
+  terminal evidence and does not invent a death.
 - **The codex walk is bound to recent date dirs.** It scans today and yesterday
   in both local and UTC. A long-running thread whose rollout file lives in an
   older date directory is unreachable, even when its mtime is current. Observed

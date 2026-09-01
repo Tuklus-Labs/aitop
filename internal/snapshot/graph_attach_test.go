@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"aitop/internal/graph"
+	"aitop/internal/native"
 	"aitop/internal/types"
 )
 
@@ -20,6 +21,8 @@ import (
 const (
 	attachSession   = "84a06b9a-0873-4655-9eb9-d7cf99554b05"
 	attachAgent     = "alane1r-architect-b8b06ac8c091add8"
+	attachCodexOnce = "019f6b2a-0000-7000-8000-000000000021"
+	attachGrokOnce  = "94a06b9a-0873-4655-9eb9-d7cf99554b06"
 	attachPID       = 4242
 	attachStartTick = 7241979
 
@@ -91,6 +94,64 @@ func attachClaudeHome(t *testing.T, now time.Time, withAgent bool) string {
 	}
 	if err := os.Chtimes(path, now, now); err != nil {
 		t.Fatalf("attach-fixture-chtimes rule violated: path=%s err=%v", path, err)
+	}
+	return home
+}
+
+func attachCodexOnceHome(t *testing.T, now time.Time) string {
+	t.Helper()
+	home := t.TempDir()
+	day := now.In(time.Local)
+	dir := filepath.Join(home, "sessions", day.Format("2006"), day.Format("01"), day.Format("02"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("attach-codex-once-mkdir rule violated: dir=%s error=%v", dir, err)
+	}
+	record := map[string]any{
+		"type": "session_meta",
+		"payload": map[string]any{
+			"id": attachCodexOnce, "session_id": attachCodexOnce, "thread_source": "user",
+			"cwd": "/home/aegis/Projects/aitop", "source": "cli",
+		},
+	}
+	body, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("attach-codex-once-encode rule violated: error=%v", err)
+	}
+	path := filepath.Join(dir, "rollout-2026-08-31T00-00-00-"+attachCodexOnce+".jsonl")
+	if err := os.WriteFile(path, append(body, '\n'), 0o644); err != nil {
+		t.Fatalf("attach-codex-once-write rule violated: path=%s error=%v", path, err)
+	}
+	if err := os.Chtimes(path, now, now); err != nil {
+		t.Fatalf("attach-codex-once-chtimes rule violated: path=%s error=%v", path, err)
+	}
+	return home
+}
+
+func attachGrokOnceHome(t *testing.T, now time.Time) string {
+	t.Helper()
+	home := t.TempDir()
+	cwd := "/home/aegis/Projects/aitop"
+	bucket := strings.ReplaceAll(cwd, "/", "%2F")
+	dir := filepath.Join(home, "sessions", bucket, attachGrokOnce)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("attach-grok-once-mkdir rule violated: dir=%s error=%v", dir, err)
+	}
+	record := map[string]any{
+		"info":             map[string]any{"id": attachGrokOnce, "cwd": cwd},
+		"current_model_id": "grok-4", "agent_name": "Grok", "generated_title": "attach once",
+		"created_at":     now.Add(-time.Minute).Format(time.RFC3339Nano),
+		"last_active_at": now.Format(time.RFC3339Nano), "session_kind": "user",
+	}
+	body, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("attach-grok-once-encode rule violated: error=%v", err)
+	}
+	path := filepath.Join(dir, "summary.json")
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("attach-grok-once-write rule violated: path=%s error=%v", path, err)
+	}
+	if err := os.Chtimes(path, now, now); err != nil {
+		t.Fatalf("attach-grok-once-chtimes rule violated: path=%s error=%v", path, err)
 	}
 	return home
 }
@@ -203,6 +264,47 @@ func TestAttachGraphRegistersNativeCollectors(t *testing.T) {
 	})
 	if !hasPrefix(snap, "claude:session:") {
 		t.Fatalf("attach-graph-registers-native-collectors rule violated: no claude:session: node within 2s, nodes=%v", nodeIDs(snap))
+	}
+}
+
+func TestAttachGraphOncePublishesFreshUnboundNodeForEveryRuntime(t *testing.T) {
+	now := time.Now()
+	claudeID, err := graph.ClaudeSessionID(attachSession)
+	if err != nil {
+		t.Fatalf("attach-once-claude-id fixture rule violated: error=%v", err)
+	}
+	codexID, err := graph.CodexThreadID(attachCodexOnce)
+	if err != nil {
+		t.Fatalf("attach-once-codex-id fixture rule violated: error=%v", err)
+	}
+	grokID, err := graph.GrokSessionID(attachGrokOnce)
+	if err != nil {
+		t.Fatalf("attach-once-grok-id fixture rule violated: error=%v", err)
+	}
+	cases := []struct {
+		name  string
+		homes GraphHomes
+		want  graph.NodeID
+	}{
+		{name: "claude", homes: GraphHomes{Claude: attachClaudeHome(t, now, false)}, want: claudeID},
+		{name: "codex", homes: GraphHomes{Codex: attachCodexOnceHome(t, now)}, want: codexID},
+		{name: "grok", homes: GraphHomes{Grok: attachGrokOnceHome(t, now)}, want: grokID},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng := &Engine{ProcRoot: t.TempDir()}
+			shadow, _, lanes, err := AttachGraphOnce(eng, tc.homes)
+			if err != nil || shadow == nil || len(lanes) != 1 {
+				t.Fatalf("attach-once runtime construction rule violated: runtime=%s error=%v shadowNil=%t lanes=%d", tc.name, err, shadow == nil, len(lanes))
+			}
+			runShadow(t, shadow)
+			ready := lanes.WaitNativeEvidence(shadow, time.Second)
+			snapshot := shadow.Snapshot()
+			node, visible := nodeByGraphID(snapshot, tc.want)
+			if ready != 1 || !visible || node.Incarnation == "" || node.Process != nil {
+				t.Fatalf("attach-once fresh unbound runtime node rule violated: runtime=%s ready=%d wantReady=1 visible=%t node=%+v want=%s snapshot=%+v", tc.name, ready, visible, node, tc.want, snapshot)
+			}
+		})
 	}
 }
 
@@ -499,6 +601,120 @@ func TestWaitNativeEvidenceReturnsWhenEveryLaneIsIn(t *testing.T) {
 	// budget would also report three.
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("wait-native-evidence-returns-on-the-lanes-not-the-budget rule violated: elapsed=%s budget=2s", elapsed)
+	}
+}
+
+func TestNativeFirstTickWitnessRejectsNodeOnlySnapshot(t *testing.T) {
+	const parent = graph.NodeID("native-witness-parent")
+	const child = graph.NodeID("native-witness-child")
+	const parentIncarnation = graph.IncarnationID("native-witness-parent-incarnation")
+	const childIncarnation = graph.IncarnationID("native-witness-child-incarnation")
+	source := graph.SourceRef{ID: "native-witness-source", Runtime: types.RuntimeCodex, Incarnation: 1, Authority: graph.AuthorityNative}
+	edgeKey := graph.RelationshipEdgeKey(graph.EdgeSpawn, parent, child, "native-witness-child")
+	witness := native.FirstTickWitness{
+		Nodes: []graph.NodeID{parent, child}, Edges: []graph.EdgeKey{edgeKey}, States: map[graph.NodeID]graph.State{child: graph.StateActive},
+		Incarnations: map[graph.NodeID]graph.IncarnationID{parent: parentIncarnation, child: childIncarnation},
+		StateSources: map[graph.NodeID]graph.SourceRef{child: source}, EdgeProvenance: map[graph.EdgeKey]graph.Provenance{edgeKey: graph.ProvenanceNative},
+	}
+	nodesOnly := &graph.Snapshot{Nodes: []graph.Node{{ID: parent, Incarnation: parentIncarnation}, {ID: child, Incarnation: childIncarnation}}, Edges: []graph.Edge{}, Gaps: []graph.Gap{}}
+	if nativeFirstTickWitnessVisible(nodesOnly, witness) {
+		t.Fatalf("native first-tick node-prefix is not whole-public-tick rule violated: snapshot=%+v witness=%+v", nodesOnly, witness)
+	}
+	stateOnly := graph.CloneSnapshot(nodesOnly)
+	stateOnly.Nodes[1].State = graph.NodeState{Value: graph.StateActive}
+	if nativeFirstTickWitnessVisible(stateOnly, witness) {
+		t.Fatalf("native first-tick wrong-source state witness rule violated: snapshot=%+v witness=%+v", stateOnly, witness)
+	}
+	stateOnly.Nodes[1].State.Source = source
+	if nativeFirstTickWitnessVisible(stateOnly, witness) {
+		t.Fatalf("native first-tick missing-edge witness rule violated: snapshot=%+v witness=%+v", stateOnly, witness)
+	}
+	wrongEdge := graph.CloneSnapshot(stateOnly)
+	wrongEdge.Edges = []graph.Edge{{Key: edgeKey, Source: parent, Target: child, Type: graph.EdgeSpawn, Provenance: graph.ProvenanceAITopSidecar, Lifecycle: graph.LifecycleActive}}
+	if nativeFirstTickWitnessVisible(wrongEdge, witness) {
+		t.Fatalf("native first-tick wrong-provenance edge witness rule violated: snapshot=%+v witness=%+v", wrongEdge, witness)
+	}
+	complete := graph.CloneSnapshot(wrongEdge)
+	complete.Edges[0].Provenance = graph.ProvenanceNative
+	wrongIncarnation := graph.CloneSnapshot(complete)
+	wrongIncarnation.Nodes[1].Incarnation = "native-witness-wrong-incarnation"
+	if nativeFirstTickWitnessVisible(wrongIncarnation, witness) {
+		t.Fatalf("native first-tick wrong-incarnation node witness rule violated: snapshot=%+v witness=%+v", wrongIncarnation, witness)
+	}
+	if !nativeFirstTickWitnessVisible(complete, witness) {
+		t.Fatalf("native first-tick whole-public-tick visibility rule violated: snapshot=%+v witness=%+v", complete, witness)
+	}
+}
+
+type immediateNativeLane struct {
+	ready chan struct{}
+	nodes []graph.NodeID
+}
+
+func (l *immediateNativeLane) FirstTick() <-chan struct{} { return l.ready }
+func (l *immediateNativeLane) FirstTickNodes() []graph.NodeID {
+	return append([]graph.NodeID{}, l.nodes...)
+}
+
+type flushWitnessGraph struct {
+	snapshot *graph.Snapshot
+	flushes  atomic.Int32
+	flushErr error
+	onFlush  func()
+}
+
+func (g *flushWitnessGraph) Snapshot() *graph.Snapshot { return g.snapshot }
+func (g *flushWitnessGraph) Flush(context.Context) error {
+	g.flushes.Add(1)
+	if g.onFlush != nil {
+		g.onFlush()
+	}
+	return g.flushErr
+}
+
+func TestWaitNativeEvidenceFlushesReadyPrefixAfterLaterLaneTimeout(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	stalled := make(chan struct{})
+	const id = graph.NodeID("ready-before-stalled-native-node")
+	first := &immediateNativeLane{ready: ready, nodes: []graph.NodeID{id}}
+	second := &immediateNativeLane{ready: stalled}
+	target := &flushWitnessGraph{snapshot: &graph.Snapshot{Edges: []graph.Edge{}, Gaps: []graph.Gap{}}}
+	target.onFlush = func() {
+		target.snapshot = &graph.Snapshot{Nodes: []graph.Node{{ID: id}}, Edges: []graph.Edge{}, Gaps: []graph.Gap{}}
+	}
+	readyCount := (NativeLanes{first, second}).waitNativeEvidence(target, 25*time.Millisecond)
+	if readyCount != 1 || target.flushes.Load() != 1 || target.snapshot == nil || len(target.snapshot.Nodes) != 1 || target.snapshot.Nodes[0].ID != id {
+		t.Fatalf("native evidence later-lane timeout preserves ready prefix rule violated: ready=%d want=1 flushes=%d want=1 snapshot=%+v", readyCount, target.flushes.Load(), target.snapshot)
+	}
+}
+
+func TestWaitNativeEvidenceDoesNotTrustAggregateAfterFlushError(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	const id = graph.NodeID("aggregate-with-rejected-native-prefix")
+	lane := &immediateNativeLane{ready: ready, nodes: []graph.NodeID{id}}
+	target := &flushWitnessGraph{
+		snapshot: &graph.Snapshot{Nodes: []graph.Node{{ID: id}}, Edges: []graph.Edge{}, Gaps: []graph.Gap{}},
+		flushErr: &graph.AdmissionError{Kind: graph.AdmissionCountLimit},
+	}
+	started := time.Now()
+	readyCount := (NativeLanes{lane}).waitNativeEvidence(target, 40*time.Millisecond)
+	elapsed := time.Since(started)
+	if readyCount != 1 || target.flushes.Load() != 1 || elapsed < 25*time.Millisecond {
+		t.Fatalf("native evidence aggregate cannot satisfy rejected prefix rule violated: ready=%d want=1 flushes=%d want=1 elapsed=%s floor=25ms snapshot=%+v", readyCount, target.flushes.Load(), elapsed, target.snapshot)
+	}
+}
+
+func TestWaitNativeEvidenceFlushesBeforeAggregateMatch(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	const id = graph.NodeID("occupancy-equal-native-node")
+	lane := &immediateNativeLane{ready: ready, nodes: []graph.NodeID{id}}
+	target := &flushWitnessGraph{snapshot: &graph.Snapshot{Nodes: []graph.Node{{ID: id}}, Edges: []graph.Edge{}, Gaps: []graph.Gap{}}}
+	readyCount := (NativeLanes{lane}).waitNativeEvidence(target, time.Second)
+	if readyCount != 1 || target.flushes.Load() != 1 {
+		t.Fatalf("native evidence flush precedes aggregate witness match rule violated: ready=%d want=1 flushes=%d want=1 snapshot=%+v", readyCount, target.flushes.Load(), target.snapshot)
 	}
 }
 

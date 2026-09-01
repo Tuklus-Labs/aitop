@@ -43,6 +43,12 @@ func NewCodex(home string, latest func() []types.Row) *Collector {
 	return newCollector(codexSourceID, types.RuntimeCodex, &codexScanner{home: home}, latest)
 }
 
+// NewCodexOnce builds a collector for a one-shot over already-frozen Engine
+// rows. Fresh unbound sightings publish on the first and only poll.
+func NewCodexOnce(home string, latest func() []types.Row) *Collector {
+	return newCaptureCollector(codexSourceID, types.RuntimeCodex, &codexScanner{home: home}, latest)
+}
+
 // codexScanner reads ~/.codex. Every read tolerates a missing or unreadable path
 // by skipping it, so a half-written rollout costs one thread rather than the
 // whole runtime.

@@ -3,6 +3,7 @@ package native
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -457,11 +458,174 @@ func TestNativeStateClaimGetsHeartbeatLane(t *testing.T) {
 	if len(quietInvalid) != 0 {
 		t.Fatalf("native-emitted-events-validate rule violated: invalid=%v", quietInvalid)
 	}
-	if beats := countKind(quietEvents, graph.EventHeartbeatObserved); beats != 0 {
-		t.Fatalf("native-unclaimed-state-has-no-heartbeat rule violated: heartbeats=%d want=0 kinds=%v", beats, kindsOf(quietEvents))
+	if beats := countKind(quietEvents, graph.EventHeartbeatObserved); beats != 1 {
+		t.Fatalf("native unclaimed-state visibility lease rule violated: heartbeats=%d want=1 kinds=%v", beats, kindsOf(quietEvents))
 	}
 	if states := countKind(quietEvents, graph.EventStateObserved); states != 0 {
 		t.Fatalf("native-unclaimed-state-emits-nothing rule violated: states=%d want=0 kinds=%v", states, kindsOf(quietEvents))
+	}
+}
+
+func TestNativePollHeartbeatsEveryAdmittedNonterminalNode(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC)
+	zeroID := mustSessionID(t, testParentSession)
+	activeID := mustSessionID(t, testSecondSession)
+	terminalID := mustAgentID(t, testParentSession, testChildAgent)
+
+	zero := parentSighting(zeroID)
+	active := parentSighting(activeID)
+	active.SessionID = testSecondSession
+	active.State = graph.StateActive
+	terminal := childSighting(terminalID)
+	terminalExitAt := now.Add(-time.Second)
+	terminal.Exit = graph.OutcomeCompleted
+	terminal.ExitAt = &terminalExitAt
+
+	t.Run("admitted-nonterminal-nodes", func(t *testing.T) {
+		collector := newTestCollector(&fakeScanner{nodes: []NodeSighting{zero, active, terminal}}, nil, now)
+		sink := &recordingSink{}
+		collector.tick(sink)
+
+		events, invalid := sink.snapshot()
+		if len(invalid) != 0 {
+			t.Fatalf("native-admitted-heartbeats-events-validate rule violated: invalid=%v kinds=%v", invalid, kindsOf(events))
+		}
+		if nodes := countKind(events, graph.EventNodeObserved); nodes != 3 {
+			t.Fatalf("native-admitted-node-observation rule violated: nodeEvents=%d want=3 kinds=%v", nodes, kindsOf(events))
+		}
+
+		if states := countKind(events, graph.EventStateObserved); states != 1 {
+			t.Fatalf("native-active-only-state rule violated: stateEvents=%d want=1 kinds=%v", states, kindsOf(events))
+		}
+		stateEvent, ok := firstOfKind(events, graph.EventStateObserved, activeID)
+		if !ok {
+			t.Fatalf("native-active-only-state rule violated: no state_observed for active actor=%s kinds=%v", activeID, kindsOf(events))
+		}
+		stateData, isState := stateEvent.Data.(graph.StateObserved)
+		if !isState || stateData.State != graph.StateActive {
+			t.Fatalf("native-active-state-payload rule violated: data=%+v wantState=%s", stateEvent.Data, graph.StateActive)
+		}
+		for _, actor := range []graph.NodeID{zeroID, terminalID} {
+			if _, found := firstOfKind(events, graph.EventStateObserved, actor); found {
+				t.Fatalf("native-active-only-state rule violated: unexpected state_observed actor=%s kinds=%v", actor, kindsOf(events))
+			}
+		}
+
+		heartbeats := map[graph.NodeID][]graph.Event{}
+		for _, event := range events {
+			if event.Kind == graph.EventHeartbeatObserved {
+				heartbeats[event.Actor] = append(heartbeats[event.Actor], event)
+			}
+		}
+		if beats := countKind(events, graph.EventHeartbeatObserved); beats != 2 {
+			t.Fatalf("native-admitted-nonterminal-heartbeat-cardinality rule violated: heartbeats=%d want=2 actors=%v kinds=%v", beats, len(heartbeats), kindsOf(events))
+		}
+		for _, actor := range []graph.NodeID{zeroID, activeID} {
+			if beats := len(heartbeats[actor]); beats != 1 {
+				t.Fatalf("native-admitted-nonterminal-heartbeat-cardinality rule violated: actor=%s heartbeats=%d want=1 kinds=%v", actor, beats, kindsOf(events))
+			}
+			beat := heartbeats[actor][0]
+			if beat.Observation == nil {
+				t.Fatalf("native-admitted-heartbeat-observation rule violated: actor=%s observation=nil event=%+v", actor, beat)
+			}
+		}
+		if beats := len(heartbeats[terminalID]); beats != 0 {
+			t.Fatalf("native-terminal-has-no-heartbeat rule violated: actor=%s heartbeats=%d want=0 kinds=%v", terminalID, beats, kindsOf(events))
+		}
+		if len(heartbeats) != 2 {
+			t.Fatalf("native-admitted-nonterminal-heartbeat-actors rule violated: actors=%d want=2 actors=%v kinds=%v", len(heartbeats), heartbeats, kindsOf(events))
+		}
+
+		keys := map[graph.ObservationKey]graph.NodeID{}
+		for actor, actorBeats := range heartbeats {
+			for _, beat := range actorBeats {
+				key := beat.Observation.Key
+				if prior, seen := keys[key]; seen {
+					t.Fatalf("native-admitted-heartbeat-keys-unique rule violated: key=%q actors=%s/%s kinds=%v", key, prior, actor, kindsOf(events))
+				}
+				keys[key] = actor
+			}
+		}
+		if len(keys) != 2 {
+			t.Fatalf("native-admitted-heartbeat-keys-unique rule violated: uniqueKeys=%d want=2 kinds=%v", len(keys), kindsOf(events))
+		}
+	})
+
+	for _, tc := range []struct {
+		name        string
+		disposition graph.PublishDisposition
+	}{
+		{name: "dropped-node", disposition: graph.PublishDroppedNormal},
+		{name: "rejected-node", disposition: graph.PublishRejected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			collector := newTestCollector(&fakeScanner{nodes: []NodeSighting{active}}, nil, now)
+			sink := &recordingSink{disp: tc.disposition}
+			collector.tick(sink)
+
+			events, invalid := sink.snapshot()
+			if len(invalid) != 0 {
+				t.Fatalf("native-refused-node-heartbeats-events-validate rule violated: disposition=%d invalid=%v kinds=%v", tc.disposition, invalid, kindsOf(events))
+			}
+			if _, found := firstOfKind(events, graph.EventNodeObserved, activeID); !found {
+				t.Fatalf("native-refused-node-observation rule violated: disposition=%d no node_observed actor=%s kinds=%v", tc.disposition, activeID, kindsOf(events))
+			}
+			if beats := countKind(events, graph.EventHeartbeatObserved); beats != 0 {
+				t.Fatalf("native-refused-node-has-no-heartbeat rule violated: disposition=%d heartbeats=%d want=0 kinds=%v", tc.disposition, beats, kindsOf(events))
+			}
+			switch tc.disposition {
+			case graph.PublishDroppedNormal:
+				if dropped := collector.Disp().Dropped.Load(); dropped == 0 {
+					t.Fatalf("native-dropped-node-disposition rule violated: dropped=%d events=%d", dropped, len(events))
+				}
+			case graph.PublishRejected:
+				if rejected := collector.Disp().Rejected.Load(); rejected == 0 {
+					t.Fatalf("native-rejected-node-disposition rule violated: rejected=%d events=%d", rejected, len(events))
+				}
+			}
+		})
+	}
+}
+
+func TestNativeFirstTickWitnessIncludesWholePublicTick(t *testing.T) {
+	now := time.Date(2026, 8, 31, 7, 0, 0, 0, time.UTC)
+	parent := mustSessionID(t, testParentSession)
+	child := mustAgentID(t, testParentSession, testChildAgent)
+	terminal := mustSessionID(t, testSecondSession)
+	activeChild := childSighting(child)
+	activeChild.State = graph.StateActive
+	terminalNode := parentSighting(terminal)
+	terminalNode.SessionID = testSecondSession
+	terminalAt := now.Add(-time.Second)
+	terminalNode.Exit = graph.OutcomeCompleted
+	terminalNode.ExitAt = &terminalAt
+	collector := newTestCollector(&fakeScanner{
+		nodes:  []NodeSighting{parentSighting(parent), activeChild, terminalNode},
+		spawns: []SpawnSighting{spawnSighting(parent, child)},
+	}, nil, now)
+	sink := &recordingSink{}
+	collector.tick(sink)
+	events, invalid := sink.snapshot()
+	if len(invalid) != 0 {
+		t.Fatalf("native first-tick witness fixture event validation rule violated: invalid=%v kinds=%v", invalid, kindsOf(events))
+	}
+
+	witness := collector.FirstTickWitness()
+	wantEdge := graph.RelationshipEdgeKey(graph.EdgeSpawn, parent, child, graph.RelationshipID(testChildAgent))
+	wantSource := collector.sourceRef()
+	if !reflect.DeepEqual(witness.Nodes, []graph.NodeID{parent, child, terminal}) || !reflect.DeepEqual(witness.Edges, []graph.EdgeKey{wantEdge}) || len(witness.States) != 2 || witness.States[child] != graph.StateActive || witness.States[terminal] != graph.StateCompleted || len(witness.Incarnations) != 3 || witness.Incarnations[child] == "" || witness.StateSources[child] != wantSource || witness.StateSources[terminal] != wantSource || witness.EdgeProvenance[wantEdge] != graph.ProvenanceNative {
+		t.Fatalf("native first-tick whole-public-witness rule violated: witness=%+v wantNodes=%v wantEdge=%s wantStates=%v kinds=%v", witness, []graph.NodeID{parent, child, terminal}, wantEdge, map[graph.NodeID]graph.State{child: graph.StateActive, terminal: graph.StateCompleted}, kindsOf(events))
+	}
+
+	witness.Nodes[0] = "mutated-node"
+	witness.Edges[0] = "mutated-edge"
+	witness.States[child] = graph.StateFailed
+	witness.Incarnations[child] = "mutated-incarnation"
+	witness.StateSources[child] = graph.SourceRef{}
+	witness.EdgeProvenance[wantEdge] = graph.ProvenanceAITopSidecar
+	again := collector.FirstTickWitness()
+	if again.Nodes[0] != parent || again.Edges[0] != wantEdge || again.States[child] != graph.StateActive || again.Incarnations[child] == "mutated-incarnation" || again.StateSources[child] != wantSource || again.EdgeProvenance[wantEdge] != graph.ProvenanceNative {
+		t.Fatalf("native first-tick witness clone ownership rule violated: first=%+v second=%+v", witness, again)
 	}
 }
 

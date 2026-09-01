@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -16,9 +17,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/charmbracelet/x/ansi"
-
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"aitop/internal/act"
@@ -854,6 +855,218 @@ func TestProductionCaptureOncePublishesGraph(t *testing.T) {
 	}
 }
 
+// TestProductionCaptureOncePublishesFreshUnboundCodexSpawn covers
+// NP-REVIEW-ONESHOT-FRESH. A current-mtime child and parent are fresh enough
+// to receive the native collector's one-poll binding grace, but a one-shot has
+// no second poll. The production path must therefore use one-shot collectors
+// over its frozen rows while preserving the child's invocation identity when
+// no process row binds it.
+func TestProductionCaptureOncePublishesFreshUnboundCodexSpawn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const parent = "019f6b2a-0000-7000-8000-000000000001"
+	const child = "019f6b2a-0000-7000-8000-000000000002"
+	now := time.Now()
+	day := filepath.Join(home, ".codex", "sessions", now.Format("2006"), now.Format("01"), now.Format("02"))
+	if err := os.MkdirAll(day, 0755); err != nil {
+		t.Fatalf("oneshot-fresh-codex-fixture-directory rule violated: day=%q err=%v", day, err)
+	}
+	writeRollout := func(thread, body string) string {
+		t.Helper()
+		path := filepath.Join(day, fmt.Sprintf("rollout-%s-%s.jsonl", now.Format("2006-01-02T15-04-05"), thread))
+		if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+			t.Fatalf("oneshot-fresh-codex-fixture-write rule violated: thread=%s path=%q err=%v", thread, path, err)
+		}
+		if err := os.Chtimes(path, now, now); err != nil {
+			t.Fatalf("oneshot-fresh-codex-fixture-mtime rule violated: thread=%s path=%q err=%v", thread, path, err)
+		}
+		return path
+	}
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	parentPath := writeRollout(parent, fmt.Sprintf(`{"timestamp":%q,"ordinal":0,"type":"session_meta","payload":{"session_id":%q,"id":%q,"cwd":"/tmp/aitop/post-native","source":"cli","thread_source":"user"}}
+`, stamp, parent, parent))
+	childPath := writeRollout(child, fmt.Sprintf(`{"timestamp":%q,"ordinal":0,"type":"session_meta","payload":{"session_id":%q,"id":%q,"parent_thread_id":%q,"cwd":"/tmp/aitop/post-native","source":{"subagent":{"thread_spawn":{"agent_nickname":"Luna"}}},"thread_source":"subagent"}}
+`, stamp, parent, child, parent))
+	if parentPath == childPath {
+		t.Fatalf("oneshot-fresh-codex-fixture-distinct-rollouts rule violated: parent=%q child=%q", parentPath, childPath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	snap, err := productionCaptureOnce(ctx, runOptions{NoPrices: true})
+	if err != nil {
+		t.Fatalf("oneshot-fresh-codex-capture-succeeds rule violated: err=%v", err)
+	}
+	if snap == nil || snap.Graph == nil {
+		t.Fatalf("oneshot-fresh-codex-publishes-graph rule violated: snap=%v graphNil=%t", snap, snap == nil || snap.Graph == nil)
+	}
+	parentID, err := graph.CodexThreadID(parent)
+	if err != nil {
+		t.Fatalf("oneshot-fresh-codex-parent-canonical-id rule violated: parent=%q err=%v", parent, err)
+	}
+	childID, err := graph.CodexThreadID(child)
+	if err != nil {
+		t.Fatalf("oneshot-fresh-codex-child-canonical-id rule violated: child=%q err=%v", child, err)
+	}
+	wantChildIncarnation, err := graph.InvocationIncarnation(types.RuntimeCodex, child)
+	if err != nil {
+		t.Fatalf("oneshot-fresh-codex-child-invocation-incarnation rule violated: child=%q err=%v", child, err)
+	}
+	var parentNode, childNode *graph.Node
+	for i := range snap.Graph.Nodes {
+		node := &snap.Graph.Nodes[i]
+		switch node.ID {
+		case parentID:
+			parentNode = node
+		case childID:
+			childNode = node
+		}
+	}
+	var nativeSpawn *graph.Edge
+	for i := range snap.Graph.Edges {
+		edge := &snap.Graph.Edges[i]
+		if edge.Source == parentID && edge.Target == childID && edge.Type == graph.EdgeSpawn && edge.Provenance == graph.ProvenanceNative {
+			nativeSpawn = edge
+			break
+		}
+	}
+	childIncarnationOK := childNode != nil && childNode.Incarnation == wantChildIncarnation
+	childUnbound := childNode != nil && childNode.Process == nil
+	if parentNode == nil || childNode == nil || !childIncarnationOK || !childUnbound || nativeSpawn == nil {
+		t.Fatalf("capture-once publishes fresh unbound Codex spawn rule violated: parentID=%s childID=%s parentSeen=%t childSeen=%t childIncarnationOK=%t childUnbound=%t nativeSpawnSeen=%t wantChildIncarnation=%s nodes=%v edges=%v", parentID, childID, parentNode != nil, childNode != nil, childIncarnationOK, childUnbound, nativeSpawn != nil, wantChildIncarnation, snap.Graph.Nodes, snap.Graph.Edges)
+	}
+}
+
+// TestProductionInteractiveHandsLiveGraphToPane covers
+// NP-REVIEW-INTERACTIVE-HANDOFF. The attach override holds the graph empty for
+// Engine.Start's initial publication, then exposes a later live graph. The
+// seam receives the actual tea.Model, drives its real initial tick command,
+// switches to preset 2, and checks the rendered parent-child forest.
+func TestProductionInteractiveHandsLiveGraphToPane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const parent = graph.NodeID("codex:thread:019f6b2a-0000-7000-8000-000000000011")
+	const child = graph.NodeID("codex:thread:019f6b2a-0000-7000-8000-000000000012")
+	emptyGraph := &graph.Snapshot{At: time.Now()}
+	liveGraph := &graph.Snapshot{
+		At: time.Now(),
+		Nodes: []graph.Node{
+			{ID: parent, Incarnation: "codex:invocation:019f6b2a-0000-7000-8000-000000000011", Runtime: types.RuntimeCodex, Role: types.RolePrimary, ProvenName: "review-parent", State: graph.NodeState{Value: graph.StateActive}},
+			{ID: child, Incarnation: "codex:invocation:019f6b2a-0000-7000-8000-000000000012", Runtime: types.RuntimeCodex, Role: types.RoleSubagent, ProvenName: "review-child", State: graph.NodeState{Value: graph.StateActive}},
+		},
+		Edges: []graph.Edge{{
+			Key: "review-spawn", Source: parent, Target: child, Type: graph.EdgeSpawn,
+			Provenance: graph.ProvenanceNative, Relationship: "019f6b2a-0000-7000-8000-000000000012",
+			Lifecycle: graph.LifecycleActive,
+		}},
+	}
+	var live atomic.Bool
+	var providerCalls atomic.Int32
+	graphPublished := make(chan struct{})
+	var graphPublishedOnce sync.Once
+	var engine *snapshot.Engine
+	priorAttach := attachGraph
+	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+		engine = eng
+		eng.GraphSnapshot = func() *graph.Snapshot {
+			providerCalls.Add(1)
+			if live.Load() {
+				graphPublishedOnce.Do(func() { close(graphPublished) })
+				return liveGraph
+			}
+			return emptyGraph
+		}
+		occ := graph.NewOccupancyCollector(func() []types.Row { return eng.Rows() })
+		shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), occ)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return shadow, occ, nil, nil
+	}
+	t.Cleanup(func() { attachGraph = priorAttach })
+
+	priorProgram := runInteractiveProgram
+	t.Cleanup(func() { runInteractiveProgram = priorProgram })
+	runInteractiveProgram = func(ctx context.Context, model tea.Model, _ io.Writer) error {
+		if model == nil {
+			t.Fatalf("interactive-handoff-receives-model rule violated: model=nil")
+		}
+		if engine == nil {
+			t.Fatalf("interactive-handoff-attach-installs-engine-provider rule violated: engine=nil calls=%d", providerCalls.Load())
+		}
+		initial := engine.Snapshot()
+		var initialGraph *graph.Snapshot
+		if initial != nil {
+			initialGraph = initial.Graph
+		}
+		if initial == nil || initialGraph == nil || len(initialGraph.Nodes) != 0 {
+			t.Fatalf("interactive-handoff-starts-before-live-graph rule violated: snapshot=%v graph=%v providerCalls=%d", initial, initialGraph, providerCalls.Load())
+		}
+		var next tea.Model
+		next, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+		if next == nil {
+			t.Fatalf("interactive-handoff-window-size-preserves-model rule violated: model became nil")
+		}
+		live.Store(true)
+		select {
+		case <-graphPublished:
+		case <-ctx.Done():
+			t.Fatalf("interactive-handoff-engine-publishes-live-graph rule violated: context=%v providerCalls=%d", ctx.Err(), providerCalls.Load())
+		case <-time.After(3 * time.Second):
+			t.Fatalf("interactive-handoff-engine-publishes-live-graph rule violated: providerCalls=%d", providerCalls.Load())
+		}
+		init := next.Init()
+		if init == nil {
+			t.Fatalf("interactive-handoff-uses-real-tick-command rule violated: model.Init returned nil")
+		}
+		tickDone := make(chan tea.Msg, 1)
+		go func() { tickDone <- init() }()
+		var tick tea.Msg
+		select {
+		case tick = <-tickDone:
+		case <-ctx.Done():
+			t.Fatalf("interactive-handoff-real-tick-completes rule violated: context=%v", ctx.Err())
+		case <-time.After(3 * time.Second):
+			t.Fatalf("interactive-handoff-real-tick-completes rule violated: no tick message before deadline")
+		}
+		next, followup := next.Update(tick)
+		if followup == nil {
+			t.Fatalf("interactive-handoff-real-tick-reschedules rule violated: follow-up command=nil")
+		}
+		next, _ = next.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+		frame := ansi.Strip(next.View())
+		lines := strings.Split(strings.TrimRight(frame, "\n"), "\n")
+		lineContaining := func(needle string) int {
+			for i, line := range lines {
+				if strings.Contains(line, needle) {
+					return i
+				}
+			}
+			return -1
+		}
+		parentLine := lineContaining("review-parent")
+		childLine := lineContaining("review-child")
+		if parentLine < 0 || childLine < 0 {
+			t.Fatalf("interactive-handoff-graph-pane-paints-live-nodes rule violated: parentLine=%d childLine=%d frame=\n%s", parentLine, childLine, frame)
+		}
+		if childLine != parentLine+1 {
+			t.Fatalf("interactive-handoff-graph-pane-keeps-parent-child-adjacent rule violated: parentLine=%d childLine=%d frame=\n%s", parentLine, childLine, frame)
+		}
+		if !strings.Contains(lines[childLine], "└─") {
+			t.Fatalf("interactive-handoff-graph-pane-paints-child-rail rule violated: childLine=%d line=%q frame=\n%s", childLine, lines[childLine], frame)
+		}
+		if strings.Contains(lines[parentLine], "└─") || strings.Contains(lines[parentLine], "├─") {
+			t.Fatalf("interactive-handoff-graph-pane-keeps-parent-root-unrailed rule violated: parentLine=%d line=%q frame=\n%s", parentLine, lines[parentLine], frame)
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := productionRunInteractive(ctx, runOptions{NoPrices: true, Interval: time.Millisecond}, nil, act.New(nil), io.Discard); err != nil {
+		t.Fatalf("interactive-handoff-production-run-succeeds rule violated: err=%v", err)
+	}
+}
+
 func TestProductionRunInteractiveRegistersGraph(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -903,16 +1116,24 @@ func spyAttach(t *testing.T, fail error) *attachSpy {
 	t.Helper()
 	spy := &attachSpy{}
 	prior := attachGraph
-	attachGraph = func(eng *snapshot.Engine, homes snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
-		spy.calls++
-		spy.homes = homes
-		spy.engine = eng
-		if fail != nil {
-			return nil, nil, nil, fail
+	priorOnce := attachGraphOnce
+	wrap := func(delegate func(*snapshot.Engine, snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error)) func(*snapshot.Engine, snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+		return func(eng *snapshot.Engine, homes snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+			spy.calls++
+			spy.homes = homes
+			spy.engine = eng
+			if fail != nil {
+				return nil, nil, nil, fail
+			}
+			return delegate(eng, homes)
 		}
-		return prior(eng, homes)
 	}
-	t.Cleanup(func() { attachGraph = prior })
+	attachGraph = wrap(prior)
+	attachGraphOnce = wrap(priorOnce)
+	t.Cleanup(func() {
+		attachGraph = prior
+		attachGraphOnce = priorOnce
+	})
 	return spy
 }
 
@@ -998,6 +1219,27 @@ type rowsAtRunProbe struct {
 	rowsAtRun atomic.Int64
 }
 
+func TestProductionCaptureOnceReturnsFatalGraphFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	sentinel := errors.New("fatal graph collector sentinel")
+	prior := runGraphShadow
+	runGraphShadow = func(ctx context.Context, shadow *graph.Shadow) error {
+		err := prior(ctx, shadow)
+		if err == nil {
+			return sentinel
+		}
+		return err
+	}
+	t.Cleanup(func() { runGraphShadow = prior })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	snap, err := productionCaptureOnce(ctx, runOptions{NoPrices: true})
+	if !errors.Is(err, sentinel) || snap == nil || snap.Graph == nil {
+		t.Fatalf("production capture once returns fatal graph failure rule violated: error=%v want=%v snapshot=%+v", err, sentinel, snap)
+	}
+}
+
 func (p *rowsAtRunProbe) Descriptor() graph.CollectorDescriptor {
 	return graph.CollectorDescriptor{
 		ID:           graph.SourceID("aitop:test:rows-at-run"),
@@ -1041,8 +1283,8 @@ func (p *rowsAtRunProbe) Run(ctx context.Context, _ graph.EventSink) error {
 func TestProductionCaptureOnceFillsRowsBeforeRunningCollectors(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	var probe *rowsAtRunProbe
-	prior := attachGraph
-	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+	prior := attachGraphOnce
+	attachGraphOnce = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
 		eng.Overlay = func() ([]types.Overlay, error) {
 			return []types.Overlay{{
 				Runtime:     types.RuntimeLocal,
@@ -1059,7 +1301,7 @@ func TestProductionCaptureOnceFillsRowsBeforeRunningCollectors(t *testing.T) {
 		eng.GraphSnapshot = shadow.Snapshot
 		return shadow, occ, nil, nil
 	}
-	t.Cleanup(func() { attachGraph = prior })
+	t.Cleanup(func() { attachGraphOnce = prior })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1158,8 +1400,8 @@ func (l *slowNativeLane) Run(ctx context.Context, sink graph.EventSink) error {
 // single slow native lane beside the real occupancy collector.
 func attachWithSlowLane(t *testing.T, lane *slowNativeLane) {
 	t.Helper()
-	prior := attachGraph
-	attachGraph = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
+	prior := attachGraphOnce
+	attachGraphOnce = func(eng *snapshot.Engine, _ snapshot.GraphHomes) (*graph.Shadow, *graph.OccupancyCollector, snapshot.NativeLanes, error) {
 		occ := graph.NewOccupancyCollector(func() []types.Row { return eng.Rows() })
 		shadow, err := graph.NewShadow(graph.DefaultReconcileConfig(), graph.DefaultStoreConfig(), occ, lane)
 		if err != nil {
@@ -1168,7 +1410,7 @@ func attachWithSlowLane(t *testing.T, lane *slowNativeLane) {
 		eng.GraphSnapshot = shadow.Snapshot
 		return shadow, occ, snapshot.NativeLanes{lane}, nil
 	}
-	t.Cleanup(func() { attachGraph = prior })
+	t.Cleanup(func() { attachGraphOnce = prior })
 }
 
 func graphHasNode(snap *snapshot.Snapshot, id graph.NodeID) bool {

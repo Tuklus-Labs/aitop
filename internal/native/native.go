@@ -103,12 +103,28 @@ type Dispositions struct {
 	Published, Duplicates, Coalesced, Rejected, Dropped atomic.Uint64
 }
 
+// FirstTickWitness is the public graph state a collector accepted on its first
+// poll. One-shot capture waits for this whole set, not only the node prefix
+// emitted before state, terminal, and relationship events.
+type FirstTickWitness struct {
+	Nodes          []graph.NodeID
+	Edges          []graph.EdgeKey
+	States         map[graph.NodeID]graph.State
+	Incarnations   map[graph.NodeID]graph.IncarnationID
+	StateSources   map[graph.NodeID]graph.SourceRef
+	EdgeProvenance map[graph.EdgeKey]graph.Provenance
+}
+
 // Collector polls one runtime's scanner and publishes its sightings.
 type Collector struct {
 	id      graph.SourceID
 	runtime types.Runtime
 	scan    scanner
 	latest  func() []types.Row
+	// captureOnce is immutable after construction. A one-shot has already
+	// frozen the Engine rows it can bind against, so waiting for a later binding
+	// poll can only hide fresh unbound evidence from its sole snapshot.
+	captureOnce bool
 
 	now      func() time.Time
 	interval time.Duration
@@ -124,8 +140,13 @@ type Collector struct {
 	// took. They are written only during that tick and read only after
 	// firstTick closes, so the channel close is the happens-before that makes
 	// them safe to read from the waiting goroutine without a lock.
-	firstTickNodes   []graph.NodeID
-	firstTickPending bool
+	firstTickNodes          []graph.NodeID
+	firstTickEdges          []graph.EdgeKey
+	firstTickStates         map[graph.NodeID]graph.State
+	firstTickIncarnations   map[graph.NodeID]graph.IncarnationID
+	firstTickStateSources   map[graph.NodeID]graph.SourceRef
+	firstTickEdgeProvenance map[graph.EdgeKey]graph.Provenance
+	firstTickPending        bool
 
 	disp Dispositions
 	// Counters below record decisions that publish nothing, so a silent tick
@@ -144,17 +165,30 @@ type Collector struct {
 }
 
 func newCollector(id graph.SourceID, rt types.Runtime, sc scanner, latest func() []types.Row) *Collector {
-	return &Collector{
-		id:        id,
-		runtime:   rt,
-		scan:      sc,
-		latest:    latest,
-		now:       time.Now,
-		interval:  nativePollInterval,
-		firstTick: make(chan struct{}),
+	return newCollectorMode(id, rt, sc, latest, false)
+}
 
-		firstTickPending: true,
-		awaitingBinding:  map[graph.NodeID]bool{},
+func newCaptureCollector(id graph.SourceID, rt types.Runtime, sc scanner, latest func() []types.Row) *Collector {
+	return newCollectorMode(id, rt, sc, latest, true)
+}
+
+func newCollectorMode(id graph.SourceID, rt types.Runtime, sc scanner, latest func() []types.Row, captureOnce bool) *Collector {
+	return &Collector{
+		id:          id,
+		runtime:     rt,
+		scan:        sc,
+		latest:      latest,
+		captureOnce: captureOnce,
+		now:         time.Now,
+		interval:    nativePollInterval,
+		firstTick:   make(chan struct{}),
+
+		firstTickPending:        true,
+		firstTickStates:         make(map[graph.NodeID]graph.State),
+		firstTickIncarnations:   make(map[graph.NodeID]graph.IncarnationID),
+		firstTickStateSources:   make(map[graph.NodeID]graph.SourceRef),
+		firstTickEdgeProvenance: make(map[graph.EdgeKey]graph.Provenance),
+		awaitingBinding:         map[graph.NodeID]bool{},
 	}
 }
 
@@ -186,12 +220,40 @@ func (c *Collector) FirstTick() <-chan struct{} {
 // FirstTickNodes are the nodes the first tick published and the store accepted.
 // Reading it before FirstTick has closed is a race and answers nothing.
 //
-// It exists so a one-shot can wait for exactly what a lane produced rather than
-// for a stretch of quiet. Publishing is queued and applied asynchronously, so
-// "the lane finished" and "the graph shows it" are different facts, and a
-// waiter that guesses the gap between them by timing is wrong under load.
+// This node list remains the compatibility fallback for test lanes. Production
+// one-shots use FirstTickWitness so later state and edge events are also fenced.
 func (c *Collector) FirstTickNodes() []graph.NodeID {
 	return c.firstTickNodes
+}
+
+// FirstTickWitness returns an owned copy after FirstTick closes.
+func (c *Collector) FirstTickWitness() FirstTickWitness {
+	if c == nil {
+		return FirstTickWitness{
+			Nodes: []graph.NodeID{}, Edges: []graph.EdgeKey{}, States: map[graph.NodeID]graph.State{},
+			Incarnations: map[graph.NodeID]graph.IncarnationID{}, StateSources: map[graph.NodeID]graph.SourceRef{}, EdgeProvenance: map[graph.EdgeKey]graph.Provenance{},
+		}
+	}
+	states := make(map[graph.NodeID]graph.State, len(c.firstTickStates))
+	for id, state := range c.firstTickStates {
+		states[id] = state
+	}
+	incarnations := make(map[graph.NodeID]graph.IncarnationID, len(c.firstTickIncarnations))
+	for id, incarnation := range c.firstTickIncarnations {
+		incarnations[id] = incarnation
+	}
+	stateSources := make(map[graph.NodeID]graph.SourceRef, len(c.firstTickStateSources))
+	for id, source := range c.firstTickStateSources {
+		stateSources[id] = source
+	}
+	edgeProvenance := make(map[graph.EdgeKey]graph.Provenance, len(c.firstTickEdgeProvenance))
+	for key, provenance := range c.firstTickEdgeProvenance {
+		edgeProvenance[key] = provenance
+	}
+	return FirstTickWitness{
+		Nodes: append([]graph.NodeID{}, c.firstTickNodes...), Edges: append([]graph.EdgeKey{}, c.firstTickEdges...), States: states,
+		Incarnations: incarnations, StateSources: stateSources, EdgeProvenance: edgeProvenance,
+	}
 }
 
 func (c *Collector) Disp() *Dispositions {
@@ -269,6 +331,7 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 	seen := make(map[graph.NodeID]bool, len(nodes))
 	claims := make([]NodeSighting, 0, len(nodes))
 	exits := make([]NodeSighting, 0, len(nodes))
+	lanes := make([]graph.NativeHealthLane, 0, len(nodes))
 
 	for _, sighting := range nodes {
 		if terminalOutsideWindow(sighting, now) {
@@ -286,10 +349,19 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 			continue
 		}
 		disposition := c.publish(sink, c.nodeEvent(sighting, incarnation, now))
-		if c.firstTickPending && admittedToStore(disposition) {
+		admitted := admittedToStore(disposition)
+		if c.firstTickPending && admitted {
 			c.firstTickNodes = append(c.firstTickNodes, sighting.ID)
+			c.firstTickIncarnations[sighting.ID] = incarnation
 		}
 		published[sighting.ID] = incarnation
+		if sighting.Exit == "" && admitted {
+			lanes = append(lanes, graph.NativeHealthLane{
+				Source:           c.sourceRef(),
+				Actor:            sighting.ID,
+				ActorIncarnation: incarnation,
+			})
+		}
 		if claimableState(sighting.State) {
 			claims = append(claims, sighting)
 		}
@@ -298,18 +370,20 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 		}
 	}
 
-	lanes := make([]graph.NativeHealthLane, 0, len(claims))
 	for _, sighting := range claims {
 		incarnation := published[sighting.ID]
-		c.publish(sink, c.stateEvent(sighting, incarnation, now))
-		lanes = append(lanes, graph.NativeHealthLane{
-			Source:           c.sourceRef(),
-			Actor:            sighting.ID,
-			ActorIncarnation: incarnation,
-		})
+		disposition := c.publish(sink, c.stateEvent(sighting, incarnation, now))
+		if c.firstTickPending && admittedToStore(disposition) {
+			c.firstTickStates[sighting.ID] = sighting.State
+			c.firstTickStateSources[sighting.ID] = c.sourceRef()
+		}
 	}
 	for _, sighting := range exits {
-		c.publish(sink, c.exitEvent(sighting, published[sighting.ID], now))
+		disposition := c.publish(sink, c.exitEvent(sighting, published[sighting.ID], now))
+		if c.firstTickPending && admittedToStore(disposition) {
+			c.firstTickStates[sighting.ID] = exitState(sighting.Exit)
+			c.firstTickStateSources[sighting.ID] = c.sourceRef()
+		}
 	}
 
 	for _, spawn := range spawns {
@@ -324,7 +398,12 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 		if !parentOK || !childOK {
 			continue
 		}
-		c.publish(sink, c.spawnEvent(spawn, parentIncarnation, childIncarnation, now))
+		disposition := c.publish(sink, c.spawnEvent(spawn, parentIncarnation, childIncarnation, now))
+		if c.firstTickPending && admittedToStore(disposition) {
+			key := graph.RelationshipEdgeKey(graph.EdgeSpawn, spawn.ParentID, spawn.ChildID, spawn.Relationship)
+			c.firstTickEdges = append(c.firstTickEdges, key)
+			c.firstTickEdgeProvenance[key] = graph.ProvenanceNative
+		}
 	}
 
 	if len(lanes) > 0 {
@@ -339,6 +418,17 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 		if !seen[id] {
 			delete(c.awaitingBinding, id)
 		}
+	}
+}
+
+func exitState(outcome graph.ExitOutcome) graph.State {
+	switch outcome {
+	case graph.OutcomeCompleted:
+		return graph.StateCompleted
+	case graph.OutcomeFailed:
+		return graph.StateFailed
+	default:
+		return graph.StateVanished
 	}
 }
 
@@ -362,6 +452,9 @@ func (c *Collector) emit(sink graph.EventSink, now time.Time, processes map[stri
 // container, or across a pid namespace -- is one tick late rather than
 // permanently invisible.
 func (c *Collector) awaitBinding(processes map[string]graph.ProcessIdentity, sighting NodeSighting, now time.Time) bool {
+	if c.captureOnce {
+		return false
+	}
 	if _, bound := processes[sighting.SessionID]; bound {
 		return false
 	}

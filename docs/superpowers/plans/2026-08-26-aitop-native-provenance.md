@@ -196,7 +196,7 @@ Core behaviors to implement in this task (scanners arrive in Tasks 2-4; this tas
 func TestNativeEmitOrderNodesBeforeEdges(t *testing.T)        // fake scanner: 2 nodes + 1 spawn; assert sink saw node_observed for BOTH endpoints before relationship_observed; assert edge Data fields (EdgeSpawn, ProvenanceNative, Relationship)
 func TestNativeEventIDsDeterministicAcrossTicks(t *testing.T) // run two ticks over identical scan; every event ID in tick2 equals tick1 (set equality); ReceivedAt differs
 func TestNativeIncarnationPrefersLiveProcess(t *testing.T)    // latest() binds sessionID to ProcessIdentity{42,1001}; assert ActorIncarnation == graph.ProcessIncarnation(rt, that); remove binding → InvocationIncarnation
-func TestNativeStateClaimGetsHeartbeatLane(t *testing.T)      // sighting with State: StateActive → sink receives exactly one heartbeat_observed for that (actor, incarnation); no state claim → zero heartbeats
+func TestNativeStateClaimGetsHeartbeatLane(t *testing.T)      // every admitted nonterminal node receives exactly one heartbeat_observed visibility lease; StateActive also emits state_observed on that lane, while no state claim emits no state_observed
 func TestNativeExitWindowSkipsStaleTerminals(t *testing.T)    // Exit set with ExitAt 10m ago → NO events at all for that sighting; ExitAt 1m ago → node + exit_observed present
 func TestNativeRejectionDoesNotStopRun(t *testing.T)          // sink returns (PublishRejected, errors.New("x")) for everything; two ticks still happen; Rejected counter == events attempted; Run returns only on ctx cancel with ctx.Err()
 func TestNativeDisplayBoundsAndUTF8(t *testing.T)             // 200-byte name with control runes → event ProvenName ≤128B, valid UTF-8, no control runes; event passes ev.Validate()
@@ -388,6 +388,43 @@ func TestGraphPaneCycleSafe(t *testing.T)            // fabricated A→B, B→A 
 - [ ] **Step 6: README** — graph pane keys, native collectors paragraph (what is proven vs passive, the horizon rule, edge provenance), known limit: codex thread liveness is file-based only in v1.
 - [ ] **Step 7: Commit evidence** by literal paths: `test: certify native provenance phase gate`.
 - [ ] **Step 8: Merge + deploy** — fast-forward or merge `native-provenance` into `control` (NOT `main`), re-run `go test ./... -count=1` on merged control, rebuild `go build -o ~/bin/aitop ./cmd/aitop`, report that the running aitop needs a user restart to pick it up (never kill it).
+
+### Review amendments (2026-08-31)
+
+- One-shot capture uses `AttachGraphOnce` and `NewClaudeOnce` / `NewCodexOnce`
+  / `NewGrokOnce`. Its Engine rows are already frozen, so fresh unbound
+  sightings publish on the sole poll; continuous collectors retain one poll of
+  process-binding grace.
+- `FirstTickWitness` records every accepted public node and incarnation,
+  state/terminal and source, and spawn edge and provenance. One-shot readiness
+  flushes an exact ingress-ordinal Store prefix and then waits for the whole
+  witness in the published Snapshot. Aggregate equality with an occupancy node
+  alone is not proof that the native contribution was applied.
+- The Store-owned flush drains its cutoff even when Publish lands after Run's
+  empty-queue check. Registration is a queue-owned priority barrier; a
+  post-cutoff event cannot run first, and a coalescing replacement retains the
+  prefix item's first ingress ordinal. The barrier remembers admission errors
+  already applied in that prefix, stops on fatal apply errors, and
+  releases callers if Store shuts down or queue ownership outlives the caller
+  deadline. Ingress diagnostics are finalized after the accepted-event barrier,
+  and one-shot copies the final Shadow snapshot after shutdown so those gaps are
+  not lost. If a later native lane consumes the shared two-second wait, the
+  ready prefix gets one bounded cleanup handoff before cancellation; a
+  pathologically blocked Store still costs a late graph, not a hung one-shot.
+- Every admitted nonterminal native node gets an observation-mode heartbeat as
+  its poll lease, even without a state claim. Immutable native state maps
+  one-way onto that lease by complete `SourceRef`; a wrong-mode heartbeat stays
+  isolated. If Store saturation drops the heartbeat after admitting the node,
+  the production native source's identity timestamp supplies the one fallback
+  expiry deadline, so the node becomes stale instead of remaining fresh forever.
+- Expired native-only identity remains visible with `NodeState.Stale=true`.
+  Fresh matching polls clear that bit and make retained native state evidence
+  eligible again; a state-only source cannot refresh identity. Non-native
+  identity ownership keeps the aggregate fresh, terminal evidence remains
+  health-exempt, spawn history remains intact, and a tombstoned heartbeat
+  rejects before health mutation.
+- Interactive mode remains table-first. Key `2` and Tab select the graph; the
+  production model receives the Engine's live atomic Snapshot pointer.
 
 ## Phase handoff
 

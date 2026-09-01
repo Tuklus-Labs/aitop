@@ -1775,3 +1775,113 @@ never reports because it is the harness entry point rather than a test case; it
 is present at `internal/ui/view_test.go:31`. Saying "70 of 71 plus a named
 exception" rather than "all present" is the point of checking against the
 toolchain instead of against the document.
+
+## Post-native graph review fixes (2026-08-31)
+
+This addendum was written before the review-fix tests or production changes.
+It closes defects found by tracing the installed binary, the one-shot capture,
+the native poll lease, and the interactive Engine-to-UI handoff against the
+frozen graph and native-provenance designs.
+
+### Eight-axis risk model
+
+- **Invariants:** `NP-REVIEW-ONESHOT-FRESH` requires a one-shot to publish a
+  fresh unbound native node and its proven spawn on its only collector tick.
+  `NP-REVIEW-NATIVE-LEASE` requires every admitted nonterminal native node,
+  including a node with no state claim, to own one poll-health lane; if the
+  heartbeat itself is dropped after node admission, the production native
+  identity must still age stale at its fallback deadline.
+  `NP-REVIEW-NATIVE-HEALTH-MODE` requires the canonical observation-mode
+  native heartbeat to refresh immutable native state from the same complete
+  `SourceRef` without admitting a malformed reverse-mode heartbeat.
+  `NP-REVIEW-TOMBSTONE-HEARTBEAT` requires a heartbeat for a retained current-
+  incarnation tombstone to return typed endpoint admission before health,
+  history, or state owners mutate; the graph remains usable afterward.
+  `NP-REVIEW-ONESHOT-WHOLE-TICK` requires one-shot readiness to wait for every
+  accepted first-tick public node, state, terminal, and spawn edge, not merely
+  for the node prefix that native emission deliberately queues first.
+  `NP-REVIEW-FLUSH-BARRIER` requires the Store owner to drain and publish the
+  exact accepted ingress prefix even when Publish races Run's idle select;
+  a registered barrier must precede post-cutoff fatal work, coalescing must not
+  move a prefix item past the cutoff, prior admission errors must prevent an
+  occupancy-equal false witness, fatal apply errors must stop Store, ingress
+  diagnostics must finalize after rather than poison the accepted-event
+  barrier, shutdown and
+  queue-lock contention must release a bounded caller, and a later stalled lane
+  must not discard an earlier ready lane's accepted prefix.
+  `NP-REVIEW-NATIVE-STALE` requires native-only identity to remain present but
+  become stale exactly when its matching poll lease expires; a matching later
+  poll clears the stale bit and restores retained native state evidence, while
+  state evidence without non-native identity ownership cannot clear identity
+  staleness.
+  `NP-REVIEW-INTERACTIVE-HANDOFF` requires post-construction Engine graph
+  publications to reach the model, key `2`, and the graph renderer through the
+  live atomic pointer. `NP-REVIEW-UNDERSIZE-DIAGNOSTIC` requires every refused
+  frame to name the real frozen minimum `80x12`, the actual size, and the
+  canary.
+- **State transitions:** a continuous collector gives a fresh unbound sighting
+  one poll of binding grace; a one-shot with frozen rows publishes it on the
+  first poll. Native poll freshness is fresh through `D-1ns`, stale at exact
+  `D = lastHeartbeat + HookFreshness`, and fresh again after a matching late
+  heartbeat, restoring retained native state but not removed approvals. An initially empty
+  interactive model absorbs a later Engine graph on its real tick before the
+  table-to-graph key transition.
+- **Boundaries:** current-mtime evidence inside `nativeBindWindow`, exact
+  `HookFreshness-1ns` and `HookFreshness`, the `MaxNodes` exact limit for an
+  in-place stale-bit change, the exact ingress cutoff, caller deadline, bounded
+  post-timeout cleanup handoff, `79x11` rejection, and existing `80x12`
+  acceptance are all explicit. The existing newborn tests cover bound,
+  permanently unbound, and older-than-window sightings.
+- **Malformed inputs:** N/A - these fixes change lifecycle mode, health
+  projection, pointer composition, and a diagnostic literal; scanner decoding
+  and public input validation are unchanged.
+- **Concurrency:** one-shot versus continuous mode is immutable before
+  `Shadow.Run`; the existing first-tick channel remains the publication
+  happens-before fence. Flush captures its ingress cutoff under the queue lock,
+  drains it in the Store owner, and selects on caller cancellation and Store
+  completion without caller-side ownership locks. Stale projection uses the
+  Reconciler transaction and changes no shared owner outside it. The
+  interactive test updates the same atomic pointer the production Engine
+  publishes.
+- **Persistence:** N/A - no durable graph store is added. Immutable node and
+  spawn witnesses deliberately remain retained when a node becomes stale;
+  horizon silence is not terminal evidence and cannot create a tombstone.
+- **Integration contracts:** the covered seams are frozen occupancy rows to
+  one-shot native collectors, native immutable identity plus observation-mode
+  heartbeat to the private poll-health lease, Engine `Start` pointer to
+  `ui.New`, and renderer constants to the public undersize diagnostic.
+- **Regression traps:** `boundary` is populated by exact lease and frame-size
+  boundaries; `concurrency` by immutable pre-Run mode and atomic pointer
+  handoff; `contract` by the one-shot and `80x12` promises; `encoding` is N/A
+  because no encoded shape changes; `framework` is populated by the Bubble Tea
+  tick/key composition seam; `io` is populated by current-mtime on-disk Codex
+  evidence in the one-shot; `persistence` is N/A because immutable replay is
+  preserved rather than rewritten; `resource` is populated by in-place stale
+  projection at `MaxNodes`; `state` is populated by fresh/stale/fresh and
+  process-bound fallback transitions.
+
+### Coverage matrix and planned sabotage
+
+| Risk row | Test | Production plant | Decisive assertion weakening |
+|---|---|---|---|
+| `NP-REVIEW-ONESHOT-FRESH` | `main.TestProductionCaptureOncePublishesFreshUnboundCodexSpawn`, `snapshot.TestAttachGraphOncePublishesFreshUnboundNodeForEveryRuntime` | Route capture or any Claude/Codex/Grok one-shot branch through a continuous collector, restoring newborn deferral. | Disable only the canonical child/incarnation/process/native-edge verdict or the affected runtime row. |
+| `NP-REVIEW-NATIVE-LEASE` | `native.TestNativeStateClaimGetsHeartbeatLane`, `native.TestNativePollHeartbeatsEveryAdmittedNonterminalNode`, `native.TestCodexCollectorMakesNoStateOrTerminalClaims`, `native.TestGrokScannerChildLifecycle`, `graph.TestReconcileNativeIdentityWithoutHeartbeatBecomesStale` | Build heartbeat lanes only from explicit state claims, or give a production native identity with a dropped heartbeat no fallback deadline. | Restore only the old zero-heartbeat/claim-only cardinalities, remove the comprehensive zero-state row, or remove the no-epoch exact-expiry stale verdict. |
+| `NP-REVIEW-NATIVE-HEALTH-MODE` | `graph.TestReconcileNativeObservationHeartbeatRefreshesImmutableStateLane` | Keep immutable state and observation heartbeat in unrelated health epochs. | Remove only the exact-D retained-active-state verdict. |
+| `NP-REVIEW-TOMBSTONE-HEARTBEAT` | `graph.TestReconcileTombstonedNativeHeartbeatRejectsAtomically` | Refresh health before confirming the current incarnation still has a visible node owner. | Remove only typed endpoint/no-owner-mutation and following-valid-apply verdicts. |
+| `NP-REVIEW-ONESHOT-WHOLE-TICK` | `native.TestNativeFirstTickWitnessIncludesWholePublicTick`, `snapshot.TestNativeFirstTickWitnessRejectsNodeOnlySnapshot`, `snapshot.TestWaitNativeEvidenceFlushesBeforeAggregateMatch` | Record or wait for first-tick nodes only, or accept matching state/edge shapes without their native incarnation/source/provenance. | Remove only the incarnation/source/provenance and state/edge witness terms while retaining node visibility. |
+| `NP-REVIEW-FLUSH-BARRIER` | `graph.TestStoreFlushWaitsForAppliedPublishedPrefix`, `graph.TestStoreFlushBoundsPendingRequestQueue`, `graph.TestStoreFlushDrainsPrefixAcceptedAfterIdleCheck`, `graph.TestStoreFlushRegisteredPrefixPrecedesPostCutoffFatal`, `graph.TestStoreFlushIncludesPostCutoffCoalescingReplacement`, `graph.TestStoreFlushDefersPostCutoffIngressDiagnostic`, `graph.TestStoreFlushDefersSemanticCursorWithoutSkippingDeadline`, `graph.TestStoreFlushReportsAdmissionAndKeepsStoreRunning`, `graph.TestStoreFlushReportsLowestOrdinalErrorAcrossPriorityReordering`, `graph.TestStoreFlushFatalApplyOverridesEarlierAdmission`, `graph.TestStoreFlushWaitsForRunStart`, `graph.TestStoreFlushDeadlineDoesNotWaitForPublicationHook`, `graph.TestStoreFlushDeadlineBoundsRequestRegistration`, `graph.TestStoreFlushReturnsWhenShutdownWinsRequestHandoff`, `graph.TestStoreFlushReturnsWhenShutdownWinsRegisteredRequest`, `snapshot.TestWaitNativeEvidenceFlushesReadyPrefixAfterLaterLaneTimeout`, `snapshot.TestWaitNativeEvidenceDoesNotTrustAggregateAfterFlushError`, `main.TestProductionCaptureOnceReturnsFatalGraphFailure` | Acknowledge before apply/publication, leave the control queue unbounded, omit cutoff draining, run post-cutoff fatal work first, move a coalesced prefix item beyond the cutoff, let post-cutoff ingress diagnostics poison the barrier, claim a deferred semantic cursor, forget an earlier admission, let critical-first apply order hide a lower-ordinal prefix rejection, let admission mask fatal, reject the open-to-running handoff, block past the caller deadline during publication or registration, strand either a pre-registration or registered caller across shutdown, skip cleanup after a later lane timeout, trust an occupancy-equal aggregate after flush failure, or hide a fatal Shadow result behind a successful capture. | Remove only the corresponding cutoff/resource/error/lifecycle/deadline/cleanup verdict while retaining the rest of each fixture. |
+| `NP-REVIEW-NATIVE-STALE` | `graph.TestReconcileNativePollFreshnessProjectsStale` | Suppress stale projection at exact health expiry. | Remove only exact-D stale and late-clear verdicts. |
+| `NP-REVIEW-NATIVE-STALE` | `graph.TestReconcileNativePollExpiryPreservesProcessBoundNode` | Ignore the non-native identity owner when projecting stale. | Remove only the process-bound `Stale=false` verdict. |
+| `NP-REVIEW-NATIVE-STALE` | `graph.TestReconcileNativePollRecoveryRestoresRetainedState` | Delete immutable native state when its health lane expires, making its deterministic replay permanently unable to restore it. | Remove only retained-contribution and restored-state/source verdicts. |
+| `NP-REVIEW-NATIVE-STALE` | `graph.TestReconcileStateWithoutIdentityDoesNotClearNativeStale` | Clear identity staleness whenever any state source projects a value. | Remove only the hook-state `Stale=true` and later non-native-identity `Stale=false` verdicts. |
+| `NP-REVIEW-NATIVE-STALE` | `graph.TestReconcileTerminalEvidenceClearsNativeStale` | Preserve identity staleness on fresh terminal evidence. | Remove only the terminal `Stale=false` and terminal-metadata verdicts. |
+| `NP-REVIEW-INTERACTIVE-HANDOFF` | `main.TestProductionInteractiveHandsLiveGraphToPane` | Hand `ui.New` a copied initial snapshot pointer. | Remove only parent/child adjacency and rail checks after key `2`. |
+| `NP-REVIEW-UNDERSIZE-DIAGNOSTIC` | `ui.TestUndersizeDiagnosticNamesFrozenMinimum` | Restore the obsolete literal height `24`. | Check only for the canary, not the exact diagnostic. |
+| `NP-REVIEW-NEWBORN-BINDING` | `native.TestNewbornSightingWaitsOneTickForItsProcessBinding`, `native.TestNewbornSightingIsWaitedForOnlyOnce`, `native.TestStaleUnboundSightingPublishesImmediately`, `native.TestBoundSightingPublishesImmediately` | Remove, repeat, or misapply the one-poll grace. | Remove only the corresponding invocation/process-incarnation, once-only, stale, or bound verdict. |
+
+The `NP-REVIEW-NATIVE-LEASE` row supersedes only the old Task-1 assumption
+that a zero-state native node emits no heartbeat. A native heartbeat is also a
+visibility lease for immutable identity; it still does not invent a state
+claim. General source-mode isolation remains closed: only the canonical native
+observation heartbeat refreshes the private poll lease for native immutable
+identity/state from the same complete `SourceRef`.

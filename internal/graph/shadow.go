@@ -149,6 +149,14 @@ func (s *Shadow) Snapshot() *Snapshot {
 	return s.store.Snapshot()
 }
 
+// Flush publishes the Store prefix already accepted by this Shadow.
+func (s *Shadow) Flush(ctx context.Context) error {
+	if s == nil || s.store == nil {
+		return errShadowNil
+	}
+	return s.store.flush(ctx)
+}
+
 const shadowErrorTreeDepthLimit = 64
 
 func shadowNormalizeChildError(ctx context.Context, err error) error {
