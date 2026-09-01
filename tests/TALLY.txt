@@ -461,3 +461,62 @@ deleted.
 
 HEAD recorded here: ba9abd857e81bc7b08f3be27e1c5fe749d4caef3
 after the evidence commit, this file is one commit behind that SHA by design.
+
+================================================================
+recertification: post-native graph visibility review fixes
+date: 2026-08-31
+go: go1.27.0-X:nodwarf5 linux/amd64
+certified_tree: 2120adb19ab8dcf9a27d13cad249cee1464c1dbc
+evidence_commit_message: test: certify post-native graph visibility review
+reason: review of the deployed native graph found one-shot readiness,
+poll-health/stale projection, Store cutoff publication, and production UI
+handoff defects plus missing cross-seam tests. The certified commit contains
+the smallest fixes and their complete evidence; this TALLY block is a separate
+child commit by design.
+
+exact gate at the clean certified tree:
+  go test ./... -count=1                exit 0, 25 packages, 0 failed
+  go test -race ./... -count=1          exit 0, 25 packages, 0 failed
+    cmd/aitop race:  ok  6.483s
+    graph race:      ok 15.679s
+    native race:     ok  2.017s
+    proc race:       ok  1.119s
+    snapshot race:   ok  3.158s
+  go vet ./...                          exit 0
+  go list production jsonschema absence exit 0 (no match)
+  rg production jsonschema absence      exit 0 (no match)
+  aegis-taste-check --fail-on critical  exit 0, 0 violations
+  git diff --check                      exit 0
+  review plant-marker scan              exit 0, 0 matches
+
+evidence closure:
+  RISK_MODEL post-review owners:        41
+  LOUDNESS source/table primitives:     233 / 233
+  LOUDNESS exact literals:              233 / 233
+  LOUDNESS helper rows:                 2 / 2
+  LOUDNESS unique PASS decisions:       235 / 235
+  LOUDNESS OPEN / exemptions:           0 / 0
+  SABOTAGE physical matrices:           38 production RED / 38 assertion
+                                         false-GREEN / 38 inverse RED /
+                                         38 restored GREEN
+  final sabotage markers:               0
+  unslop locator:                        no new actionable candidates
+
+three-pass clean gate on one unchanged restored tree:
+  pass 1: final_clean_pass_1c            CLEAN
+  pass 2: final_clean_pass_2             CLEAN
+  pass 3: final_clean_pass_3             CLEAN
+  Earlier review attempts that found missing evidence did not count; the
+  counter restarted after each repair. No runtime or evidence changes occurred
+  between the three counted passes.
+
+live probe at certified tree (not a deterministic gate):
+  go run ./cmd/aitop --json --once --no-prices
+    schema=2 rows=43 graph.nodes=44 graph.edges=14 native_edges=14
+    stale=0 gaps=0
+  go run ./cmd/aitop --screenshot-graph 120x30 --no-prices
+    exit 0, 30 lines
+    graph header: 44 nodes · 14 edges · 0 gaps · topo r58
+
+HEAD recorded here: 2120adb19ab8dcf9a27d13cad249cee1464c1dbc
+after the evidence commit, this file is one commit behind that SHA by design.
