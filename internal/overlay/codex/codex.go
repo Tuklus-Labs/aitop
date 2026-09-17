@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aitop/internal/join"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const tailBytes = 256 * 1024

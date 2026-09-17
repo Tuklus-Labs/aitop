@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestLogicalChargeGoldenSchedule(t *testing.T) { // GF-T5-CHARGE-OWNERS

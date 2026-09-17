@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/graph"
-	"aitop/internal/join"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestCollectForkSidecarEmitsChildOverlay(t *testing.T) {

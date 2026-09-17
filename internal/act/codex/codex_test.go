@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/act"
 )
 
 func testCap(kind, session string) act.Capsule {

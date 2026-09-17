@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/classify"
-	"aitop/internal/join"
-	"aitop/internal/overlay/claude"
-	"aitop/internal/overlay/forks"
-	"aitop/internal/overlay/grok"
-	"aitop/internal/present"
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/classify"
+	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/overlay/claude"
+	"github.com/Tuklus-Labs/aitop/internal/overlay/forks"
+	"github.com/Tuklus-Labs/aitop/internal/overlay/grok"
+	"github.com/Tuklus-Labs/aitop/internal/present"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const Canary = "aitop-canary"

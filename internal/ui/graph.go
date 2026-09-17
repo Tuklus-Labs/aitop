@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"aitop/internal/graph"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // maxGraphEdgeLines is how many non-spawn edges one node advertises before the

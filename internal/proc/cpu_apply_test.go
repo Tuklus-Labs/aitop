@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestTrackerSecondSampleSetsCPUKnown(t *testing.T) {

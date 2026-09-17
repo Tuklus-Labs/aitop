@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"aitop/internal/graph"
-	"aitop/internal/present"
-	"aitop/internal/snapshot"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/present"
+	"github.com/Tuklus-Labs/aitop/internal/snapshot"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const (

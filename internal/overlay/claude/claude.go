@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"aitop/internal/join"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // tailBytes is the most of any transcript we ever read. Transcripts run to many

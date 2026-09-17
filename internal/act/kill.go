@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
 )
 
 // KillGrace is the production wait between SIGINT and SIGTERM.

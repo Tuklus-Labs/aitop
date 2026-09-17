@@ -22,13 +22,13 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"aitop/internal/act"
-	"aitop/internal/graph"
-	"aitop/internal/overlay/inference"
-	"aitop/internal/snapshot"
-	"aitop/internal/supervisor"
-	"aitop/internal/theme"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/overlay/inference"
+	"github.com/Tuklus-Labs/aitop/internal/snapshot"
+	"github.com/Tuklus-Labs/aitop/internal/supervisor"
+	"github.com/Tuklus-Labs/aitop/internal/theme"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type registrarSpy struct {
@@ -135,10 +135,10 @@ func leftoverRuntimeStacks() []string {
 		if strings.Contains(chunk, "_test.go") || strings.Contains(chunk, "testing.tRunner") {
 			continue
 		}
-		if strings.Contains(chunk, "aitop/internal/supervisor") ||
-			strings.Contains(chunk, "aitop/internal/snapshot") ||
-			strings.Contains(chunk, "aitop/internal/overlay/inference") ||
-			strings.Contains(chunk, "aitop/internal/act.(*Actor)") {
+		if strings.Contains(chunk, "github.com/Tuklus-Labs/aitop/internal/supervisor") ||
+			strings.Contains(chunk, "github.com/Tuklus-Labs/aitop/internal/snapshot") ||
+			strings.Contains(chunk, "github.com/Tuklus-Labs/aitop/internal/overlay/inference") ||
+			strings.Contains(chunk, "github.com/Tuklus-Labs/aitop/internal/act.(*Actor)") {
 			out = append(out, chunk)
 		}
 	}

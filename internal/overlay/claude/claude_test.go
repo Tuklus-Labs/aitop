@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Values the fixture pair must yield. Sourced from real redacted records, so a

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type Stat struct {

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/graph"
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const schema2SafeIntOracle uint64 = 9007199254740991

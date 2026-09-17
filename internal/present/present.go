@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Status vocabulary. Overlay-reported states win a downgrade; /proc may only

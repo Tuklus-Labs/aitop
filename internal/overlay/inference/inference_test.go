@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Real shapes captured from the live llama-server (b10669) on 2026-08-22.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/act"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Adapter runs Grok CLI for cognition fork/clone. Fork is a new session plus

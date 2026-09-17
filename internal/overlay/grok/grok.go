@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/join"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type activeEntry struct {

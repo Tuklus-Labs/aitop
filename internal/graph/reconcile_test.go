@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 var reconcileTestEpoch = time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)

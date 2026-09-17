@@ -3,7 +3,7 @@ package join
 import (
 	"strconv"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // ParentKey is the stable identity a child ParentSession can point at.

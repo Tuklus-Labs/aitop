@@ -13,12 +13,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"aitop/internal/act"
-	"aitop/internal/graph"
-	"aitop/internal/proc"
-	"aitop/internal/snapshot"
-	"aitop/internal/theme"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/snapshot"
+	"github.com/Tuklus-Labs/aitop/internal/theme"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 var now = time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)

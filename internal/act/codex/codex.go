@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/act"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Adapter runs Codex CLI for cognition fork/clone. Fork is `codex exec`, never

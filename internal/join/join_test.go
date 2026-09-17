@@ -3,7 +3,7 @@ package join
 import (
 	"testing"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestMissingOverlayKeepsSpineRow(t *testing.T) {

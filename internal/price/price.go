@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Price is USD per million tokens. Window is the model's context window in

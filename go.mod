@@ -1,4 +1,4 @@
-module aitop
+module github.com/Tuklus-Labs/aitop
 
 go 1.26.0
 

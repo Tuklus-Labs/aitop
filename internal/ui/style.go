@@ -3,8 +3,8 @@ package ui
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"aitop/internal/present"
-	"aitop/internal/theme"
+	"github.com/Tuklus-Labs/aitop/internal/present"
+	"github.com/Tuklus-Labs/aitop/internal/theme"
 )
 
 // Styles is every lipgloss style the view uses, built once from a btop theme.

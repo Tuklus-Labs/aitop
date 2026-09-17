@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const maxJSONSafeInteger = 1<<53 - 1

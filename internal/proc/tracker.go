@@ -3,7 +3,7 @@ package proc
 import (
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Window is how far back the tracker looks when computing CPU%. At 100ms

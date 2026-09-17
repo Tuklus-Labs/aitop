@@ -13,9 +13,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"aitop/internal/graph"
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const (

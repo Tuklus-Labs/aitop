@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestOverlayBusyWinsOverSleepyTick(t *testing.T) {

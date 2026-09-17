@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/present"
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/present"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // line is one painted table row after grouping, sorting, filtering, and

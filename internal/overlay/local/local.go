@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // localComms are the comms the classifier can file under locals. python is

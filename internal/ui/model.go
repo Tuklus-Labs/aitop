@@ -7,10 +7,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"aitop/internal/act"
-	"aitop/internal/snapshot"
-	"aitop/internal/theme"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/snapshot"
+	"github.com/Tuklus-Labs/aitop/internal/theme"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type viewMode int

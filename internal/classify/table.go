@@ -4,8 +4,8 @@ import (
 	"path"
 	"strings"
 
-	"aitop/internal/proc"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type Result struct {

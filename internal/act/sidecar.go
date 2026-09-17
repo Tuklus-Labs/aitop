@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type forkSidecar struct {

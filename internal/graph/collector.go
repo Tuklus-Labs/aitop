@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type InputSchema struct {

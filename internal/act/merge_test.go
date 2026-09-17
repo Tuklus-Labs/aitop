@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestMergeConflictDoesNotAbort(t *testing.T) {

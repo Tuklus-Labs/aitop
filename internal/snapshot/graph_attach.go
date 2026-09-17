@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"aitop/internal/graph"
-	"aitop/internal/native"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/native"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // NativeLane is a native collector's readiness signal. Its channel closes once

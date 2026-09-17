@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestEmptyDumpHasCanary(t *testing.T) {

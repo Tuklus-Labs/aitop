@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/graph"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Fixture ids and payload shapes are copied from the live ~/.claude survey of

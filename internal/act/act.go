@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const maxInFlight = 4

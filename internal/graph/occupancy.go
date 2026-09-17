@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"aitop/internal/present"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/present"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const SourceAITopOccupancy SourceID = "aitop:occupancy"

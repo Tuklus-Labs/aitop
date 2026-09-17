@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/act"
 )
 
 // Captured house argv from the Task 7 lock (simplified ExecStart).

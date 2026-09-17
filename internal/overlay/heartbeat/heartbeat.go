@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 type file struct {

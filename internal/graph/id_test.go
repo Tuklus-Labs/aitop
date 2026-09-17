@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Risk rows: GF-ID-1.

@@ -45,7 +45,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const collectorTestSecret = "collector-test-secret"

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 func TestObservationFingerprintCanonicalizesTime(t *testing.T) { // persistence: GF-T3A-DOMAIN, GF-T3A-TIME

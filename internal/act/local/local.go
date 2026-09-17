@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/act"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/act"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 const maxFanout = 32

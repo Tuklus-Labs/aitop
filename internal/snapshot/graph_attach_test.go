@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"aitop/internal/graph"
-	"aitop/internal/native"
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/graph"
+	"github.com/Tuklus-Labs/aitop/internal/native"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Fixture ids are real shapes off the 2026-08-31 survey: a claude session uuid,

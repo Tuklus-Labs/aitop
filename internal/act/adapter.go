@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // ErrUnsupported is returned by Adapter methods the runtime cannot honor.

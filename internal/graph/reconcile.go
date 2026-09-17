@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 var ErrRevisionExhausted = errors.New("graph revision exhausted")

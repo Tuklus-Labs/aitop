@@ -27,7 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"aitop/internal/types"
+	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
 // Server is one local model server found in /proc.
