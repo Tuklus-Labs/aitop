@@ -180,18 +180,94 @@ func hasArg(argv []string, name string) bool {
 	return false
 }
 
-// ReadVRAM is the production reader. rocm-smi failure is closed: the caller
-// must refuse the spawn rather than assume VRAM is free.
+// ReadVRAM is the production reader. Failure is closed: the caller must refuse
+// the spawn rather than assume VRAM is free, so every vendor probe has to fail
+// before this returns an error, and the error names all of them. A box with no
+// discrete GPU reaches that state legitimately.
+//
+// AMD is tried first because this tool grew up on it; the order is a default,
+// not a claim about which card is present.
 func ReadVRAM() (used, total uint64, err error) {
-	bin, err := exec.LookPath("rocm-smi")
-	if err != nil {
-		bin = "/opt/rocm/bin/rocm-smi"
+	var reasons []string
+	for _, probe := range vramProbes {
+		bin, lookErr := exec.LookPath(probe.bin)
+		if lookErr != nil {
+			if probe.fallbackPath == "" {
+				reasons = append(reasons, probe.bin+": not on PATH")
+				continue
+			}
+			bin = probe.fallbackPath
+		}
+		out, runErr := exec.Command(bin, probe.args...).Output()
+		if runErr != nil {
+			reasons = append(reasons, probe.bin+": "+runErr.Error())
+			continue
+		}
+		used, total, err = probe.parse(out)
+		if err != nil {
+			reasons = append(reasons, err.Error())
+			continue
+		}
+		return used, total, nil
 	}
-	out, err := exec.Command(bin, "--showmeminfo", "vram", "--csv").Output()
-	if err != nil {
-		return 0, 0, fmt.Errorf("vram: rocm-smi failed: %w", err)
+	return 0, 0, fmt.Errorf("vram: no GPU probe succeeded: %s", strings.Join(reasons, "; "))
+}
+
+// vramProbe is one vendor's way of being asked how full its cards are.
+type vramProbe struct {
+	bin string
+	// fallbackPath is tried when the binary is not on PATH, for vendor
+	// toolkits that install outside it. Empty means PATH is the only chance.
+	fallbackPath string
+	args         []string
+	parse        func([]byte) (used, total uint64, err error)
+}
+
+var vramProbes = []vramProbe{
+	{
+		bin:          "rocm-smi",
+		fallbackPath: "/opt/rocm/bin/rocm-smi",
+		args:         []string{"--showmeminfo", "vram", "--csv"},
+		parse:        parseROCmVRAM,
+	},
+	{
+		bin:   "nvidia-smi",
+		args:  []string{"--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"},
+		parse: parseNvidiaVRAM,
+	},
+}
+
+// parseNvidiaVRAM reads "used, total" in MiB, one line per card, as
+// --format=csv,noheader,nounits emits it. The busiest card decides, because a
+// spawn lands on one GPU and the fullest is the one that will refuse it.
+func parseNvidiaVRAM(out []byte) (used, total uint64, err error) {
+	var bestUsed, bestTotal uint64
+	var found bool
+	const mib = 1024 * 1024
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		cols := strings.Split(line, ",")
+		if len(cols) < 2 {
+			continue
+		}
+		u, err1 := strconv.ParseUint(strings.TrimSpace(cols[0]), 10, 64)
+		tot, err2 := strconv.ParseUint(strings.TrimSpace(cols[1]), 10, 64)
+		if err1 != nil || err2 != nil || tot == 0 {
+			continue
+		}
+		if !found || u*bestTotal > bestUsed*tot {
+			bestUsed, bestTotal, found = u, tot, true
+		}
 	}
-	return parseROCmVRAM(out)
+	if !found {
+		return 0, 0, fmt.Errorf("vram: nvidia-smi csv had no data rows")
+	}
+	// rocm-smi reports bytes, so MiB are converted to match rather than
+	// leaving the caller to guess which unit it just received.
+	return bestUsed * mib, bestTotal * mib, nil
 }
 
 func parseROCmVRAM(csv []byte) (used, total uint64, err error) {

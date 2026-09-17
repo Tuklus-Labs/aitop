@@ -193,3 +193,42 @@ func TestParseROCmSmiCSVMatchesLiveShape(t *testing.T) {
 		t.Fatalf("parse-rocm-smi-csv-live-shape violated: used=%d total=%d", used, total)
 	}
 }
+
+// nvidia-smi answers in MiB while rocm-smi answers in bytes. The caller
+// compares the result against a byte budget and cannot tell the two apart, so
+// a missing conversion would not error, it would silently read a 24 GiB card
+// as 24 KiB of headroom and let every spawn through.
+func TestParseNvidiaVRAMConvertsMiBToBytes(t *testing.T) {
+	const mib = 1024 * 1024
+	used, total, err := parseNvidiaVRAM([]byte("1024, 24576\n"))
+	if err != nil {
+		t.Fatalf("parse-nvidia-smi-csv: %v", err)
+	}
+	if used != 1024*mib || total != 24576*mib {
+		t.Fatalf("parse-nvidia-smi-units-are-bytes violated: used=%d total=%d want used=%d total=%d",
+			used, total, 1024*mib, 24576*mib)
+	}
+}
+
+// A spawn lands on one card, so the emptiest card's headroom is not the
+// headroom that matters. Reporting the fullest is what makes a refusal honest.
+func TestParseNvidiaVRAMPicksFullestCard(t *testing.T) {
+	const mib = 1024 * 1024
+	used, total, err := parseNvidiaVRAM([]byte("512, 8192\n7000, 8192\n256, 8192\n"))
+	if err != nil {
+		t.Fatalf("parse-nvidia-smi-csv: %v", err)
+	}
+	if used != 7000*mib || total != 8192*mib {
+		t.Fatalf("parse-nvidia-smi-fullest-card-wins violated: used=%d total=%d", used, total)
+	}
+}
+
+// No cards is not zero usage. Returning (0,0,nil) here would read as a wholly
+// empty GPU and turn a fail-closed gate into a fail-open one.
+func TestParseNvidiaVRAMRefusesEmptyOutput(t *testing.T) {
+	for _, in := range []string{"", "\n\n", "no devices were found\n", "abc, def\n"} {
+		if _, _, err := parseNvidiaVRAM([]byte(in)); err == nil {
+			t.Fatalf("parse-nvidia-smi-empty-is-an-error violated: %q parsed without error", in)
+		}
+	}
+}
