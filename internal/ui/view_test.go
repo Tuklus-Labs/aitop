@@ -1427,3 +1427,17 @@ func TestGraphPaneDuplicateSpawnEdgeDrawsOneChild(t *testing.T) {
 		t.Fatalf("graph-pane-keeps-a-real-second-parent rule violated: two different parents of one child must still draw a back reference:\n%s", two)
 	}
 }
+
+// Group chrome describes a mechanism, not a household. The locals summary named
+// one resident as the owner of every llama-server on any machine that ran this.
+// The literal is the name that actually shipped; it belongs in the test that
+// guards it and nowhere in the binary.
+func TestGroupSummaryNamesMechanismNotResident(t *testing.T) {
+	s := groupSummary(line{key: "group:locals"})
+	if s == "" || !strings.Contains(s, "llama-server") {
+		t.Fatalf("group-summary-describes-mechanism violated: %q", s)
+	}
+	if strings.Contains(s, "Iris") {
+		t.Fatalf("resident-name-in-group-chrome violated: %q", s)
+	}
+}

@@ -137,14 +137,28 @@ func TestBugforgeIsNotForgeSidecar(t *testing.T) {
 	}
 }
 
-func TestHermesTUIIsIris(t *testing.T) {
+// The hermes agent is a runtime, not a resident. Recognising the runtime is
+// evidence about what the process IS; it is not evidence of who is driving it.
+// This grew up beside one local model who had a name, and the classifier handed
+// that name to anything whose comm read "hermes" -- on any machine, for any
+// user. Same defect as naming every claude process after the agent that built
+// this. The literal below is the name that actually shipped; it is named here so
+// the regression is anchored, and it may appear in this test and nowhere in the
+// binary.
+func TestHermesAgentIsNotNamedFromComm(t *testing.T) {
 	p := types.Process{
 		Comm: "hermes",
 		Exe:  "/home/aegis/.hermes/hermes-agent/venv/bin/hermes",
 	}
 	got := Classify(p)
-	if got.Role != types.RolePrimary || got.Runtime != types.RuntimeHermes || got.ProvenNameHint != "Iris" {
-		t.Fatalf("hermes-tui-is-iris violated: %+v", got)
+	if got.Role != types.RolePrimary || got.Runtime != types.RuntimeHermes {
+		t.Fatalf("hermes-agent-is-primary violated: %+v", got)
+	}
+	if got.ProvenNameHint != "" {
+		t.Fatalf("name-from-comm violated: hermes process named %q with nothing behind it but its comm", got.ProvenNameHint)
+	}
+	if got.ProvenNameHint == "Iris" {
+		t.Fatalf("shipped-resident-name regression: %+v", got)
 	}
 }
 

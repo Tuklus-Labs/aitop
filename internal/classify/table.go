@@ -119,8 +119,12 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 		return Result{Role: types.RoleMonitor, CollapseKey: "charon"}
 	}
 
+	// Runtime only. Which agent is driving a hermes process is not written
+	// anywhere this can read, so the row carries its comm until a heartbeat
+	// or a unit Description says otherwise -- the same bar every claude
+	// process is held to.
 	if isHermesAgent(argv, exe, comm) {
-		return Result{Role: types.RolePrimary, Runtime: types.RuntimeHermes, AgentRoot: true, ProvenNameHint: "Iris"}
+		return Result{Role: types.RolePrimary, Runtime: types.RuntimeHermes, AgentRoot: true}
 	}
 
 	if isClaudeFamily(comm, exe) {

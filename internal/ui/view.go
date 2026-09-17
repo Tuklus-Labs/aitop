@@ -761,7 +761,7 @@ func costLevel(usd float64) float64 {
 func groupSummary(l line) string {
 	switch l.key {
 	case "group:locals":
-		return "local inference and Iris's sidecars (llama-server units, ollama, model proxy)"
+		return "local inference sidecars (llama-server units, ollama, model proxy)"
 	case "group:parlor":
 		return "parlor residents (sidecar workers, named from cgroup)"
 	case "group:monitors":
