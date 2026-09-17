@@ -4,7 +4,11 @@ btop for agents. Who is in the house, on which project, with how many
 subagents, at 100ms. Built to sit next to btop and nvtop and draw in the same
 ink.
 
+Linux only. Every collector reads `/proc`, so there is nothing for it to see
+on macOS or Windows.
+
 ```
+go install github.com/Tuklus-Labs/aitop/cmd/aitop@latest   # or, from a checkout:
 go build -o aitop ./cmd/aitop
 ./aitop                          # the TUI
 ./aitop --json --once            # one JSON dump (schema 2: rows + graph; control fields when set)
@@ -74,6 +78,21 @@ go build -o aitop ./cmd/aitop
   prompt/generation counters; `/v1/models` gives the model id and window.
   Host and port are read from argv (`--host`/`--port`, wildcard binds probed
   on loopback). No counters means `—`, never 0.
+
+## Projects
+
+A row's project is derived from the session's working directory. A cwd under
+one of `~/Projects`, `~/projects`, `~/src`, `~/code`, `~/dev`, `~/repos`,
+`~/work` or `~/git` is labelled by the directory directly beneath that root, so
+`~/src/sentinel/cmd/foo` reads as `sentinel` rather than `foo`. A git worktree
+is named `project/worktree` so sibling worktrees do not collapse onto one
+label. The home directory itself is `~`. Anything else falls back to the
+basename.
+
+Set `AITOP_PROJECT_ROOTS` to a colon-separated list of absolute paths to name
+your own roots. It replaces the defaults rather than extending them, on the
+grounds that someone who lists their roots does not want an unrelated `~/work`
+guessed at behind their back.
 
 ## Keys
 
@@ -333,3 +352,7 @@ PNG for eyeballing.
 Design: `docs/superpowers/specs/2026-08-21-aitop-design.md`. Occupancy polish:
 `docs/superpowers/plans/2026-08-21-aitop-excellent.md`. Control plane:
 `docs/superpowers/specs/2026-08-24-aitop-control-design.md`.
+
+## License
+
+Apache License 2.0. See `LICENSE` and `NOTICE`.

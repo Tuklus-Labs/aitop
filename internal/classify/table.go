@@ -54,8 +54,15 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 	if comm == "systemd-inhibit" && proc.ArgvContains(argv, "--who=grok") {
 		return Result{Role: types.RoleIgnore}
 	}
-	// Local inference and Iris's own sidecars: not agents, but the house
-	// wants them on the board, so they get a row in the locals group.
+	// Local inference backends: not agents, but they hold the GPU an agent
+	// wants, so they get a row in the locals group.
+	//
+	// The generic entries below (ollama, llama-server, vllm) match anywhere.
+	// The two named after specific programs are from the fleet this tool was
+	// built to watch and simply never fire elsewhere; they are kept because a
+	// recognizer that matches nothing costs nothing, and they double as the
+	// worked example for adding your own. A local backend is anything holding
+	// VRAM that you would rather see on the board than hunt for in btop.
 	if comm == "ollama" && proc.ArgvContains(argv, "serve") {
 		return local("ollama", "", cgroup)
 	}
