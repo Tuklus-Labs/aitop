@@ -433,7 +433,7 @@ func TestSessionKeyFilesAreNotSessions(t *testing.T) {
 // sessions and not one of them resolved a transcript, the collector has gone
 // blind, and blind looks exactly like a quiet machine.
 func TestLiveClaudeHomeCanary(t *testing.T) {
-	home := filepath.Join(os.Getenv("HOME"), ".claude")
+	home := filepath.Join(liveHome, ".claude")
 	if _, err := os.Stat(filepath.Join(home, "sessions")); err != nil {
 		t.Skipf("no live sessions dir at %s: live canary not run (this is a skip, not a pass)", filepath.Join(home, "sessions"))
 	}

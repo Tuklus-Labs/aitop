@@ -1,6 +1,7 @@
 package join
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/Tuklus-Labs/aitop/internal/types"
@@ -204,13 +205,21 @@ func TestForkChildNestsBySessionNotPPID(t *testing.T) {
 }
 
 func TestProjectFromProjectsDir(t *testing.T) {
-	if g := ProjectName("/home/aegis/Projects/mira/.worktrees/faithful-emotion-vectors"); g != "mira/faithful-emotion-vectors" {
+	// Drives the exported entry point, so it proves the runtime home lookup is
+	// wired up. The home is faked rather than assumed: hardcoding one account's
+	// path here is what made this suite fail on every other machine.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv(ProjectRootsEnv, "")
+
+	if g := ProjectName(filepath.Join(home, "Projects/mira/.worktrees/faithful-emotion-vectors")); g != "mira/faithful-emotion-vectors" {
 		t.Fatalf("project-derivation worktree violated: got %q", g)
 	}
-	if g := ProjectName("/home/aegis/Projects/aitop"); g != "aitop" {
+	if g := ProjectName(filepath.Join(home, "Projects/aitop")); g != "aitop" {
 		t.Fatalf("project-derivation name violated: got %q", g)
 	}
-	if g := ProjectName("/home/aegis"); g != "~" {
+	if g := ProjectName(home); g != "~" {
 		t.Fatalf("project-derivation home is tilde violated: got %q", g)
 	}
 }
@@ -289,5 +298,37 @@ func TestDarkLocalUnitNeedsNoSpine(t *testing.T) {
 	// the SessionName and not by every local overlay reaching the roster.
 	if rows := Join(nil, []types.Overlay{{Runtime: types.RuntimeLocal}}); len(rows) != 0 {
 		t.Fatalf("unnamed-local-unit-is-not-a-dark-row rule violated: rows=%d want=0", len(rows))
+	}
+}
+
+// A self-chosen name outlives its heartbeat only if nothing drops it, and a row
+// that keeps asserting an identity with no live evidence is lying quietly. This
+// uses a name other than the one this tool was built next to on purpose: the
+// rule is about where a name came from, not about which name it is.
+func TestSelfDeclaredNameDiesWithItsHeartbeat(t *testing.T) {
+	spine := []types.Process{{PID: 7, StartTime: 9, Comm: "claude", AgentRoot: true, Role: types.RolePrimary, Runtime: types.RuntimeClaude}}
+	ov := []types.Overlay{{
+		PID: 7, StartTime: 9, SessionID: "s", Runtime: types.RuntimeClaude,
+		ProvenName: "Athena", NameSelfDeclared: true, Heartbeat: false,
+	}}
+	rows := Join(spine, ov)
+	if rows[0].Overlay.ProvenName != "" {
+		t.Fatalf("self-declared-name-requires-live-heartbeat violated: kept %q with no heartbeat", rows[0].Overlay.ProvenName)
+	}
+}
+
+// The mirror of the rule above. A name the runtime derives is evidenced by the
+// process itself, so a missing heartbeat must not blank it; a tool that forgets
+// every name the moment heartbeats stop is no more truthful than one that keeps
+// them all.
+func TestRuntimeDerivedNameSurvivesWithoutHeartbeat(t *testing.T) {
+	spine := []types.Process{{PID: 8, StartTime: 9, Comm: "grok", AgentRoot: true, Role: types.RolePrimary, Runtime: types.RuntimeGrok}}
+	ov := []types.Overlay{{
+		PID: 8, StartTime: 9, SessionID: "s", Runtime: types.RuntimeGrok,
+		ProvenName: "Grok", NameSelfDeclared: false, Heartbeat: false,
+	}}
+	rows := Join(spine, ov)
+	if rows[0].Overlay.ProvenName != "Grok" {
+		t.Fatalf("runtime-derived-name-survives violated: lost %q", "Grok")
 	}
 }
