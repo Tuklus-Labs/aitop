@@ -161,9 +161,11 @@ func merge(a, b types.Overlay) types.Overlay {
 		a.Heartbeat = true
 		if b.ProvenName != "" {
 			a.ProvenName = b.ProvenName
+			a.NameSelfDeclared = b.NameSelfDeclared
 		}
 	} else if a.ProvenName == "" {
 		a.ProvenName = b.ProvenName
+		a.NameSelfDeclared = b.NameSelfDeclared
 	}
 	if a.PID == 0 {
 		a.PID = b.PID
@@ -216,8 +218,15 @@ func merge(a, b types.Overlay) types.Overlay {
 	return a
 }
 
+// sanitize drops an identity the tool cannot currently stand behind.
+//
+// A name an agent chose for itself arrives in a heartbeat file and is only
+// meaningful while that heartbeat is live; once it goes, the name is a claim
+// with nothing under it and a row must not keep asserting it. Names the runtime
+// derives ("Grok", a codex seat, a parlor instance) are not self-declared and
+// survive, because the evidence for them is the process itself.
 func sanitize(o types.Overlay) types.Overlay {
-	if o.ProvenName == "Heph" && !o.Heartbeat {
+	if o.NameSelfDeclared && !o.Heartbeat {
 		o.ProvenName = ""
 	}
 	return o

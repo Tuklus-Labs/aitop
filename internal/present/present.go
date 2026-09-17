@@ -56,9 +56,20 @@ func Name(r types.Row) string {
 	return r.Process.Comm
 }
 
-// Hint strips the systemd instance prefix parlor uses and drops "unknown".
+// Hint reduces a systemd instance name to the label a row shows.
+//
+// A sidecar instance arrives as the machine name systemd registered, which by
+// convention reads "machine-<owner>-<resident>". Only the resident half means
+// anything on screen, and the owner segment is whichever account runs the
+// fleet, so it is removed structurally rather than by matching one account's
+// name. "unknown" is the collector saying it could not tell, which is not a
+// label and must not be painted as one.
 func Hint(s string) string {
-	s = strings.TrimPrefix(s, "machine-gary-")
+	if rest, cut := strings.CutPrefix(s, "machine-"); cut {
+		if _, resident, found := strings.Cut(rest, "-"); found && resident != "" {
+			s = resident
+		}
+	}
 	if s == "unknown" {
 		return ""
 	}

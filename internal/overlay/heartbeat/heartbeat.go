@@ -52,12 +52,13 @@ func Collect(dir string, now time.Time, ttl time.Duration) ([]types.Overlay, err
 			continue
 		}
 		out = append(out, types.Overlay{
-			PID:        f.PID,
-			StartTime:  f.StartTime,
-			ProvenName: f.Name,
-			Project:    f.Project,
-			Model:      f.Model,
-			Heartbeat:  true,
+			PID:              f.PID,
+			StartTime:        f.StartTime,
+			ProvenName:       f.Name,
+			NameSelfDeclared: f.Name != "",
+			Project:          f.Project,
+			Model:            f.Model,
+			Heartbeat:        true,
 		})
 	}
 	return out, nil

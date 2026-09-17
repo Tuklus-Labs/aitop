@@ -66,11 +66,16 @@ type Usage struct {
 
 // Overlay is a cache entry from session files or heartbeat. Nil pointers are absent.
 type Overlay struct {
-	SessionID        string
-	PID              int32
-	StartTime        uint64
-	Runtime          Runtime
-	ProvenName       string
+	SessionID  string
+	PID        int32
+	StartTime  uint64
+	Runtime    Runtime
+	ProvenName string
+	// NameSelfDeclared marks a ProvenName the agent chose for itself (a
+	// heartbeat file's "name") rather than one the runtime proves, like
+	// "Grok" or a codex seat. A self-chosen name is only as live as the
+	// heartbeat carrying it; a runtime-derived one stands on its own.
+	NameSelfDeclared bool
 	Project          string
 	Model            string
 	TokensUsed       *int64
