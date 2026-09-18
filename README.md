@@ -15,7 +15,15 @@ go build -o aitop ./cmd/aitop
 ./aitop --screenshot 150x42      # one ANSI frame to stdout, truecolor
 ./aitop --screenshot-graph 150x42  # the same, drawing the graph pane
 ./aitop --theme ~/.config/btop/themes/nightfable.theme
+./aitop --interval 250ms         # proc sample and paint interval (default 100ms)
+./aitop --prices ~/my-prices.json --no-prices   # price table override / no cost estimates
 ```
+
+That is the whole flag surface: `--json`, `--once`, `--theme`, `--interval`,
+`--screenshot`, `--screenshot-graph`, `--prices`, `--no-prices`. There is no
+`--help` text; an unknown flag, `--help` or `--version` prints one closed
+diagnostic line (`aitop scope=usage task=flags class=usage`) on stderr and
+exits 2. This file is the reference.
 
 ## What it shows
 
@@ -40,8 +48,9 @@ go build -o aitop ./cmd/aitop
   `claude`. A session the Remote Control daemon spawned (phone, web) reads
   `claude rc`; one driven through the SDK reads `claude sdk`; the detail
   pane shows `via`. The `claude rc` daemon itself sits under monitors.
-  Family glyph: ● claude, ○ grok, • codex/ChatGPT, ▪ parlor, ◌
-  in-process subagent.
+  Family glyph: ● claude, ○ grok, • codex/ChatGPT, ● hermes (in the CPU
+  gradient's colour), ▴ local inference, ▲ forge, ▪ parlor, · anything else,
+  ◌ in-process subagent.
 - **CPU** is one-core percent over a 1s sliding window (a single 100ms tick on
   a 100 Hz clock quantizes to 10% steps). First sample paints `—`, never 0.
 - **RSS** rolls ignored descendants (tool shells, Playwright MCP, Electron
@@ -63,12 +72,14 @@ go build -o aitop ./cmd/aitop
   not downgrade on one sleepy tick.
 - **Groups:** Parlor residents (named from their systemd cgroup instance) and
   house monitors fold into collapsible rows so agents own the screen. Local
-  inference backends (`llama-server` units such as Iris's `hermes-qwen38`,
-  `ollama serve`, `vllm`, the model proxy, talaria) sit in a `locals` group
-  that starts expanded, named from their unit, MODEL from the file they
-  loaded, TITLE from the unit's `Description=` (or the model file, quant, and
-  llama.cpp build when launched by hand). The Hermes agent herself is a
-  primary named `Iris`; her backends are locals.
+  inference backends (`llama-server` units, `ollama serve`, `vllm`, a model
+  proxy) sit in a `locals` group that starts expanded, named from their unit,
+  MODEL from the file they loaded, TITLE from the unit's `Description=` (or
+  the model file, quant, and llama.cpp build when launched by hand). A Hermes
+  agent process is a primary row of its own; its backends are locals. Its
+  NAME is its comm until a heartbeat or a unit `Description=` proves
+  otherwise, the same bar every claude process is held to: recognising the
+  runtime says what a process is, never who is driving it.
 - **Local tokens** come from the server itself, polled on a separate clock so
   a generating model never stalls the board. llama-server: `/slots` gives TOK
   (prompt + decoded across slots), CTX (against the summed slot windows),
@@ -101,8 +112,8 @@ Sort lives under `s` then a letter.
 
 | key | action |
 |-----|--------|
-| `↑` `↓` `j` `g` `G` `ctrl+u` `ctrl+d` | move (arrows and `g`/`G`; `j` stays down; no vim `k`) |
-| `⏎` `l` `→` | expand/collapse; `⏎` on a leaf opens the transcript pager |
+| `↑` `↓` `j` `g` `G` `ctrl+u` `ctrl+d` | move (arrows, Home/End, PgUp/PgDn and `g`/`G`; `j` stays down; no vim `k`) |
+| `⏎` `l` `→` space | expand/collapse; `⏎` on a leaf opens the transcript pager |
 | `h` `←` | collapse, or jump to parent |
 | `i` | detail pane (session id, cwd, branch, effort, tokens, subagent history) |
 | `/` | filter (name, project, model, title, status); `esc` clears |
@@ -115,7 +126,8 @@ Sort lives under `s` then a letter.
 | `k` | kill (confirm `y`). SIGINT, then SIGTERM after 5s if still alive. Never SIGKILL. Locals with a unit: `systemctl --user stop` |
 | `p` | promote: model id as typed. Takes effect on the next fork (`-m` / `--model`). Hermes templates: clone first |
 | `b` | budget. Claude: `--effort` `low\|medium\|high\|max`. Grok: `--max-turns N`. Codex: `-c model_reasoning_effort`. Hermes templates: clone first |
-| `v` | mark a row for split view |
+| `v` | mark a row for split view. In split view `h`/`l` move focus and `M` merges (confirm `y`) |
+| `ctrl+c` | quit from any mode |
 | `d` | show finished subagents in the tree |
 | `1` `2` `⇥` | view preset: `1` table, `2` graph, `⇥` toggles |
 | `q` | quit |
@@ -176,16 +188,18 @@ tokens, and meters by magnitude exactly as btop does; `hi_fg` marks hotkeys;
 ## Prices
 
 Built-in list prices (USD per million tokens) with their source and read date
-live in `internal/price/builtin.go`: Anthropic (Fable 5, Opus 5/4.8/4.7/4.6/4.5,
-Sonnet 5/4.6/4.5, Haiku 4.5), OpenAI (gpt-5.6 sol/terra/luna/cyber, 5.5, 5,
-5.3-codex, the daybreak aliases), xAI (grok-4.6/4.5/4.3, grok-build). Cache
+live in `internal/price/builtin.go`: Anthropic (Fable 5, Mythos 5, Opus
+5/4.8/4.7/4.6/4.5/4.1, Sonnet 5/4.6/4.5, Haiku 4.5), OpenAI (gpt-5.6
+sol/terra/luna/cyber, 5.5, 5.5-cyber, 5, 5.3-codex, the daybreak aliases),
+xAI (grok-4.6/4.5/4.3, grok-build-0.1). Cache
 reads are 0.1x input; Claude cache writes use the 1h tier that Claude Code
 reports. Context windows come from the runtime when it writes one (Codex,
 Grok); for Claude they come from the table (1M for 4.6 and later, 200k before)
 and the detail pane marks them `(table)`.
 
-Override or extend with `~/.config/aitop/prices.json` (`$AITOP_PRICES`,
-`--prices`), one object per model id:
+Override or extend with a price file, one object per model id. Lookup order:
+`--prices <file>`, `$AITOP_PRICES`, `$XDG_CONFIG_HOME/aitop/prices.json`,
+`~/.config/aitop/prices.json`.
 
 ```json
 {
@@ -328,19 +342,24 @@ no live process never create rows; processes with no overlay keep theirs with
 `—` in the agent columns. `internal/present` derives name, status, and age so
 the TUI and `--json` never disagree.
 
-Heartbeat (optional identity proof, e.g. Heph):
+Heartbeat (optional identity proof; how an agent that has chosen a name gets
+it onto its row):
 
 ```
-$XDG_RUNTIME_DIR/aitop/hb/<pid>.json
-{"schema":1,"pid":123,"starttime":456,"name":"Heph","project":"aitop","model":"claude-fable-5"}
+$XDG_RUNTIME_DIR/aitop/hb/<pid>.json        # or $TMPDIR/aitop/hb when XDG_RUNTIME_DIR is unset
+{"schema":1,"pid":123,"starttime":456,"name":"Heph","project":"aitop","model":"claude-fable-5","updated_at":"2026-09-18T16:00:00Z"}
 ```
 
-Files older than 5s are ignored. Uncooperative processes still appear.
+`schema` may be 0 or 1; `updated_at` is optional. `pid` and `starttime` must
+match the live process or the file is ignored. Files older than 5s are
+ignored, and a self-declared name dies with its heartbeat: once the file stops,
+the row goes back to `comm`. Uncooperative processes still appear.
 
 ## Tests
 
-`go test ./...`. Instruments follow `~/.claude/STYLE.md`: every gate has been
-watched fail on a planted mutation (`tests/SABOTAGE_LOG.md`), the risk model
+`go test ./...`. Instrument rule (see `STYLE.md`): no test's green counts
+until it has been watched go red on a planted mutation. Every gate has
+(`tests/SABOTAGE_LOG.md`), the risk model
 is `tests/RISK_MODEL.md`, the assertion-loudness audit is
 `tests/LOUDNESS_AUDIT.md`, the gate tallies are `tests/TALLY*.txt`, and the
 empty machine still shows `aitop-canary` in the TUI header (JSON dropped the

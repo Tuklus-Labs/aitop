@@ -1,6 +1,7 @@
 # aitop style
 
-Instruments follow `~/.claude/STYLE.md` (Three Laws). Tests follow `deep-tests`.
+Instrument rule: a test, gate or metric is not load-bearing until it has been
+watched fail on a planted failure. Sabotage logs and tallies live under `tests/`.
 
 - Joiner is a pure function. No IO.
 - Unknown cost is a nil pointer, never `0`.
