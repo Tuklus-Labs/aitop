@@ -3000,3 +3000,14 @@ state expired despite a fresh canonical heartbeat; native-only identity never
 set `Stale`; and undersize output claimed `80x24`. The interactive handoff was
 a coverage hole over correct production behavior, so its physical nil-pointer
 plant is the honest RED rather than a fabricated pre-fix failure.
+
+## --help epoch (2026-09-18, Heph on Fable, tree `063bbc2` + working copy)
+
+`--help` was a usage error: the closed `usage/flags` diagnostic on stderr, exit 2, and the flag list lived nowhere but the README. Test written first and run against the unchanged tree, then the fix, then one plant on the fix. Same epoch, same binary.
+
+| ID | Mutation | Prediction | Observed | Conclusion |
+|----|----------|------------|----------|------------|
+| PF-HELP-1 | (unchanged tree) `--help` handled as a usage error | TestHelpPrintsUsageToStdoutAndExitsZero RED | RED: `help-exits-zero rule violated: args=[--help] status=2 stdout="" stderr="aitop scope=usage task=flags class=usage\n"` | The test sees the old behavior; it is not circular with the fix. |
+| PF-HELP-2 | `writeUsage` drops `fs.PrintDefaults()` | same test RED on `help-lists-every-flag` | RED: `help-lists-every-flag rule violated: args=[--help] missing "-once" in "aitop: btop for agents. Usage: aitop [flags]\nNo flags starts the TUI...` | The flag-list assertion is load-bearing on its own; exit code alone would have passed the plant. |
+
+Restore after the plant: `go test -count=1 ./...` 25 packages ok, `go vet ./...` clean. TestUnknownFlagIsStillAClosedDiagnostic pins that a wrong flag (`--version`) still takes the diagnostic path.

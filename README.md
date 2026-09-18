@@ -20,10 +20,11 @@ go build -o aitop ./cmd/aitop
 ```
 
 That is the whole flag surface: `--json`, `--once`, `--theme`, `--interval`,
-`--screenshot`, `--screenshot-graph`, `--prices`, `--no-prices`. There is no
-`--help` text; an unknown flag, `--help` or `--version` prints one closed
-diagnostic line (`aitop scope=usage task=flags class=usage`) on stderr and
-exits 2. This file is the reference.
+`--screenshot`, `--screenshot-graph`, `--prices`, `--no-prices`. `--help`
+prints that list with defaults on stdout and exits 0. An unknown flag (there
+is no `--version`) prints one closed diagnostic line
+(`aitop scope=usage task=flags class=usage`) on stderr and exits 2. This file
+is the reference for everything the flag list does not say.
 
 ## What it shows
 

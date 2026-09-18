@@ -762,6 +762,38 @@ func TestRunRegisterInteractiveShutdownDiagnosticsAreRedacted(t *testing.T) {
 	}
 }
 
+func TestHelpPrintsUsageToStdoutAndExitsZero(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"-help"}} {
+		deps, spies := testRunDeps(t)
+		var stdout, stderr bytes.Buffer
+		status := run(context.Background(), args, &stdout, &stderr, deps)
+		if status != 0 {
+			t.Fatalf("help-exits-zero rule violated: args=%v status=%d stdout=%q stderr=%q", args, status, stdout.String(), stderr.String())
+		}
+		for _, name := range []string{"-json", "-once", "-theme", "-interval", "-screenshot ", "-screenshot-graph", "-prices", "-no-prices"} {
+			if !strings.Contains(stdout.String(), name) {
+				t.Fatalf("help-lists-every-flag rule violated: args=%v missing %q in %q", args, name, stdout.String())
+			}
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("help-is-not-a-diagnostic rule violated: args=%v stderr=%q", args, stderr.String())
+		}
+		if spies.capture.Load() != 0 || spies.writeJSON.Load() != 0 || spies.newSup.Load() != 0 || spies.newActor.Load() != 0 || spies.interactive.Load() != 0 {
+			t.Fatalf("help-starts-nothing rule violated: args=%v capture=%d write=%d sup=%d actor=%d interactive=%d", args, spies.capture.Load(), spies.writeJSON.Load(), spies.newSup.Load(), spies.newActor.Load(), spies.interactive.Load())
+		}
+	}
+}
+
+func TestUnknownFlagIsStillAClosedDiagnostic(t *testing.T) {
+	deps, _ := testRunDeps(t)
+	var stdout, stderr bytes.Buffer
+	status := run(context.Background(), []string{"--version"}, &stdout, &stderr, deps)
+	if status != 2 || stdout.Len() != 0 {
+		t.Fatalf("unknown-flag-is-usage-error rule violated: status=%d stdout=%q stderr=%q", status, stdout.String(), stderr.String())
+	}
+	assertDiagnosticLine(t, strings.TrimSpace(stderr.String()), "usage", "flags", "usage", "")
+}
+
 func TestRunOnceAliasesJSON(t *testing.T) {
 	for _, args := range [][]string{{"--once"}, {"--json", "--once"}} {
 		deps, spies := testRunDeps(t)

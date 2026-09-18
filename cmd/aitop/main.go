@@ -312,6 +312,10 @@ func productionRunInteractive(ctx context.Context, opt runOptions, reg taskRegis
 func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps runDeps) int {
 	opt, err := parseRunOptions(args)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			writeUsage(stdout)
+			return 0
+		}
 		writeDiag(stderr, diagnosticScopeUsage, diagnosticTaskFlags, err)
 		return 2
 	}
@@ -337,29 +341,57 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, deps runD
 	return runInteractive(ctx, stdout, stderr, opt, deps)
 }
 
-func parseRunOptions(args []string) (runOptions, error) {
+// runFlags is every flag aitop accepts, bound to one FlagSet so that --help
+// prints exactly the list parseRunOptions reads.
+type runFlags struct {
+	jsonOnce, once, noPrices                           *bool
+	themePath, screenshot, screenshotGraph, pricesPath *string
+	interval                                           *time.Duration
+}
+
+func newRunFlagSet() (*flag.FlagSet, runFlags) {
 	fs := flag.NewFlagSet("aitop", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	jsonOnce := fs.Bool("json", false, "dump occupancy as JSON and exit")
-	once := fs.Bool("once", false, "one sample and exit (same as --json)")
-	themePath := fs.String("theme", "", "btop .theme file")
-	interval := fs.Duration("interval", 100*time.Millisecond, "proc sample and paint interval")
-	screenshot := fs.String("screenshot", "", "render one frame at WxH to stdout and exit")
-	screenshotGraph := fs.String("screenshot-graph", "", "render one graph-pane frame at WxH to stdout and exit")
-	pricesPath := fs.String("prices", "", "price table override")
-	noPrices := fs.Bool("no-prices", false, "never estimate cost")
+	var f runFlags
+	f.jsonOnce = fs.Bool("json", false, "dump occupancy as JSON and exit")
+	f.once = fs.Bool("once", false, "one sample and exit (same as --json)")
+	f.themePath = fs.String("theme", "", "btop .theme file")
+	f.interval = fs.Duration("interval", 100*time.Millisecond, "proc sample and paint interval")
+	f.screenshot = fs.String("screenshot", "", "render one frame at WxH to stdout and exit")
+	f.screenshotGraph = fs.String("screenshot-graph", "", "render one graph-pane frame at WxH to stdout and exit")
+	f.pricesPath = fs.String("prices", "", "price table override")
+	f.noPrices = fs.Bool("no-prices", false, "never estimate cost")
+	return fs, f
+}
+
+// writeUsage answers --help: the flag list with defaults, on stdout, exit 0.
+// Asking for help is not a usage error, so it does not go through the closed
+// diagnostic vocabulary; a wrong flag still does.
+func writeUsage(out io.Writer) {
+	fs, _ := newRunFlagSet()
+	fs.SetOutput(out)
+	_, _ = fmt.Fprintln(out, "aitop: btop for agents. Usage: aitop [flags]")
+	_, _ = fmt.Fprintln(out, "No flags starts the TUI. --json, --screenshot and --screenshot-graph write one result and exit.")
+	_, _ = fmt.Fprintln(out)
+	fs.PrintDefaults()
+	_, _ = fmt.Fprintln(out)
+	_, _ = fmt.Fprintln(out, "Keys, groups, prices, the heartbeat file and the JSON schema: README.md.")
+}
+
+func parseRunOptions(args []string) (runOptions, error) {
+	fs, f := newRunFlagSet()
 	if err := fs.Parse(args); err != nil {
 		return runOptions{}, err
 	}
 	opt := runOptions{
-		JSON:            *jsonOnce,
-		Once:            *once,
-		Screenshot:      *screenshot,
-		ScreenshotGraph: *screenshotGraph,
-		ThemePath:       *themePath,
-		PricesPath:      *pricesPath,
-		NoPrices:        *noPrices,
-		Interval:        *interval,
+		JSON:            *f.jsonOnce,
+		Once:            *f.once,
+		Screenshot:      *f.screenshot,
+		ScreenshotGraph: *f.screenshotGraph,
+		ThemePath:       *f.themePath,
+		PricesPath:      *f.pricesPath,
+		NoPrices:        *f.noPrices,
+		Interval:        *f.interval,
 	}
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {

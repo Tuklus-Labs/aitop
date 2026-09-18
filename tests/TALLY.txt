@@ -520,3 +520,10 @@ live probe at certified tree (not a deterministic gate):
 
 HEAD recorded here: 2120adb19ab8dcf9a27d13cad249cee1464c1dbc
 after the evidence commit, this file is one commit behind that SHA by design.
+
+## --help epoch (2026-09-18)
+  go test -count=1 ./...   25 packages ok, exit 0
+  go vet ./...             clean, exit 0
+  plants: PF-HELP-1 RED on the unchanged tree, PF-HELP-2 RED with PrintDefaults removed, restored GREEN
+  go run ./cmd/aitop --help   exit 0, 8 flags listed with defaults
+  tree recorded here: 063bbc2 + working copy; the commit that carries this block is the evidence commit
