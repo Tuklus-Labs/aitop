@@ -91,6 +91,25 @@ func ParseCmdline(raw []byte) []string {
 	return []string{string(raw)}
 }
 
+// parseNativeCmdline consumes the NUL-separated argv buffer emitted by
+// Darwin's KERN_PROCARGS2. Unlike the historical procfs helper, empty argv
+// elements are meaningful here and are retained; one terminal NUL is framing,
+// not an extra argument.
+func parseNativeCmdline(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	parts := bytes.Split(raw, []byte{0})
+	if len(parts) > 0 && len(parts[len(parts)-1]) == 0 {
+		parts = parts[:len(parts)-1]
+	}
+	out := make([]string, len(parts))
+	for i, part := range parts {
+		out[i] = string(part)
+	}
+	return out
+}
+
 func HasTypeFlag(argv []string, kind string) bool {
 	needle := "--type=" + kind
 	for _, a := range argv {
@@ -122,6 +141,16 @@ func CPUPercent(prev, cur Sample, clkTck int64, wallSec float64) (float64, bool)
 }
 
 func Walk(root string) ([]types.Process, error) {
+	if nativeRoot(root) {
+		return walkNative()
+	}
+	return walkProc(root)
+}
+
+// walkProc walks a Linux-shaped procfs tree. Keeping this path separate from
+// Walk lets tests and fixture-backed callers retain the same parser on every
+// OS while the production Darwin path uses libproc.
+func walkProc(root string) ([]types.Process, error) {
 	ents, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -154,7 +183,7 @@ func Walk(root string) ([]types.Process, error) {
 var fullComms = map[string]bool{
 	"claude": true, "grok": true, "codex": true, "codex-code-mode": true,
 	"ChatGPT": true, "electron": true, "node-MainThread": true, "node": true,
-	"python": true, "python3": true, "hermes": true,
+	"python": true, "python3": true, "Python": true, "hermes": true,
 	"parlor-doorman": true, "parlor-impulse": true, "parlor_relayd": true, "charon": true,
 	"ollama": true, "llama-server": true, "local-brain": true, "vllm": true,
 }
@@ -195,6 +224,9 @@ func fuzzyAgent(comm string) bool {
 		return true
 	}
 	l := strings.ToLower(comm)
+	if version, ok := strings.CutPrefix(l, "python"); ok && (version == "2" || version == "3" || versionComm(version)) {
+		return true
+	}
 	for _, k := range []string{"claude", "grok", "codex", "hermes", "parlor", "forge", "chatgpt"} {
 		if strings.Contains(l, k) {
 			return true

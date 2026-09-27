@@ -39,6 +39,7 @@ type Host struct {
 	havePr bool
 	btime  int64
 	memTot uint64
+	native bool
 }
 
 func NewHost(root string, clkTck int64) *Host {
@@ -49,6 +50,11 @@ func NewHost(root string, clkTck int64) *Host {
 		clkTck = 100
 	}
 	h := &Host{root: root, clk: clkTck, ncpu: runtime.NumCPU()}
+	if nativeRoot(root) {
+		h.native = true
+		nativeInitHost(h)
+		return h
+	}
 	if b, err := os.ReadFile(filepath.Join(root, "stat")); err == nil {
 		h.btime, _ = parseBtime(b)
 	}
@@ -61,6 +67,9 @@ func NewHost(root string, clkTck int64) *Host {
 // Sample reads the current state and returns the busy percentage since the
 // previous call. The first call reports CPUKnown=false rather than 0.
 func (h *Host) Sample() HostSample {
+	if h.native {
+		return nativeHostSample(h)
+	}
 	s := HostSample{NumCPU: h.ncpu, BootTime: h.btime, MemTotal: h.memTot, ClkTck: h.clk}
 	if b, err := os.ReadFile(filepath.Join(h.root, "stat")); err == nil {
 		if cur, err := ParseCPULine(b); err == nil {

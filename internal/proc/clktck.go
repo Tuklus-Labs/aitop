@@ -17,6 +17,10 @@ var (
 // /proc/self/auxv. Falls back to 100 (every Linux box this will run on).
 func ClkTck() int64 {
 	clkOnce.Do(func() {
+		if v, ok := nativeClkTck(); ok {
+			clkVal = v
+			return
+		}
 		if v, ok := parseAuxv("/proc/self/auxv"); ok {
 			clkVal = v
 		}

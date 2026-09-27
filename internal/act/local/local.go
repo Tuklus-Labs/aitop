@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +21,10 @@ const maxFanout = 32
 // never call systemd-run. Templates matching hermes-* are read-only for
 // budget/promote: clone first.
 type Adapter struct {
-	Run       func(name string, args ...string) error
+	Run func(name string, args ...string) error
+	// Systemd is an injected platform gate. New wires the production gate;
+	// leaving it nil keeps fake adapters usable in cross-platform tests.
+	Systemd   func() bool
 	WriteFile func(path string, data []byte) error
 	UsedPorts func() []int
 	BindOK    func(int) bool
@@ -38,6 +42,7 @@ func New() *Adapter {
 		Run: func(name string, args ...string) error {
 			return exec.Command(name, args...).Run()
 		},
+		Systemd: func() bool { return runtime.GOOS != "darwin" },
 		WriteFile: func(path string, data []byte) error {
 			return os.WriteFile(path, data, 0o644)
 		},
@@ -72,6 +77,9 @@ func (a *Adapter) Fanout(ctx context.Context, t act.Target, n int) error {
 }
 
 func (a *Adapter) fanout(ctx context.Context, t act.Target, n int) (act.Spawned, error) {
+	if err := a.requireSystemd("fanout"); err != nil {
+		return act.Spawned{}, err
+	}
 	if n < 1 {
 		n = 1
 	}
@@ -165,6 +173,9 @@ func (a *Adapter) Message(context.Context, act.Target, string) error {
 }
 
 func (a *Adapter) Restart(_ context.Context, t act.Target) error {
+	if err := a.requireSystemd("restart"); err != nil {
+		return err
+	}
 	if t.Unit == "" {
 		return fmt.Errorf("%w: local restart without unit", act.ErrUnsupported)
 	}
@@ -172,6 +183,9 @@ func (a *Adapter) Restart(_ context.Context, t act.Target) error {
 }
 
 func (a *Adapter) Kill(_ context.Context, t act.Target) error {
+	if err := a.requireSystemd("kill"); err != nil {
+		return err
+	}
 	if t.Unit == "" {
 		return fmt.Errorf("%w: local kill without unit", act.ErrUnsupported)
 	}
@@ -181,6 +195,9 @@ func (a *Adapter) Kill(_ context.Context, t act.Target) error {
 }
 
 func (a *Adapter) Promote(_ context.Context, t act.Target, spec string) error {
+	if err := a.requireSystemd("promote"); err != nil {
+		return err
+	}
 	if lockedTemplate(t.Unit) {
 		return fmt.Errorf("won't rewrite %s; clone it first", unitFile(t.Unit))
 	}
@@ -191,6 +208,9 @@ func (a *Adapter) Promote(_ context.Context, t act.Target, spec string) error {
 }
 
 func (a *Adapter) Budget(_ context.Context, t act.Target, spec string) error {
+	if err := a.requireSystemd("budget"); err != nil {
+		return err
+	}
 	if lockedTemplate(t.Unit) {
 		return fmt.Errorf("won't rewrite %s; clone it first", unitFile(t.Unit))
 	}
@@ -206,6 +226,13 @@ func (a *Adapter) Merge(context.Context, act.Target, act.Target, act.Target) err
 
 func (a *Adapter) Transcript(context.Context, act.Target) (string, error) {
 	return "", fmt.Errorf("%w: local transcript", act.ErrUnsupported)
+}
+
+func (a *Adapter) requireSystemd(op string) error {
+	if a != nil && a.Systemd != nil && !a.Systemd() {
+		return fmt.Errorf("%w: local %s requires systemd", act.ErrUnsupported, op)
+	}
+	return nil
 }
 
 func lockedTemplate(unit string) bool {

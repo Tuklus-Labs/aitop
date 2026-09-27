@@ -5,7 +5,8 @@ watched fail on a planted failure. Sabotage logs and tallies live under `tests/`
 
 - Joiner is a pure function. No IO.
 - Unknown cost is a nil pointer, never `0`.
-- `/proc` is the occupancy spine. Session files are overlay.
+- OS process data is the occupancy spine (`/proc` on Linux, libproc on macOS).
+  Session files are overlay.
 - 100ms path does not open JSONL.
 - Loud failures name the invariant.
 - Successful TUI views still carry canary token `aitop-canary`.

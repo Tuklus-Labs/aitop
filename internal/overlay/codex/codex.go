@@ -3,13 +3,19 @@ package codex
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Tuklus-Labs/aitop/internal/join"
+	"github.com/Tuklus-Labs/aitop/internal/proc"
 	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
@@ -184,6 +190,13 @@ func seatName(model string) string {
 }
 
 func LiveFDs(procRoot string) map[int32][]string {
+	if runtime.GOOS == "darwin" && (procRoot == "" || procRoot == "/proc") {
+		return liveFDsDarwin(procRoot)
+	}
+	return liveFDsProc(procRoot)
+}
+
+func liveFDsProc(procRoot string) map[int32][]string {
 	if procRoot == "" {
 		procRoot = "/proc"
 	}
@@ -222,6 +235,86 @@ func LiveFDs(procRoot string) map[int32][]string {
 		}
 		if len(paths) > 0 {
 			out[pid] = paths
+		}
+	}
+	return out
+}
+
+const lsofTimeout = 750 * time.Millisecond
+
+// liveFDsDarwin uses one bounded lsof call over the native process list. macOS
+// has no /proc/<pid>/fd tree; keeping this off the 100ms process tick and
+// bounding the command means a permissions prompt or a wedged lsof cannot
+// stall the rest of the snapshot engine.
+func liveFDsDarwin(procRoot string) map[int32][]string {
+	if procRoot == "" {
+		procRoot = "/proc"
+	}
+	procs, err := proc.Walk(procRoot)
+	if err != nil {
+		return nil
+	}
+	var pids []string
+	for _, p := range procs {
+		if isCodexProcess(p.Comm) {
+			pids = append(pids, strconv.FormatInt(int64(p.PID), 10))
+		}
+	}
+	if len(pids) == 0 {
+		return map[int32][]string{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), lsofTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "lsof", "-nP", "-a", "-p", strings.Join(pids, ","), "-Fpn")
+	raw, err := cmd.CombinedOutput()
+	if err != nil && len(raw) == 0 {
+		return nil
+	}
+	return parseLsofFDs(raw)
+}
+
+func isCodexProcess(comm string) bool {
+	return strings.EqualFold(strings.TrimSpace(comm), "codex") || comm == "ChatGPT"
+}
+
+// parseLsofFDs consumes lsof's machine-readable -Fpn stream. Only rollout
+// and writer-lock paths are retained; all other descriptors are irrelevant to
+// session identity and would make the overlay noisy.
+func parseLsofFDs(raw []byte) map[int32][]string {
+	out := map[int32][]string{}
+	var pid int32
+	sc := bufio.NewScanner(bytes.NewReader(raw))
+	for sc.Scan() {
+		line := sc.Text()
+		if len(line) < 2 {
+			continue
+		}
+		switch line[0] {
+		case 'p':
+			n, err := strconv.ParseInt(line[1:], 10, 32)
+			if err != nil || n <= 0 {
+				pid = 0
+				continue
+			}
+			pid = int32(n)
+		case 'n':
+			if pid == 0 {
+				continue
+			}
+			name := strings.TrimSuffix(line[1:], " (deleted)")
+			if !strings.Contains(name, "rollout-") && !strings.Contains(name, "thread-writer-locks") {
+				continue
+			}
+			seen := false
+			for _, prior := range out[pid] {
+				if prior == name {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				out[pid] = append(out[pid], name)
+			}
 		}
 	}
 	return out

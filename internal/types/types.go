@@ -28,7 +28,7 @@ const (
 	RoleDrop     Role = ""
 )
 
-// Process is occupancy truth from /proc. Overlay never replaces these fields.
+// Process is occupancy truth from the OS. Overlay never replaces these fields.
 type Process struct {
 	PID         int32
 	PPID        int32

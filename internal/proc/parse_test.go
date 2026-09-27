@@ -7,6 +7,17 @@ import (
 	"testing"
 )
 
+func TestVersionedPythonProcessesAreCandidates(t *testing.T) {
+	for _, comm := range []string{"python3.11", "Python3.13", "Python", "python3"} {
+		if !Candidate(comm) {
+			t.Errorf("Python interpreter %q would hide its agent argv", comm)
+		}
+	}
+	if Candidate("python-worker") {
+		t.Fatal("unrelated Python-prefixed program became a candidate")
+	}
+}
+
 func TestParseStatCommWithParens(t *testing.T) {
 	// pid (comm with ) inside) state ppid ... utime stime ... starttime vsize rss
 	line := "10 (kworker/R-rcu_gp) I 2 0 0 0 0 0 0 0 0 0 5 7 0 0 20 0 1 0 12345 0 42\n"

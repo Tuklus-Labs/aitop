@@ -87,3 +87,14 @@ func TestCollectJoinsFDToRollout(t *testing.T) {
 		t.Fatalf("codex-luna-project violated: name=%q proj=%q", ovs[0].ProvenName, ovs[0].Project)
 	}
 }
+
+func TestParseLsofFDsKeepsOnlyCodexSessionFiles(t *testing.T) {
+	raw := []byte("p101\nf3\nn/Users/kai/.codex/sessions/2026/08/rollout-abc.jsonl\nf4\nn/Users/kai/.codex/thread-writer-locks/abc.lock\nf5\nn/Users/kai/.codex/config.toml\np102\nn/Users/kai/.codex/sessions/rollout-def.jsonl (deleted)\nn/Users/kai/.codex/sessions/rollout-def.jsonl (deleted)\n")
+	got := parseLsofFDs(raw)
+	if len(got) != 2 || len(got[101]) != 2 || len(got[102]) != 1 {
+		t.Fatalf("lsof-session-fd-filtering violated: %#v", got)
+	}
+	if got[102][0] != "/Users/kai/.codex/sessions/rollout-def.jsonl" {
+		t.Fatalf("lsof-deleted-suffix-normalization violated: %#v", got[102])
+	}
+}

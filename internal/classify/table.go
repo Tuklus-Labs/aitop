@@ -39,6 +39,12 @@ func ClassifyCgroupParent(p, parent types.Process, cgroup string) Result {
 	if comm == "chrome_crashpad" || comm == "browser_crashpa" || strings.Contains(joined, "crashpad_handler") {
 		return Result{Role: types.RoleIgnore}
 	}
+	if rt := macDesktopRuntime(exe); rt != types.RuntimeUnknown {
+		if hasChatGPTType(argv) {
+			return Result{Role: types.RoleIgnore}
+		}
+		return Result{Role: types.RoleDesktop, Runtime: rt, AgentRoot: true, CollapseKey: strings.ToLower(path.Base(exe)) + ":" + itoa(p.PID)}
+	}
 	if comm == "ChatGPT" && hasChatGPTType(argv) {
 		return Result{Role: types.RoleIgnore}
 	}
@@ -250,6 +256,23 @@ func hasChatGPTType(argv []string) bool {
 		}
 	}
 	return false
+}
+
+func macDesktopRuntime(exe string) types.Runtime {
+	name := path.Base(exe)
+	if !strings.HasSuffix(exe, "/"+name+".app/Contents/MacOS/"+name) {
+		return types.RuntimeUnknown
+	}
+	switch name {
+	case "Claude":
+		return types.RuntimeClaude
+	case "Hermes":
+		return types.RuntimeHermes
+	case "Codex", "ChatGPT":
+		return types.RuntimeCodex
+	default:
+		return types.RuntimeUnknown
+	}
 }
 
 func parlorInstance(cgroup string) string {

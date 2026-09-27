@@ -527,3 +527,13 @@ after the evidence commit, this file is one commit behind that SHA by design.
   plants: PF-HELP-1 RED on the unchanged tree, PF-HELP-2 RED with PrintDefaults removed, restored GREEN
   go run ./cmd/aitop --help   exit 0, 8 flags listed with defaults
   tree recorded here: 063bbc2 + working copy; the commit that carries this block is the evidence commit
+
+## macOS collector (2026-09-26)
+  Baseline MacBook main da4e521: --json --once exits 1 (Linux /proc unavailable).
+  Linux: go test ./... and go vet ./... pass.
+  MacBook arm64: go test -p 4 ./... and go vet ./... pass.
+  Native CPU regression: 250ms controlled CPU work reported 0us before Mach
+    timebase conversion versus getrusage 248358us; same regression passes after.
+  Mac bundle and versioned Python recognition tests observed failing before fixes.
+  Controlled native agent test checks process identity, RSS, cwd, CPU sampling,
+    printable process state and schema-2 output. Owned helper is ad-hoc signed.

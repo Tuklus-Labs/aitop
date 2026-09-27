@@ -292,6 +292,24 @@ func TestKindAndHostPortFromArgv(t *testing.T) {
 	}
 }
 
+func TestDiscoverProcessesUsesNativeProcessRows(t *testing.T) {
+	procs := []types.Process{
+		{PID: 41, StartTime: 99, Comm: "llama-server", Cmdline: []string{"/opt/llama-server", "--port", "8193", "--host=0.0.0.0"}},
+		{PID: 42, StartTime: 100, Comm: "python", Cmdline: []string{"python", "-m", "vllm.entrypoints.openai.api_server", "--port=8123"}},
+		{PID: 43, Comm: "claude", Cmdline: []string{"claude"}},
+	}
+	got := discoverProcesses(procs)
+	if len(got) != 2 {
+		t.Fatalf("native-discovery-filters-nonservers violated: %+v", got)
+	}
+	if got[0].PID != 41 || got[0].StartTime != 99 || got[0].Kind != "llama" || got[0].Host != "127.0.0.1" || got[0].Port != 8193 {
+		t.Fatalf("native-llama-argv-discovery violated: %+v", got[0])
+	}
+	if got[1].PID != 42 || got[1].Kind != "vllm" || got[1].Port != 8123 {
+		t.Fatalf("native-vllm-argv-discovery violated: %+v", got[1])
+	}
+}
+
 func TestInferencePollerCancelsInFlightRequest(t *testing.T) {
 	started := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
