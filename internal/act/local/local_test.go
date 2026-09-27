@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -236,5 +237,15 @@ func TestLocalMessageIsUnsupported(t *testing.T) {
 	err := l.Message(context.Background(), qwenTarget(), "hi")
 	if err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("local-message-unsupported violated: %v", err)
+	}
+}
+
+func TestProductionLocalAdapterRejectsSystemdActionsOnDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Darwin production gate")
+	}
+	err := New().Kill(context.Background(), act.Target{Unit: "hermes-qwen38"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("darwin-systemd-action-is-explicitly-unsupported violated: %v", err)
 	}
 }

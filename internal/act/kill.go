@@ -3,12 +3,8 @@ package act
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
-
-	"github.com/Tuklus-Labs/aitop/internal/proc"
 )
 
 // KillGrace is the production wait between SIGINT and SIGTERM.
@@ -37,15 +33,7 @@ func (p ProcKiller) root() string {
 }
 
 func (p ProcKiller) LiveStart(pid int32) (uint64, bool) {
-	raw, err := os.ReadFile(filepath.Join(p.root(), strconv.Itoa(int(pid)), "stat"))
-	if err != nil {
-		return 0, false
-	}
-	st, err := proc.ParseStat(string(raw))
-	if err != nil {
-		return 0, false
-	}
-	return st.StartTime, true
+	return liveStart(p.root(), pid)
 }
 
 func (p ProcKiller) SelfPID() int32 {

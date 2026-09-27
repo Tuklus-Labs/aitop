@@ -8,6 +8,7 @@ package local
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -44,6 +45,12 @@ func Collect(procRoot string, unitDirs []string) []types.Overlay {
 	}
 	if unitDirs == nil {
 		unitDirs = UnitDirs()
+	}
+	// Local overlays are systemd unit descriptions. macOS has neither
+	// systemd cgroups nor a compatible unit roster, so there is no truthful
+	// local overlay to publish here.
+	if runtime.GOOS == "darwin" && procRoot == "/proc" {
+		return nil
 	}
 	var out []types.Overlay
 	ents, err := os.ReadDir(procRoot)

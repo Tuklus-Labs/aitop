@@ -4,8 +4,21 @@ btop for agents. Who is in the house, on which project, with how many
 subagents, at 100ms. Built to sit next to btop and nvtop and draw in the same
 ink.
 
-Linux only. Every collector reads `/proc`, so there is nothing for it to see
-on macOS or Windows.
+Linux and macOS. Linux reads `/proc`; macOS uses libproc, sysctl and Mach
+for live processes, CPU, memory and uptime. Windows is not supported.
+
+On macOS, build with Go and the Xcode Command Line Tools installed (`xcode-select
+--install` if needed). Keep cgo enabled for the native collector:
+
+```
+CGO_ENABLED=1 go build -o aitop ./cmd/aitop
+mkdir -p ~/.local/bin
+ln -s "$PWD/aitop" ~/.local/bin/aitop
+```
+
+The macOS build uses the same TUI, session overlays, graph and JSON schema.
+Linux systemd unit management and its inactive service roster are unavailable
+on macOS. Local model processes and their HTTP telemetry are still detected.
 
 ```
 go install github.com/Tuklus-Labs/aitop/cmd/aitop@latest   # or, from a checkout:

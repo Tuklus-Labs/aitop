@@ -21,12 +21,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/Tuklus-Labs/aitop/internal/proc"
 	"github.com/Tuklus-Labs/aitop/internal/types"
 )
 
@@ -45,6 +47,41 @@ func Discover(procRoot string) []Server {
 	if procRoot == "" {
 		procRoot = "/proc"
 	}
+	// The native collector owns the real process view on Darwin. Keep the
+	// procfs reader below for Linux and for the small /proc-shaped fixtures
+	// used by tests; those fixtures intentionally do not contain stat files,
+	// so sending them through proc.Walk would make the test harness disappear.
+	if runtime.GOOS == "darwin" && procRoot == "/proc" {
+		if procs, err := proc.Walk(procRoot); err == nil {
+			return discoverProcesses(procs)
+		}
+		return nil
+	}
+	return discoverProcFS(procRoot)
+}
+
+func discoverProcesses(procs []types.Process) []Server {
+	var out []Server
+	for _, p := range procs {
+		kind := KindOf(p.Cmdline)
+		if kind == "" {
+			// Keep the same contract as the procfs reader: without argv we
+			// cannot know the endpoint or distinguish a server from a helper.
+			continue
+		}
+		host, port := HostPort(p.Cmdline, kind)
+		out = append(out, Server{
+			PID:       p.PID,
+			StartTime: p.StartTime,
+			Kind:      kind,
+			Host:      host,
+			Port:      port,
+		})
+	}
+	return out
+}
+
+func discoverProcFS(procRoot string) []Server {
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
 		return nil
