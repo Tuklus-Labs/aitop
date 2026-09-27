@@ -537,3 +537,11 @@ after the evidence commit, this file is one commit behind that SHA by design.
   Mac bundle and versioned Python recognition tests observed failing before fixes.
   Controlled native agent test checks process identity, RSS, cwd, CPU sampling,
     printable process state and schema-2 output. Owned helper is ad-hoc signed.
+
+## compact token-rate column (2026-09-27)
+  Reproduced on Mac terminal width102: previous layout omitted T/S below105.
+  Expanded UI regression failed before priority fix at80,100,102,104; restored
+    code passes at80,100,102,104,105,113,150,200 with slot rate42.5 and width bounds.
+  Linux: go test ./... and go vet ./... pass.
+  Mac arm64: go test ./internal/ui ./internal/overlay/inference ./internal/snapshot
+    passes; rebuilt screenshot at102 columns contains T/S. Counter producer unchanged.

@@ -98,11 +98,15 @@ for every flag and diagnostic behavior.
 | CPU | Process CPU as a percentage of one core, sampled over a sliding window. It can exceed 100%. |
 | RSS | Resident host memory, including helpers folded into an agent's row. |
 | TOK / CTX | Reported token occupancy and context fill. A context window can come from the runtime or the price table; the detail pane shows the source. |
+| T/S | Live decoded tokens per second on active llama-server slot rows, calculated between polls. It stays visible down to the supported 80-column minimum. |
 | COST | An API list-price estimate based on recorded usage. Estimates have a `~` prefix and do not represent subscription billing. |
 | STAT | Runtime-reported state, supplemented by live process activity. |
 
 The first CPU sample has no previous measurement, so it is shown as `—`.
 Unknown tokens, context windows, and costs also remain `—`.
+T/S needs a previous sample of the same slot and an active current poll. Idle
+slots and runtimes without a rate collector show `—`; expand the local server row
+to see its slots.
 
 ### Keyboard controls
 

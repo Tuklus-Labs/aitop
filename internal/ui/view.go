@@ -22,8 +22,8 @@ const (
 )
 
 // column is one table column. drop is the order columns leave at narrow
-// widths (1 first); 0 never drops. Spec order: COST, T/S, CTX, TOK, MODEL,
-// PROJECT, AGE, RSS, CPU, STAT. TREE/NAME and TITLE are handled apart.
+// widths (1 first); 0 never drops. Keep the live token rate ahead of metadata
+// and context columns on compact terminals. TREE/NAME and TITLE are handled apart.
 type column struct {
 	name  string
 	width int
@@ -33,15 +33,15 @@ type column struct {
 
 var allColumns = []column{
 	{"NAME", 22, false, 0},
-	{"PROJECT", 12, false, 6},
-	{"MODEL", 14, false, 5},
-	{"CPU", 5, true, 9},
-	{"RSS", 6, true, 8},
-	{"TOK", 6, true, 4},
-	{"CTX", 10, false, 3},
+	{"PROJECT", 12, false, 5},
+	{"MODEL", 14, false, 4},
+	{"CPU", 5, true, 8},
+	{"RSS", 6, true, 7},
+	{"TOK", 6, true, 3},
+	{"CTX", 10, false, 2},
 	{"COST", 7, true, 1},
-	{"T/S", 5, true, 2},
-	{"AGE", 6, true, 7},
+	{"T/S", 5, true, 9},
+	{"AGE", 6, true, 6},
 	{"STAT", 6, false, 10},
 }
 

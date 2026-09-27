@@ -151,7 +151,7 @@ func TestEveryLineIsExactlyTerminalWidth(t *testing.T) {
 	}
 }
 
-func TestColumnDropOrderIsCostTSCtxTokFirst(t *testing.T) {
+func TestCompactColumnsKeepTokenRate(t *testing.T) {
 	wide, _ := layoutColumns(200)
 	if len(wide) != len(allColumns) {
 		t.Fatalf("wide-keeps-every-column violated: %d of %d", len(wide), len(allColumns))
@@ -172,8 +172,8 @@ func TestColumnDropOrderIsCostTSCtxTokFirst(t *testing.T) {
 		}
 		return false
 	}
-	if has(narrow, "COST") || has(narrow, "T/S") {
-		t.Fatalf("column-drop-order-cost-ts-first violated: narrow=%v", names(narrow))
+	if has(narrow, "COST") || !has(narrow, "T/S") {
+		t.Fatalf("compact-columns-keep-rate-before-cost violated: narrow=%v", names(narrow))
 	}
 	if !has(narrow, "NAME") || !has(narrow, "STAT") {
 		t.Fatalf("never-drop-name-or-stat violated: narrow=%v", names(narrow))
@@ -752,7 +752,7 @@ func lineNames(ls []line) []string {
 	return o
 }
 
-func TestTokPerSecColumnPaintsOnWideFrame(t *testing.T) {
+func TestTokPerSecColumnPaintsAtSupportedWidths(t *testing.T) {
 	rate := 42.5
 	idx := 0
 	used := int64(100)
@@ -768,16 +768,25 @@ func TestTokPerSecColumnPaintsOnWideFrame(t *testing.T) {
 			Overlay:     types.Overlay{Runtime: types.RuntimeLocal, Kind: "slot", ParentSession: "local-pid:10", SlotIndex: &idx, Status: "busy", TokensUsed: &used, ContextWindow: &win, TokPerSec: &rate},
 		}},
 	})
-	s := ansi.Strip(Render(snap, theme.Nightfable(), 200, 40, now))
-	if !strings.Contains(s, "T/S") {
-		t.Fatalf("tok-per-sec-column-header-on-wide-frame violated:\n%s", s)
-	}
-	row := rowLine(s, "slot 0")
-	if row == "" || !strings.Contains(row, "42.5") {
-		t.Fatalf("tok-per-sec-paints-on-slot-row violated: %q\n%s", row, s)
-	}
-	if !strings.Contains(s, "▴ 1 local") {
-		t.Fatalf("live-local-counted-in-header violated:\n%s", s)
+	for _, width := range []int{80, 100, 102, 104, 105, 113, 150, 200} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			s := ansi.Strip(Render(snap, theme.Nightfable(), width, 40, now))
+			if !strings.Contains(s, "T/S") {
+				t.Fatalf("token-rate header missing at width %d:\n%s", width, s)
+			}
+			row := rowLine(s, "slot 0")
+			if row == "" || !strings.Contains(row, "42.5") {
+				t.Fatalf("token rate missing at width %d: %q", width, row)
+			}
+			for _, line := range strings.Split(s, "\n") {
+				if got := ansi.StringWidth(line); got > width {
+					t.Fatalf("frame exceeds width %d: got %d", width, got)
+				}
+			}
+			if width >= 150 && !strings.Contains(s, "▴ 1 local") {
+				t.Fatalf("live local count missing at width %d", width)
+			}
+		})
 	}
 }
 
