@@ -109,6 +109,13 @@ supply a chosen name. Detecting a runtime does not identify its operator.
   or missing usage remain absent. Claude transcript usage is deduplicated by
   message ID and read incrementally; Codex supplies cumulative totals. Grok has
   no lifetime totals for this calculation.
+- **T/S:** the change in a llama-server slot's decoded-token count divided by the
+  elapsed time between polls. Rates appear on active slot rows, after the first
+  sample. Idle slots, the parent server row, and runtimes without a rate collector
+  show an unknown value. Expand the local server to see its slots. The T/S column
+  remains visible at supported terminal widths of 80 columns and above; context
+  and metadata columns give way first. Fresh one-shot JSON and screenshot commands
+  take only one telemetry sample, so their T/S value is unavailable.
 - **STAT:** a runtime's recorded state when present. Process activity can promote
   a row to busy (CPU at least 8% or a runnable state); a quiet sample does not
   by itself override a runtime's busy or error state.
